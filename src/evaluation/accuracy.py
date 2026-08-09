@@ -171,7 +171,7 @@ def score_generation(generation: Generation) -> AccuracyScores:
     Score the suffixes generated for one prefix against the ground truth they continue.
 
     The one place these numbers are defined: `validate_generation` averages them over a
-    validation slice while training, `evaluate_generations` over the test split afterwards, so a
+    validation slice while training, `score_prefixes` over the test split afterwards, so a
     training curve and a final report measure the same thing rather than agreeing by coincidence.
     What the report adds on top of them is `conformance.py`, computed there alone.
 

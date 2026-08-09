@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from pathlib import Path
 
 import pandas as pd
@@ -49,7 +48,7 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
     Args:
         generations: The model's answers, in the order `generate_batch` returned them.
     Returns:
-        The rows as one table, ready to be written as a row group.
+        The rows as one table, ready to be written as one block of the file.
     """
     # Dicts here because they are what arrow's constructor takes, keyed by the schema's own names.
     rows = [
@@ -71,24 +70,22 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
     return pa.Table.from_pylist(mapping=rows, schema=_SCHEMA)
 
 
-def read_generations(path: Path) -> Iterator[Generation]:
-    """Read a generations file back one prefix at a time.
+def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generation]:
+    """Read one block of a generations file back.
 
-    The inverse of `table_from_generations` over a whole file. One row group is decoded at a time,
-    so what it costs to read is set by the batch a run wrote rather than by the size of the split.
-    A prefix cannot straddle a row group, since a row holds one, which is what lets a reader stop
-    at any group boundary without buffering.
+    A block is what one call to `table_from_generations` wrote, held as a Parquet row group, and
+    this is the inverse over a single one. A prefix cannot straddle a block, since a row holds one,
+    which is what makes a block an independent unit of work: what this costs to read and to score
+    is set by the batch a run wrote rather than by the size of the split.
 
     Args:
-        path: The generations file to read, from `paths.generations_path`.
-    Yields:
-        The generation for each prefix, in the order they were written.
+        parquet: The generations file to read from, already open.
+        block: Which of its blocks to decode, in `range(parquet.num_row_groups)`.
+    Returns:
+        The generation for each prefix of the block, in the order they were written.
     """
-    with pq.ParquetFile(path) as parquet:
-        for row_group in range(parquet.num_row_groups):
-            frame = parquet.read_row_group(row_group).to_pandas()
-            for _, row in frame.iterrows():
-                yield _generation_from_row(row)
+    frame = parquet.read_row_group(block).to_pandas()
+    return [_generation_from_row(row) for _, row in frame.iterrows()]
 
 
 def _generation_from_row(row: pd.Series) -> Generation:

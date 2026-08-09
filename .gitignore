@@ -19,3 +19,6 @@ declare/
 
 # Temporary scripts
 tmp/
+
+# Notes directory
+notes/
