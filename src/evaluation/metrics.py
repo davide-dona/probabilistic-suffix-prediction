@@ -10,7 +10,7 @@ from src.inference import Generation
 
 
 @dataclass(frozen=True)
-class PrefixScores:
+class PairScores:
     """One prefix's scores, or their mean over a set of prefixes.
 
     Accuracy asks how close a generated suffix is to the one that actually happened;
@@ -41,17 +41,36 @@ class ScoredPrefix:
 
     case_id: str
     prefix_len: int
+    suffix_len: int
     samples: int
-    scores: PrefixScores
+    scores: PairScores
 
 
 @dataclass(frozen=True)
-class ByPrefixLengthMetrics:
-    """The scores of the prefixes of one length, and how many pairs that length had."""
+class ByLengthMetrics:
+    """The scores of the prefixes sharing one length, and how many pairs that length had."""
 
     length: int
     pairs_count: int
-    scores: PrefixScores
+    scores: PairScores
+
+
+def _by_length(buckets: dict[int, list[PairScores]]) -> list[ByLengthMetrics]:
+    """Summarize buckets of scores keyed by length, in increasing order of length.
+
+    Args:
+        buckets: Scores grouped by some length, e.g. prefix length or suffix length.
+    Returns:
+        One entry per length present in `buckets`, sorted by length.
+    """
+    return [
+        ByLengthMetrics(
+            length=length,
+            pairs_count=len(buckets[length]),
+            scores=PairScores.mean(buckets[length]),
+        )
+        for length in sorted(buckets)
+    ]
 
 
 @dataclass(frozen=True)
@@ -63,9 +82,11 @@ class EvaluationMetrics:
     cases: int
     samples_per_prefix: int
 
-    scores: PrefixScores
+    scores: PairScores
     # In increasing order of prefix length
-    by_prefix_length: list[ByPrefixLengthMetrics]
+    by_prefix_length: list[ByLengthMetrics]
+    # In increasing order of ground-truth suffix length
+    by_suffix_length: list[ByLengthMetrics]
 
     @classmethod
     def aggregate(cls, scored: Iterable[ScoredPrefix]) -> Self:
@@ -75,11 +96,13 @@ class EvaluationMetrics:
             scored: The scores of each prefix, in any order and read in a single pass, so they can
                 be streamed in as they are computed rather than held all at once.
         Returns:
-            The averages over every prefix, the same averages broken down by cut point, and the
-            population they were taken over. Every prefix weighs the same however many samples were
-            drawn for it, so a prefix is the unit this describes and a sample is not.
+            The averages over every prefix, the same averages broken down by cut point and by
+            ground-truth suffix length, and the population they were taken over. Every prefix
+            weighs the same however many samples were drawn for it, so a prefix is the unit this
+            describes and a sample is not.
         """
-        buckets: dict[int, list[PrefixScores]] = {}
+        prefix_buckets: dict[int, list[PairScores]] = {}
+        suffix_buckets: dict[int, list[PairScores]] = {}
         cases: set[str] = set()
         samples_per_prefix = 0
 
@@ -87,24 +110,19 @@ class EvaluationMetrics:
             cases.add(prefix.case_id)
             # Every prefix is drawn for the same number of times, so the first answers for all.
             samples_per_prefix = samples_per_prefix or prefix.samples
-            # Bucket the scores by prefix length
-            buckets.setdefault(prefix.prefix_len, []).append(prefix.scores)
+            # Bucket the scores by prefix length and by ground-truth suffix length
+            prefix_buckets.setdefault(prefix.prefix_len, []).append(prefix.scores)
+            suffix_buckets.setdefault(prefix.suffix_len, []).append(prefix.scores)
 
         # Flatten the buckets into a single list of scores to compute the overall mean
-        every_prefix = [scores for bucket in buckets.values() for scores in bucket]
+        every_prefix = [scores for bucket in prefix_buckets.values() for scores in bucket]
         return cls(
             pairs=len(every_prefix),
             cases=len(cases),
             samples_per_prefix=samples_per_prefix,
-            scores=PrefixScores.mean(every_prefix),
-            by_prefix_length=[
-                ByPrefixLengthMetrics(
-                    length=length,
-                    pairs_count=len(buckets[length]),
-                    scores=PrefixScores.mean(buckets[length]),
-                )
-                for length in sorted(buckets)
-            ],
+            scores=PairScores.mean(every_prefix),
+            by_prefix_length=_by_length(prefix_buckets),
+            by_suffix_length=_by_length(suffix_buckets),
         )
 
 
@@ -130,8 +148,9 @@ def score_prefixes(
         ScoredPrefix(
             case_id=generation.case_id,
             prefix_len=generation.prefix_len,
+            suffix_len=len(generation.truth),
             samples=len(generation.samples),
-            scores=PrefixScores(
+            scores=PairScores(
                 accuracy=score_generation(generation),
                 conformance=score_conformance(
                     generation,
