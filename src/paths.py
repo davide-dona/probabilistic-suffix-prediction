@@ -6,6 +6,7 @@ from src.identity import RunIdentity
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
+BEST_MODELS_DIR = ROOT / 'best-models'
 
 
 class Split(StrEnum):
@@ -92,8 +93,12 @@ def checkpoint_path(run: RunIdentity) -> Path:
 
 
 def best_model_path(run: RunIdentity) -> Path:
-    """A run's best step, overwritten whenever the selection score improves."""
-    return OUTPUTS_DIR / 'best-models' / f'{_run_dir(run)}.pt'
+    """A run's best step, overwritten whenever the selection score improves.
+
+    Kept outside `outputs/` since these are the checkpoints published to the Hugging Face repo
+    (`pipelines/publish.py`), not disposable run output.
+    """
+    return BEST_MODELS_DIR / f'{_run_dir(run)}.pt'
 
 
 def generations_path(run: RunIdentity) -> Path:
