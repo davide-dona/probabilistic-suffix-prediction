@@ -15,6 +15,10 @@ REMAINING_TIME_KEY = 'rtime'
 # rather than as channels of their own.
 DAY_IN_WEEK_KEY = 'day_in_week'  # 0 (Monday) .. 6 (Sunday)
 SECONDS_IN_DAY_KEY = 'seconds_in_day'  # 0 .. 86399
+# The lower bound of the cut points a case may be split at.
+# Normally 1; a case crossing the train/test separation have its cut points narrowed to
+# the first one after the separation, making the split leak-proof.
+MIN_PREFIX_KEY = 'min_prefix_len'
 
 # Special tokens used by the encoders and decoder. Each follows the vocabulary of whichever
 # categorical channel carries it, so the same marker serves activities, resources and features.

@@ -12,7 +12,7 @@ from src import paths
 from src.configs import ExperimentConfig, load_config
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
-from src.identity import DatasetIdentity, require_same_dataset
+from src.identity import require_same_dataset
 from src.inference import read_generation_block, read_run_identity
 from src.logs.declare import load_declare_model
 
@@ -31,7 +31,7 @@ class _Worker:
 _worker: _Worker
 
 
-def _init_worker(generations_file: Path, dataset: DatasetIdentity, consider_vacuity: bool) -> None:
+def _init_worker(generations_file: Path, dataset: str, consider_vacuity: bool) -> None:
     """Open the file and parse the declarative model once for this process.
 
     macOS spawns its workers, so neither an open file nor a parsed model can be inherited from the
@@ -69,7 +69,7 @@ def _score_block(block: int) -> list[ScoredPrefix]:
 def _score_in_parallel(
     generations_file: Path,
     *,
-    dataset: DatasetIdentity,
+    dataset: str,
     consider_vacuity: bool,
     workers: int | None,
 ) -> Iterator[ScoredPrefix]:
@@ -134,7 +134,7 @@ def run(config: ExperimentConfig, generations_file: Path, workers: int | None) -
 
     with pq.ParquetFile(generations_file) as parquet:
         run = read_run_identity(parquet)
-    require_same_dataset(run, config.data.identity, artifact=generations_file)
+    require_same_dataset(run, config.data.name, artifact=generations_file)
 
     dataset = run.dataset
     paths.require_dataset(dataset)

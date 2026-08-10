@@ -4,8 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.identity import DatasetIdentity
-
 # What a name that becomes a directory is allowed to be: lowercase, digits and hyphens, so it
 # cannot be empty, escape its parent or nest a level nothing expects.
 _NAME_PATTERN = r'^[a-z0-9][a-z0-9-]*$'
@@ -23,15 +21,8 @@ class DataConfig(StrictModel):
     name: str = Field(
         ...,
         pattern=_NAME_PATTERN,
-        description='The log this config describes, e.g. `sepsis`. Every variant of a log shares '
-        'its raw events and its figures',
-    )
-    variant: str = Field(
-        ...,
-        pattern=_NAME_PATTERN,
-        description='Which description of the log this is, e.g. `temporal` or `uedlstm`. Two '
-        'variants differ in how cases are split and which columns are read, so each keeps its own '
-        'preprocessed splits, codec and declarative model',
+        description='The log this config describes, e.g. `sepsis`. Names its preprocessed '
+        'splits, codec, declarative model and figures',
     )
 
     case_key: str = Field(..., description='Raw column identifying the case each event belongs to')
@@ -43,18 +34,18 @@ class DataConfig(StrictModel):
     val_split: float = Field(..., gt=0.0, lt=1.0)
     test_split: float = Field(..., gt=0.0, lt=1.0)
 
-    split_strategy: Literal['temporal', 'uedlstm_replicated'] = Field(
-        ...,
-        description='How cases are assigned to splits. `temporal` cuts by case start time; '
-        "`uedlstm_replicated` reproduces U-ED-LSTM's seeded shuffle, for comparable evaluation",
-    )
-
     max_seq_len_percentile: float = Field(
         ...,
         gt=0.0,
         le=100.0,
         description='Cases longer than this percentile of case length are dropped at '
         'preprocessing time. The cutoff is what sequence tensors are padded to',
+    )
+
+    string_features: list[str] = Field(
+        ...,
+        description='Columns read as strings rather than by whatever dtype pandas infers, for '
+        'the identifiers and flags that would otherwise become numeric channels',
     )
 
     event_features: list[str] = Field(
@@ -80,11 +71,6 @@ class DataConfig(StrictModel):
 
     batch_size: int = Field(..., gt=0)
     num_workers: int = Field(..., ge=0)
-
-    @property
-    def identity(self) -> DatasetIdentity:
-        """What this config's preprocessed files are stored under."""
-        return DatasetIdentity(name=self.name, variant=self.variant)
 
     @model_validator(mode='after')
     def _splits_sum_to_one(self) -> DataConfig:

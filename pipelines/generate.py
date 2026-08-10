@@ -32,7 +32,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
         ValueError: If the checkpoint was trained on a different dataset than the config
             describes, which would decode its output through the wrong codec.
     """
-    paths.require_dataset(config.data.identity)
+    paths.require_dataset(config.data.name)
     torch.manual_seed(config.seed)
 
     codec = DatasetCodec.load(config.data)
@@ -40,7 +40,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
     # Load the model from the checkpoint and put it on the right device
     checkpoint = load_checkpoint(model_path)
     run = RunIdentity.from_dict(checkpoint['run'])
-    require_same_dataset(run, config.data.identity, artifact=model_path)
+    require_same_dataset(run, config.data.name, artifact=model_path)
 
     model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
     model.eval()

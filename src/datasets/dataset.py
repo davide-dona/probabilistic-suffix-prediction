@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, Subset
 
 from src.datasets.codec import DatasetCodec
 from src.logs.io import read_log
-from src.logs.keys import CASE_KEY
+from src.logs.keys import CASE_KEY, MIN_PREFIX_KEY
 from src.paths import Split
 
 
@@ -105,12 +105,15 @@ class _Trace:
     remaining_time: (
         torch.Tensor
     )  # standardized minutes from each event to the case's real ending, [len(events)]
+    # The lower bound for the case cut points,
+    # which the preprocessing step computed and stored in the log.
+    min_prefix_len: int
 
 
 class TraceDataset(Dataset):
     """A PyTorch Dataset of traces, each cut into a set of (prefix, suffix) pairs.
 
-    A case of `n` events yields `n - 1` data points, one per cut point `k = 1 .. n - 1`:
+    A case of `n` events yields one data point per cut point `k`:
     - **prefix**: `events[:k]`
     - **suffix**: `events[k:]` followed by EOT.
 
@@ -148,9 +151,9 @@ class TraceDataset(Dataset):
             # The k-th cut of the case at case_idx, yielding prefix[:k] and suffix[k:].
             (case_idx, k)
             for case_idx, case in enumerate(self._traces)
-            # Every cut point of the case, from 1 to len - 1, yielding n - 1 traces for a case
-            # of n events.
-            for k in range(1, int(case.events.length))
+            # Every cut point the case's recorded lower bound allows, capped at len - 1 so every
+            # suffix holds at least one event to predict.
+            for k in range(case.min_prefix_len, int(case.events.length))
         ]
 
     def _get_cut(self, i: int) -> tuple[_Trace, int]:
@@ -340,11 +343,14 @@ def _group_cases(
     for case_id, group in split_dataset.groupby(CASE_KEY, sort=False):
         # The case's rows as positions into the split-wide columns.
         positions = torch.from_numpy(split_dataset.index.get_indexer(group.index))
+        # Constant over the case, so any of its rows answers for all of them.
+        bounds = group.iloc[0]
         cases.append(
             _Trace(
                 case_id=str(case_id),
                 events=events.cut(positions),
                 remaining_time=remaining_time[positions],
+                min_prefix_len=int(bounds[MIN_PREFIX_KEY]),
             )
         )
     return cases

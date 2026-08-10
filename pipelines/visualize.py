@@ -112,7 +112,7 @@ def run(
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`.
         labels: What to call each of them in legends and tables, in the same order, or `None` for
-            each run's model and variant.
+            each run's model.
         dataset_labels: `name=Display` pairs renaming a log in the tables, e.g. `bpic17=BPIC17`.
             Only the tables: a figure directory keeps the log's own name.
         formats: The image formats to write each figure in.
@@ -165,7 +165,7 @@ def main() -> None:
         nargs='+',
         default=None,
         help='What to call each report in legends and tables, in the same order. Two reports '
-        'sharing a label are one model on two datasets. Defaults to `<model> (<variant>)`.',
+        'sharing a label are one model on two datasets. Defaults to `<model>`.',
     )
     parser.add_argument(
         '--dataset-labels',

@@ -9,6 +9,7 @@ from src import paths
 from src.configs import DataConfig, DeclareConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.logs.declare import discover_declare_model
+from src.logs.filters import sort_log
 from src.logs.io import read_log, write_log
 from src.logs.keys import (
     ACTIVITY_KEY,
@@ -16,13 +17,14 @@ from src.logs.keys import (
     CASE_KEY,
     DAY_IN_WEEK_KEY,
     EVENT_DELTA_KEY,
+    MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
     RESOURCE_KEY,
     SECONDS_IN_DAY_KEY,
     TIMESTAMP_KEY,
 )
-from src.logs.split import temporal_split, uedlstm_split
+from src.logs.split import out_of_time_split
 from src.logs.timestamps import (
     add_calendar,
     add_case_elapsed,
@@ -32,31 +34,31 @@ from src.logs.timestamps import (
 from src.paths import Split
 
 
-def case_length_cutoff(log: pd.DataFrame, *, percentile: float) -> int:
-    """Compute the cutoff in events for dropping cases too long to fit the model's sequence tensors.
+def case_length_cutoff(log: pd.DataFrame, *, data_config: DataConfig) -> int:
+    """Find the cutoff in events for dropping cases too long to fit the model's sequence tensors.
 
     Args:
         log: The whole preprocessed log, one row per event, before it is split.
-        percentile: `data.max_seq_len_percentile`.
+        data_config: The `data` section, which either states the cutoff outright or names the
+            percentile of case length to read it off at.
     Returns:
-        The cutoff in events: the smallest length at least `percentile` percent of cases fit
-        within.
+        The cutoff in events.
     """
     lengths = log.groupby(CASE_KEY)[CASE_KEY].size()
-    return int(np.ceil(np.percentile(lengths, percentile)))
+    return int(np.ceil(np.percentile(lengths, data_config.max_seq_len_percentile)))
 
 
-def drop_long_cases(split: pd.DataFrame, *, max_seq_len: int) -> pd.DataFrame:
-    """Drop the cases longer than `max_seq_len` events from a split of the log.
-
+def add_prefix_bounds(log: pd.DataFrame) -> pd.DataFrame:
+    """Add the lower bound of the cut points every case may be split at, at its full width.
+    Initialized to 1, updated to the actual lower bound after the out-of-time split.
     Args:
-        split: One split of the log, one row per event.
-        max_seq_len: The longest case to keep, in events, from `case_length_cutoff`.
+        log: The preprocessed log, one row per event.
     Returns:
-        A row-subset of `split` holding only the cases of at most `max_seq_len` events.
+        A copy of `log` with `MIN_PREFIX_KEY` added, constant over each case's rows.
     """
-    lengths = split.groupby(CASE_KEY)[CASE_KEY].transform('size')
-    return split[lengths <= max_seq_len]
+    log = log.copy()
+    log[MIN_PREFIX_KEY] = 1
+    return log
 
 
 def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame:
@@ -105,45 +107,17 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def _split(
-    log: pd.DataFrame, *, data_config: DataConfig
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Cut a log into train/val/test the way this dataset's config asks for.
-
-    Args:
-        log: The preprocessed log, one row per event.
-        data_config: The `data` section, naming the strategy and the three proportions.
-    Returns:
-        `(train, val, test)` DataFrames, each a row-subset of `log`.
-    """
-    if data_config.split_strategy == 'temporal':
-        return temporal_split(
-            log,
-            case_key=CASE_KEY,
-            timestamp_key=TIMESTAMP_KEY,
-            train_frac=data_config.train_split,
-            val_frac=data_config.val_split,
-        )
-    return uedlstm_split(
-        log,
-        case_key=CASE_KEY,
-        val_frac=data_config.val_split,
-        test_frac=data_config.test_split,
-    )
-
-
 def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
 
     Reads `data/<dataset>/original.csv`, renames its structural columns to the canonical names
-    used throughout the codebase, extracts the temporal features, splits the log into
-    train/val/test, and drops the cases longer than `data.max_seq_len_percentile` of case length
-    from each split.
+    used throughout the codebase, sorts it, extracts the temporal features, splits it into
+    train/val/test out of time, and drops the cases too long to fit the model's sequence tensors.
 
     The vocabularies and normalization statistics the model is built against are fit here too,
     on the train split alone, and written beside it as `dataset.json`. The declarative model is
-    discovered from the same split and written to `data/<dataset>/<variant>/declare/model.decl`.
+    discovered from the same split and written to `data/<dataset>/declare/model.decl`.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
@@ -155,28 +129,40 @@ def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
         data_config.resource_key: RESOURCE_KEY,
         data_config.timestamp_key: TIMESTAMP_KEY,
     }
-    dataset = data_config.identity
+    dataset = data_config.name
 
-    # Read the raw log and derive the columns the model reads.
+    # Read the raw log.
     print(f'Preprocessing "{dataset}"...')
-    log = read_log(paths.original_log(dataset), column_mapping=column_mapping)
-    log = preprocess(log, feature_columns=data_config.event_features)
-
-    # Compute the cutoff in events
-    max_seq_len = case_length_cutoff(log, percentile=data_config.max_seq_len_percentile)
-
-    # Split the log into train/val/test and drop the cases longer than `max_seq_len` events.
-    # Must be done in this order, otherwise the splits would be biased by the dropped cases.
-    print(f'Splitting "{dataset}" into train/val/test ({data_config.split_strategy})...')
-    train, val, test = (
-        drop_long_cases(rows, max_seq_len=max_seq_len)
-        for rows in _split(log, data_config=data_config)
+    log = read_log(
+        paths.original_log(dataset),
+        column_mapping=column_mapping,
+        dtype=dict.fromkeys(data_config.string_features, str),
     )
+
+    # Derive the columns the model reads, all of which are read off neighbouring rows or off the
+    # size of a case, so the log has to be in order first.
+    log = sort_log(log, case_key=CASE_KEY, timestamp_key=TIMESTAMP_KEY)
+    log = preprocess(log, feature_columns=data_config.event_features)
+    log = add_prefix_bounds(log)
+
+    # Split the log into train/val/test out of time, dropping the cases longer than
+    # `max_seq_len` at the point in the procedure where that does not bias its blocks.
+    max_seq_len = case_length_cutoff(log, data_config=data_config)
+    print(f'Splitting "{dataset}" into train/val/test...')
+    train, val, test = out_of_time_split(
+        log,
+        case_key=CASE_KEY,
+        timestamp_key=TIMESTAMP_KEY,
+        val_frac=data_config.val_split,
+        test_frac=data_config.test_split,
+        max_seq_len=max_seq_len,
+    )
+
     cases_read = log[CASE_KEY].nunique()
     dropped = cases_read - sum(rows[CASE_KEY].nunique() for rows in (train, val, test))
     print(
         f'Dropped {dropped} of {cases_read} cases longer than {max_seq_len} events '
-        f'(p{data_config.max_seq_len_percentile}, {dropped / cases_read:.2%})'
+        f'({dropped / cases_read:.2%})'
     )
 
     for split, rows in ((Split.TRAIN, train), (Split.VAL, val), (Split.TEST, test)):

@@ -17,7 +17,7 @@ The repository is designed to ensure reproducibility of results. To reproduce th
 
 
 ## Run
-A dataset is a raw log at `data/<name>/original.csv` plus a `config/<name>.yaml`. Every pipeline below takes that config with `-c` and reads everything else from it.
+A dataset is a raw log at `data/<name>/original.csv` plus a config declaring how to build it. Every pipeline below takes that config with `-c` and reads everything else from it.
 
 ### Preprocessing
 Run once per dataset, before anything else. It writes the splits and dataset codec under `data/<name>/processed/` and the discovered declarative model to `data/<name>/declare/model.decl`:
@@ -33,16 +33,14 @@ python -m pipelines.train -c config/sepsis.yaml
 
 Training and generation read those outputs and stop with an error naming what is missing if the dataset has not been preprocessed.
 
-A run is identified by four fields the config declares rather than by any filename: the dataset's `name` and `variant`, the model's `name`, and a timestamp. Every artifact carries them inside it and is written under `<name>/<model>/<variant>/<timestamp>`, so a run's curves and its result are found under one path, and one log's directory says which models were run on it before any filename is read:
+A run is identified by three fields the config declares rather than by any filename: the dataset's `name`, the model's `name`, and a timestamp. Every artifact carries them inside it and is written under `<name>/<model>/<timestamp>`, so a run's curves and its result are found under one path, and one log's directory says which models were run on it before any filename is read:
 
-- `outputs/tensorboard/<name>/<model>/<variant>/<timestamp>/`: the loss and its terms under `train/` and `val/`, plus `kl_weight`.
+- `outputs/tensorboard/<name>/<model>/<timestamp>/`: the loss and its terms under `train/` and `val/`, plus `kl_weight`.
 Point TensorBoard at the root and every run shows up as its own toggleable set of curves, grouped by dataset and model:
   ```bash
   tensorboard --logdir outputs/tensorboard
   ```
-- `outputs/best-models/<name>/<model>/<variant>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it.
-
-A variant is one description of a log: `config/sepsis.yaml` cuts it temporally, `config/sepsis-shuffled-split.yaml` reproduces U-ED-LSTM's seeded shuffle and feature set. Both read the same `data/sepsis/original.csv` and share one figure directory, but they do not share test cases, so a figure names the variant beside the model.
+- `outputs/best-models/<name>/<model>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it.
 
 ### Inference
 
