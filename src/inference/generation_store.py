@@ -104,7 +104,7 @@ def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generatio
     """Read one block of a generations file back.
 
     A block is what one call to `table_from_generations` wrote, held as a Parquet row group, and
-    this is the inverse over a single one. A prefix cannot straddle a block, since a row holds one,
+    this is the inverse over a single one. A prefix cannot cross a block, since a row holds one,
     which is what makes a block an independent unit of work: what this costs to read and to score
     is set by the batch a run wrote rather than by the size of the split.
 

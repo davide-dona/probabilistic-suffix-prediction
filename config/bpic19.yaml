@@ -1,17 +1,26 @@
 data:
   name: bpic19
-  variant: temporal
 
   case_key: "case:concept:name"
   activity_key: "concept:name"
   resource_key: "org:resource"
   timestamp_key: "time:timestamp"
 
+  # The test block is nominally the last fifth of cases by start time, and validation the
+  # latest-starting share of what remains. BPIC19 is long-running purchase orders, though: almost
+  # half its cases are still open at the separation time, and the leak-prevention narrowing hands
+  # every one of them to the test set rather than dropping it, so the realized test share lands
+  # near 50% instead of the configured 0.2.
   train_split: 0.65
   val_split: 0.15
   test_split: 0.2
-  split_strategy: temporal
-  max_seq_len_percentile: 98.5  # as in `bpic17.yaml`
+  max_seq_len_percentile: 98.5
+
+  # Both read as booleans, which this pipeline would take for numeric channels; they are flags
+  # with a vocabulary of two, and SuTraN reads them as categoricals too.
+  string_features:
+    - case:GR-Based Inv. Verif.
+    - case:Goods Receipt
 
   # Every column but the structural ones above and: `User`, identical to `org:resource` in
   # every row; `case:Purchasing Document` and `case:Item`, which concatenate to exactly

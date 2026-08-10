@@ -7,27 +7,6 @@ from pydantic import TypeAdapter
 
 
 @dataclass(frozen=True)
-class DatasetIdentity:
-    """Which log, prepared which way: what one preprocessed dataset is.
-
-    A log can be described more than once, since a split strategy and a feature set are choices
-    rather than properties of the raw events. Both descriptions read the same `original.csv` and
-    keep their own splits, codec and declarative model, so they are the same `name` under
-    different `variant`s.
-    """
-
-    name: str
-    variant: str
-
-    def __str__(self) -> str:
-        """What a message calls this dataset, e.g. `sepsis/temporal`.
-
-        Its directories mirror this, but they are `src/paths.py`'s to lay out: this is a name.
-        """
-        return f'{self.name}/{self.variant}'
-
-
-@dataclass(frozen=True)
 class RunIdentity:
     """One model's one run on one dataset, which every output artifact is named after.
 
@@ -35,16 +14,16 @@ class RunIdentity:
     into their paths, so a file always knows what produced it however it has been moved.
     """
 
-    dataset: DatasetIdentity
+    dataset: str
     model: str
     tag: str
 
     def __str__(self) -> str:
-        """What a message calls this run, e.g. `sepsis/cvae/temporal/20260809-143043`.
+        """What a message calls this run, e.g. `sepsis/cvae/20260809-143043`.
 
         Its directories mirror this, but they are `src/paths.py`'s to lay out: this is a name.
         """
-        return f'{self.dataset.name}/{self.model}/{self.dataset.variant}/{self.tag}'
+        return f'{self.dataset}/{self.model}/{self.tag}'
 
     @classmethod
     def from_dict(cls, data: dict) -> RunIdentity:
@@ -74,7 +53,7 @@ class RunIdentity:
         return _RUN_ADAPTER.validate_json(data)
 
 
-def require_same_dataset(run: RunIdentity, dataset: DatasetIdentity, *, artifact: Path) -> None:
+def require_same_dataset(run: RunIdentity, dataset: str, *, artifact: Path) -> None:
     """Check an artifact was produced for the dataset a config describes.
 
     Args:

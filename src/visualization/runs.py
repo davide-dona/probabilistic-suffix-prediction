@@ -17,23 +17,18 @@ class PlottedRun:
     @property
     def dataset(self) -> str:
         """The log the run was scored on, which is the figures it appears in."""
-        return self.report.run.dataset.name
+        return self.report.run.dataset
 
 
 def load_runs(files: Sequence[Path], labels: Sequence[str] | None) -> dict[str, list[PlottedRun]]:
     """Read a set of evaluation reports and group them by the log they were scored on.
-
-    Every variant of a log shares its figures, since they describe the same process. They are not
-    the same population, though: two variants cut their test cases differently, so the default
-    label names the variant beside the model rather than leaving a series to be read as if every
-    curve on the axes had been scored over the same prefixes.
 
     A label is a model rather than a run, so two reports sharing one are the same model on two
     logs and are drawn in the same colour throughout.
 
     Args:
         files: The reports to read, from `pipelines.evaluate`.
-        labels: What to call each of them, in the same order, or `None` for `<model> (<variant>)`.
+        labels: What to call each of them, in the same order, or `None` for the model's own name.
     Returns:
         The runs of each log, both the logs and the runs within one in the order the files were
         named, so a legend reads in the order they were asked for.
@@ -56,11 +51,7 @@ def load_runs(files: Sequence[Path], labels: Sequence[str] | None) -> dict[str, 
         )
 
     reports = [EvaluationReport.read(file) for file in files]
-    names = (
-        list(labels)
-        if labels is not None
-        else [f'{report.run.model} ({report.run.dataset.variant})' for report in reports]
-    )
+    names = list(labels) if labels is not None else [report.run.model for report in reports]
 
     # One style per model, assigned in the order the models first appear, so the same model keeps
     # its colour across every figure of every log.
@@ -69,7 +60,7 @@ def load_runs(files: Sequence[Path], labels: Sequence[str] | None) -> dict[str, 
 
     grouped: dict[str, list[PlottedRun]] = {}
     for name, report in zip(names, reports, strict=True):
-        dataset = report.run.dataset.name
+        dataset = report.run.dataset
         runs = grouped.setdefault(dataset, [])
         if any(run.label == name for run in runs):
             raise ValueError(

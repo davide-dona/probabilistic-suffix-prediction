@@ -1,7 +1,7 @@
 from enum import StrEnum
 from pathlib import Path
 
-from src.identity import DatasetIdentity, RunIdentity
+from src.identity import RunIdentity
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / 'data'
@@ -20,30 +20,22 @@ class Split(StrEnum):
     TEST = 'test'
 
 
-def _dataset_dir(dataset: DatasetIdentity) -> Path:
-    """Where a dataset's own files sit, relative to whichever directory holds them."""
-    return Path(dataset.name) / dataset.variant
-
-
 def _run_dir(run: RunIdentity) -> Path:
     """Where a run's files sit, relative to whichever `outputs/` directory holds them.
 
-    The model sits above the variant, so one log's directory lists the models compared on it
-    before any filename is read, and the leaf is the tag alone, since the directory it sits in
-    already says which model wrote it.
+    The model sits above the tag, so one log's directory lists the models compared on it before
+    any filename is read, and the leaf is the tag alone, since the directory it sits in already
+    says which model wrote it.
     """
-    return Path(run.dataset.name) / run.model / run.dataset.variant / run.tag
+    return Path(run.dataset) / run.model / run.tag
 
 
-def original_log(dataset: DatasetIdentity) -> Path:
-    """The raw log a dataset starts from, the one file preprocessing reads.
-
-    Named by log rather than by variant: every description of a log reads the same events.
-    """
-    return DATA_DIR / dataset.name / 'original.csv'
+def original_log(dataset: str) -> Path:
+    """The raw log a dataset starts from, the one file preprocessing reads."""
+    return DATA_DIR / dataset / 'original.csv'
 
 
-def split_path(dataset: DatasetIdentity, split: Split) -> Path:
+def split_path(dataset: str, split: Split) -> Path:
     """One preprocessed split of a dataset.
 
     Args:
@@ -52,20 +44,20 @@ def split_path(dataset: DatasetIdentity, split: Split) -> Path:
     Returns:
         The path to that split's file.
     """
-    return DATA_DIR / _dataset_dir(dataset) / 'processed' / f'{split}.csv'
+    return DATA_DIR / dataset / 'processed' / f'{split}.csv'
 
 
-def codec_path(dataset: DatasetIdentity) -> Path:
+def codec_path(dataset: str) -> Path:
     """A dataset's fitted codec, next to the splits it was fit on."""
-    return DATA_DIR / _dataset_dir(dataset) / 'processed' / 'dataset.json'
+    return DATA_DIR / dataset / 'processed' / 'dataset.json'
 
 
-def declare_model_path(dataset: DatasetIdentity) -> Path:
+def declare_model_path(dataset: str) -> Path:
     """A dataset's declarative model, discovered from its train split at preprocessing time."""
-    return DATA_DIR / _dataset_dir(dataset) / 'declare' / 'model.decl'
+    return DATA_DIR / dataset / 'declare' / 'model.decl'
 
 
-def require_dataset(dataset: DatasetIdentity) -> None:
+def require_dataset(dataset: str) -> None:
     """Check that everything preprocessing produces is on disk, and say what is missing if it
     is not.
 
@@ -90,7 +82,7 @@ def require_dataset(dataset: DatasetIdentity) -> None:
 
 def tensorboard_dir(run: RunIdentity) -> Path:
     """A run's TensorBoard events. One directory is one run, so the tag has to tell two runs of
-    one model on one variant apart."""
+    one model on one dataset apart."""
     return OUTPUTS_DIR / 'tensorboard' / _run_dir(run)
 
 
@@ -118,8 +110,7 @@ def plot_path(dataset: str, name: str, image_format: str) -> Path:
     """One figure, under the log whose prefixes it breaks down.
 
     Args:
-        dataset: The log the figure describes, without a variant: one figure holds every variant
-            of a log, since they are the same process seen through different preprocessing.
+        dataset: The log the figure describes.
         name: What the figure shows, e.g. a metric's name.
         image_format: The extension to write, e.g. `pdf`.
     Returns:

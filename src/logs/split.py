@@ -1,100 +1,117 @@
 import numpy as np
 import pandas as pd
 
-# The seed U-ED-LSTM's loader notebooks set before building their splitter. Fixed here rather
-# than configurable.
-UEDLSTM_SEED = 17
+from src.logs.filters import drop_long_cases
+from src.logs.keys import MIN_PREFIX_KEY
 
 
-def temporal_split(
-    log: pd.DataFrame, *, case_key: str, timestamp_key: str, train_frac: float, val_frac: float
+def out_of_time_split(
+    log: pd.DataFrame,
+    *,
+    case_key: str,
+    timestamp_key: str,
+    val_frac: float,
+    test_frac: float,
+    max_seq_len: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Split a log into train/val/test by case start time.
+    """Split a log by time, withholding the prefixes that would leak across the boundary.
 
-    Cases are sorted by the timestamp of their first event, then cut into three
-    contiguous blocks so validation and test cases always start later than the
-    training cases they are evaluated against.
+    The separation time is the start of the case that begins once `1 - test_frac` of them
+    already have. Cutting there alone still leaks: a case running across that moment would be
+    learned from before its later events could have been observed. Test holds every case still
+    running at the separation, so a crossing case is a test case whose earlier prefixes a
+    training run could already have seen; those prefixes are withheld from scoring rather than
+    the case being dropped, which is what `MIN_PREFIX_KEY` records.
 
     Args:
-        log: Event log, one row per event.
+        log: Event log, one row per event, sorted by case start and then by timestamp, carrying
+            `MIN_PREFIX_KEY` at its full range.
         case_key: Column identifying the case each event belongs to.
         timestamp_key: Column holding the (already parsed) event timestamp.
-        train_frac: Fraction of cases assigned to the training set.
-        val_frac: Fraction of cases assigned to the validation set.
+        val_frac: Fraction of all cases assigned to the validation set, taken from the training
+            cases as the latest-starting ones.
+        test_frac: Fraction of all cases the separation time is placed at.
+        max_seq_len: The longest case to keep, in events. Applied here rather than by the caller
+            because the validation cases are carved out of what survives it.
     Returns:
-        `(train, val, test)` DataFrames, each a row-subset of `log`.
+        `(train, val, test)` DataFrames, each a row-subset of `log` with `MIN_PREFIX_KEY`
+        narrowed on the crossing cases. Every case left is short enough already, so a further
+        `drop_long_cases` would find nothing.
     """
-    # Get the first event timestamp for each case and sort cases by that timestamp
-    case_start = log.groupby(case_key)[timestamp_key].min().sort_values()
-    cases = case_start.index.to_list()
+    # Compute each case's start and stop timestamps
+    edges = log.groupby(case_key)[timestamp_key].agg(['min', 'max'])
+    starts_ts, stops_ts = edges['min'], edges['max']
 
-    # Compute the number of cases for each split
-    n = len(cases)
-    n_train = int(n * train_frac)
-    n_val = int(n * val_frac)
+    # Find the index of the first test case and its start time
+    first_test_case = int(len(edges) * (1 - test_frac))
+    separation_ts = np.sort(starts_ts.values)[first_test_case]
 
-    # Split the cases into train/val/test based on the computed indices
-    train_cases = cases[:n_train]
-    val_cases = cases[n_train : n_train + n_val]
-    test_cases = cases[
-        n_train + n_val :
-    ]  # Assumed to be the remainder, so no rounding issues arise
-    assert len(train_cases) + len(val_cases) + len(test_cases) == n
-
+    # The training set keeps every case that has already finished before the separation
+    train_cases = stops_ts.index[stops_ts.values < separation_ts]
     train = log[log[case_key].isin(train_cases)]
-    val = log[log[case_key].isin(val_cases)]
-    test = log[log[case_key].isin(test_cases)]
+
+    # The test set keeps every case that was running at the separation.
+    test_cases = stops_ts.index[stops_ts.values >= separation_ts]
+    crossing = test_cases.difference(starts_ts.sort_values().index[first_test_case:])
+    # All events of crossing cases before the cut point are removed from scoring by
+    # narrowing their `MIN_PREFIX_KEY.
+    test = _bound_crossing_prefixes(
+        log[log[case_key].isin(test_cases)],
+        case_key=case_key,
+        timestamp_key=timestamp_key,
+        separation_ts=separation_ts,
+        crossing=crossing,
+    )
+
+    # Before the validation carve-out, so the cases it reads are the ones that survive: dropping
+    # afterwards would leave validation holding a share of a set it was not taken from.
+    train = drop_long_cases(train, case_key=case_key, max_seq_len=max_seq_len)
+    test = drop_long_cases(test, case_key=case_key, max_seq_len=max_seq_len)
+
+    # Validation is the tail of the training block by case start, so it stands out of time to
+    # training the same way the test block stands out of time to both.
+    val_share = val_frac / (1 - test_frac)
+    train_starts = train.groupby(case_key)[timestamp_key].min().sort_values()
+    val_cases = train_starts.index[int(len(train_starts) * (1 - val_share)) :]
+
+    val = train[train[case_key].isin(val_cases)]
+    train = train[~train[case_key].isin(val_cases)]
 
     return train, val, test
 
 
-def uedlstm_split(
-    log: pd.DataFrame, *, case_key: str, val_frac: float, test_frac: float
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Split a log the way U-ED-LSTM does, so both models can be scored on identical test cases.
-
-    A seeded shuffle of the sorted case list, cut into a validation block, a test block and the
-    remainder.
-
-    Random rather than chronological, and with no leakage prevention.
-    Equivalent to `EventLogSplitter.split`, which is the same code in U-ED-LSTM's
-    `new_event_log_loader.py` and `new_event_log_loader_v2.py`; only the fractions each
-    dataset passes it differ.
+def _bound_crossing_prefixes(
+    split: pd.DataFrame,
+    *,
+    case_key: str,
+    timestamp_key: str,
+    separation_ts: np.datetime64,
+    crossing: pd.Index,
+) -> pd.DataFrame:
+    """Narrow the cut points of the cases running across the separation time.
 
     Args:
-        log: Event log, one row per event.
+        split: The test split, holding the crossing cases, one row per event.
         case_key: Column identifying the case each event belongs to.
-        val_frac: Fraction of cases assigned to the validation set, taken first.
-        test_frac: Fraction of cases assigned to the test set, taken next.
+        timestamp_key: Column holding the (already parsed) event timestamp.
+        separation_ts: The moment the split was cut at.
+        crossing: The cases whose prefixes are only partly test's to score.
     Returns:
-        `(train, val, test)` DataFrames, each a row-subset of `log`. A case whose ID is missing
-        appears in none of them.
+        A copy of `split` with `MIN_PREFIX_KEY` narrowed on those cases, to their first cut point
+        whose prefix reaches past the separation.
     """
-    # Sorted, and with the missing IDs dropped, because that is the case list their splitter
-    # receives: it shuffles what their `groupby` hands back, which drops the group whose key
-    # read as NaN - Sepsis has a case named "NA" - and which came back sorted under the pandas
-    # their notebooks were run with. Both the order and the count feed the permutation, so a
-    # deviation in either gives a different split from the same seed.
-    # The object array is theirs too: numpy warns that shuffling a pandas extension array in
-    # place is not guaranteed to be a permutation of it.
-    cases = np.asarray(sorted(log[case_key].dropna().unique()), dtype=object)
-    # The legacy MT19937 generator, which is what `np.random.seed` + `np.random.shuffle` draw
-    # from. `default_rng` would be a different generator, so a different permutation.
-    np.random.RandomState(seed=UEDLSTM_SEED).shuffle(cases)
+    split = split.copy()
+    rows = split[split[case_key].isin(crossing)]
+    # A cut point of k takes the first k events, so a bound is the 1-based position of the event
+    # the prefix has to reach, one past that event's 0-based index in its case.
+    positions = rows.groupby(case_key).cumcount() + 1
 
-    # Their splitter floors each block's size independently and leaves train the remainder.
-    n = len(cases)
-    n_val = int(val_frac * n)
-    n_test = int(test_frac * n)
+    # Strictly after the separation: an event landing exactly on it is one a training case could
+    # still have been running through. Compared as numpy values, since a tz-aware column and a
+    # numpy timestamp are not comparable as pandas objects.
+    selected = rows[timestamp_key].values > separation_ts
+    bounds = positions[selected].groupby(rows[case_key][selected]).min()
 
-    val_cases = cases[:n_val]
-    test_cases = cases[n_val : n_val + n_test]
-    train_cases = cases[n_val + n_test :]
-
-    train = log[log[case_key].isin(train_cases)]
-    val = log[log[case_key].isin(val_cases)]
-    test = log[log[case_key].isin(test_cases)]
-
-    return train, val, test
+    # A case the bound says nothing about keeps the full range it was written with.
+    split[MIN_PREFIX_KEY] = split[case_key].map(bounds).fillna(split[MIN_PREFIX_KEY]).astype(int)
+    return split
