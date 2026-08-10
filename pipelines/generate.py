@@ -5,11 +5,11 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from pipelines.preprocess import require_dataset
 from src import paths
 from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
+from src.identity import RunIdentity, require_same_dataset
 from src.inference import (
     generate_batch,
     generation_batch_size,
@@ -28,14 +28,20 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
         model_path: The checkpoint to generate with. Named rather than guessed at: a config
             matches every run ever started from it, and picking one of them is a decision the
             caller makes, not one to be inferred from a filename.
+    Raises:
+        ValueError: If the checkpoint was trained on a different dataset than the config
+            describes, which would decode its output through the wrong codec.
     """
-    require_dataset(config.data.name)
+    paths.require_dataset(config.data.identity)
     torch.manual_seed(config.seed)
 
     codec = DatasetCodec.load(config.data)
 
     # Load the model from the checkpoint and put it on the right device
     checkpoint = load_checkpoint(model_path)
+    run = RunIdentity.from_dict(checkpoint['run'])
+    require_same_dataset(run, config.data.identity, artifact=model_path)
+
     model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
     model.eval()
 
@@ -53,7 +59,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
 
     # The output file is named after the run the checkpoint carries, not after the file it was
     # read from, so the generations land under the run that produced them whatever it is called.
-    path = paths.generations_path(checkpoint['run_name'])
+    path = paths.generations_path(run)
     device = torch.device(config.training.device)
 
     print(
@@ -63,7 +69,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
     )
 
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
-    with open_generations(path) as parquet_writer:
+    with open_generations(path, run) as parquet_writer:
         for batch in tqdm(iterable=test_loader, desc='Generating', unit='batch'):
             generations = generate_batch(
                 model=model,

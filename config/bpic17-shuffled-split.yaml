@@ -1,5 +1,8 @@
 # BPIC17 as U-ED-LSTM sees it: their split, their feature set
 data:
+  name: bpic17
+  variant: shuffled-split
+
   case_key: "case:concept:name"
   activity_key: "concept:name"
   resource_key: "org:resource"

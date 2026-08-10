@@ -1,8 +1,7 @@
 seed: 42
-experiment_name: cvae
 
 # Declarative model discovered from the train split during preprocessing,
-# written to data/<dataset>/declare/model.decl.
+# written to data/<dataset>/<variant>/declare/model.decl.
 declare:
   consider_vacuity: false # unactivated constraints are considered as violated
   min_support: 0.8        # fraction of train traces that satisfy a constraint for it to be included in the model
@@ -12,6 +11,9 @@ declare:
 # Model parameters, sized for the bpic logs: widest, longest-sequence, richest-vocab in the
 # suite. sepsis.yaml scales this down; a dataset this size does not need it.
 model:
+  # Names every run this architecture produces, and the series it is drawn as.
+  name: cvae
+
   # The size of the embedding space
   d_model: 128
 

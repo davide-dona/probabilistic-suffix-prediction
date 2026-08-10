@@ -11,6 +11,7 @@ from pydantic import Field
 
 from src import paths
 from src.configs.schema import DataConfig, StrictModel
+from src.identity import DatasetIdentity
 from src.logs.keys import (
     ACTIVITY_KEY,
     CASE_ELAPSED_KEY,
@@ -268,10 +269,9 @@ class DatasetCodec(StrictModel):
     # the fit rather than of the config, which only holds the percentile.
     max_trace_length: int
 
-    # Which dataset the splits belong to. From the config rather than the fit, so it cannot
-    # disagree with the file it is written beside; excluded from `dataset.json` for the same
-    # reason `DataConfig.name` is absent from its own YAML.
-    dataset: str = Field(..., exclude=True)
+    # Which dataset the splits belong to. From the config rather than the fit, and excluded from
+    # `dataset.json`, since it is the directory the file is written into.
+    dataset: DatasetIdentity = Field(..., exclude=True)
 
     @property
     def num_feature_categories(self) -> int:
@@ -311,7 +311,7 @@ class DatasetCodec(StrictModel):
             remaining_time=NumericColumn.fit(train, column=REMAINING_TIME_KEY, log=log_durations),
             categorical_features=categorical_features,
             numeric_features=numeric_features,
-            dataset=data_config.name,
+            dataset=data_config.identity,
             max_trace_length=max_trace_length,
         )
 
@@ -330,12 +330,13 @@ class DatasetCodec(StrictModel):
         Raises:
             FileNotFoundError: If the dataset has not been preprocessed.
         """
-        path = paths.codec_path(data_config.name)
+        identity = data_config.identity
+        path = paths.codec_path(identity)
         if not path.exists():
             raise FileNotFoundError(
                 f'no dataset codec at {path}. Run `python -m pipelines.preprocess` first.'
             )
-        return cls.model_validate(json.loads(path.read_text()) | {'dataset': data_config.name})
+        return cls.model_validate(json.loads(path.read_text()) | {'dataset': identity})
 
     def save(self) -> Path:
         """Write this codec beside the splits, and return where it went."""

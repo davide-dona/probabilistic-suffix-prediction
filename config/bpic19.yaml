@@ -1,4 +1,7 @@
 data:
+  name: bpic19
+  variant: temporal
+
   case_key: "case:concept:name"
   activity_key: "concept:name"
   resource_key: "org:resource"

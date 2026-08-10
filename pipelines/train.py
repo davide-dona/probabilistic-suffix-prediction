@@ -5,10 +5,11 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from pipelines.preprocess import require_dataset
+from src import paths
 from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
+from src.identity import RunIdentity
 from src.inference import generation_batch_size
 from src.model import TransformerCVAE, load_checkpoint
 from src.paths import Split
@@ -29,7 +30,7 @@ def resumed(resume_path: Path) -> tuple[ExperimentConfig, dict]:
     checkpoint = load_checkpoint(resume_path)
     missing = {
         'experiment_config',
-        'run_name',
+        'run',
         'optimizer_state',
         'early_stopping_state',
         'rng_state',
@@ -49,10 +50,10 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     Args:
         config: The validated experiment config.
         checkpoint: A checkpoint to carry on from, as read by `resumed`, or `None` to start a
-            new run. The run keeps the name the checkpoint carries, so it writes to the
+            new run. The run keeps the identity the checkpoint carries, so it writes to the
             TensorBoard directory and the files the interrupted run was writing to.
     """
-    require_dataset(config.data.name)
+    paths.require_dataset(config.data.identity)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.
     torch.manual_seed(config.seed)
@@ -100,12 +101,16 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         f'generating for {len(generation_loader.dataset)}'
     )
 
-    # When resuming, keep the run name the checkpoint carries, so it writes to the same
+    # When resuming, keep the identity the checkpoint carries, so it writes to the same
     # TensorBoard directory and the same files.
-    run_name = (
-        f'{config.data.name}/{config.experiment_name}-{datetime.now():%Y%m%d-%H%M%S}'
+    run = (
+        RunIdentity(
+            dataset=config.data.identity,
+            model=config.model.name,
+            tag=f'{datetime.now():%Y%m%d-%H%M%S}',
+        )
         if checkpoint is None
-        else checkpoint['run_name']
+        else RunIdentity.from_dict(checkpoint['run'])
     )
 
     train(
@@ -113,7 +118,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         train_loader=train_loader,
         val_loader=val_loader,
         generation_loader=generation_loader,
-        run_name=run_name,
+        run=run,
         experiment_config=config.model_dump(),
         generator=generator,
         resume=checkpoint,

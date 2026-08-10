@@ -1,7 +1,10 @@
-# Sepsis as U-ED-LSTM sees it: their split, their feature set. The same raw log as `sepsis`
-# (`original.csv` is a symlink to it), preprocessed a second time so both descriptions can exist
-# at once and our model can be scored against their checkpoint over the same test cases.
+# Sepsis as U-ED-LSTM sees it: their split, their feature set. The same raw log as the `temporal`
+# variant, preprocessed a second time so both descriptions can exist at once and our model can be
+# scored against their checkpoint over the same test cases.
 data:
+  name: sepsis
+  variant: shuffled-split
+
   case_key: "Case ID"
   activity_key: Activity
   resource_key: Resource

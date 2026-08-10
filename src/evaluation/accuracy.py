@@ -29,6 +29,10 @@ class AccuracyScores(ScalarMetrics):
     dls_point: (
         float  # z = mean(p(z | prefix), a single greedy answer, scored against the ground truth
     )
+    # The closest of a prefix's samples to the ground truth: what a set of suggestions is worth to
+    # a user who only needs one of them to be usable. The graded reading of `hit_rate_at_10`,
+    # which asks the same question but only counts an exact match.
+    dls_best: float
 
     # The share of prefixes whose true suffix is exactly among their first k samples: what k
     # suggestions are worth to a user who only needs one of them to be right. 0.0 or 1.0 for a
@@ -192,6 +196,7 @@ def score_generation(generation: Generation) -> AccuracyScores:
     return AccuracyScores(
         dls_mean=dls_mean,
         dls_point=sequence_similarity(point.activities, truth.activities),
+        dls_best=max(similarities, default=0.0),
         hit_rate_at_1=is_hit(samples=sample_activities, truth=truth_activities, k=1),
         hit_rate_at_5=is_hit(samples=sample_activities, truth=truth_activities, k=5),
         hit_rate_at_10=is_hit(samples=sample_activities, truth=truth_activities, k=10),
