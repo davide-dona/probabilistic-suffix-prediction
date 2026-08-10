@@ -40,10 +40,16 @@ Point TensorBoard at the root and every run shows up as its own toggleable set o
   ```bash
   tensorboard --logdir outputs/tensorboard
   ```
-- `outputs/best-models/<name>/<model>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it.
+- `best-models/<name>/<model>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it. Kept outside `outputs/` since these are the checkpoints shared through the Hugging Face repo, not disposable run output.
 
 ### Inference
 
 ### Evaluation
 
 ### Configs
+
+### Sharing best models
+Best checkpoints are shared through a Hugging Face model repo rather than committed to git. Fetch every published checkpoint into `best-models/`:
+```bash
+python -m scripts.fetch
+```

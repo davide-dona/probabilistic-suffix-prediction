@@ -96,7 +96,7 @@ def main() -> None:
         type=Path,
         required=True,
         help='Path to the checkpoint to generate with, from '
-        '`outputs/best-models/` or `outputs/checkpoints/`.',
+        '`best-models/` or `outputs/checkpoints/`.',
     )
     args = parser.parse_args()
 
