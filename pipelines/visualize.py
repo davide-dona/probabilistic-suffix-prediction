@@ -18,7 +18,6 @@ from src.visualization import (
     latex_table,
     length_curve,
     load_runs,
-    markdown_table,
     metric_grid,
     support_curve,
     use_paper_style,
@@ -138,16 +137,13 @@ def run(
     # other is a directory.
     tabulated = {displayed.get(dataset, dataset): runs for dataset, runs in grouped.items()}
     for table in TABLES:
-        markdown = markdown_table(tabulated, table)
-        for table_format, text in (('md', markdown), ('tex', latex_table(tabulated, table))):
-            path = paths.comparison_table_path(table.name, table_format)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
-        print(f'\n{table.name}\n{markdown}', end='', flush=True)
+        path = paths.comparison_table_path(table.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(latex_table(tabulated, table))
 
     print(
-        f'\nWrote {figures} figures in {", ".join(formats)} and {len(TABLES)} tables in md, tex '
-        f'to {paths.comparison_table_path(TABLES[0].name, "md").parent}'
+        f'\nWrote {figures} figures in {", ".join(formats)} and {len(TABLES)} tables in tex '
+        f'to {paths.comparison_table_path(TABLES[0].name).parent}'
     )
 
 

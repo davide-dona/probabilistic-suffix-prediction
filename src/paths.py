@@ -128,13 +128,12 @@ def plot_path(dataset: str, name: str, image_format: str) -> Path:
     return OUTPUTS_DIR / 'plots' / dataset / f'{name}.{image_format}'
 
 
-def comparison_table_path(name: str, table_format: str) -> Path:
+def comparison_table_path(name: str) -> Path:
     """One results table comparing every visualized run.
 
     Args:
-        name: Which table, e.g. `comparison-quality`.
-        table_format: The extension to write, e.g. `tex`.
+        name: Which table, e.g. `comparison-point`.
     Returns:
-        The path to that table in that format.
+        The path to that table's LaTeX source.
     """
-    return OUTPUTS_DIR / 'plots' / f'{name}.{table_format}'
+    return OUTPUTS_DIR / 'plots' / f'{name}.tex'

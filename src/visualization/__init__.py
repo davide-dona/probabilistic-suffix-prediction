@@ -10,7 +10,7 @@ from src.visualization.curves import (
 from src.visualization.metrics import ACCURACY_METRICS, ERROR_METRICS, METRICS, MetricSpec
 from src.visualization.runs import PlottedRun, load_runs
 from src.visualization.style import COLUMN_WIDTH, PAGE_WIDTH, use_paper_style
-from src.visualization.tables import TABLES, latex_table, markdown_table
+from src.visualization.tables import TABLES, latex_table
 
 __all__ = [
     'ACCURACY_METRICS',
@@ -28,7 +28,6 @@ __all__ = [
     'latex_table',
     'length_curve',
     'load_runs',
-    'markdown_table',
     'metric_grid',
     'support_curve',
     'use_paper_style',

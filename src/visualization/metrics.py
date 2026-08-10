@@ -31,6 +31,13 @@ DLS_MEAN = MetricSpec(
     unit=None,
     higher_is_better=True,
 )
+DLS_BEST = MetricSpec(
+    key='dls_best',
+    family='accuracy',
+    label='DL similarity (best of k)',
+    unit=None,
+    higher_is_better=True,
+)
 HIT_RATE_AT_1 = MetricSpec(
     key='hit_rate_at_1',
     family='accuracy',
@@ -127,6 +134,7 @@ SUFFIX_LENGTH = MetricSpec(
 METRICS = (
     DLS_POINT,
     DLS_MEAN,
+    DLS_BEST,
     HIT_RATE_AT_1,
     HIT_RATE_AT_5,
     HIT_RATE_AT_10,
@@ -146,6 +154,7 @@ METRICS = (
 ACCURACY_METRICS = (
     DLS_POINT,
     DLS_MEAN,
+    DLS_BEST,
     CONFORMANCE_POINT,
     CONFORMANCE_MEAN,
     HIT_RATE_AT_1,
