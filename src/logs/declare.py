@@ -10,13 +10,14 @@ from Declare4Py.Utils.Declare.TraceStates import TraceState
 
 from src import paths
 from src.configs import DeclareConfig
+from src.identity import DatasetIdentity
 from src.logs.keys import ACTIVITY_KEY, CASE_KEY, TIMESTAMP_KEY
 
 
 def discover_declare_model(
     train: pd.DataFrame,
     *,
-    dataset: str,
+    dataset: DatasetIdentity,
     declare_config: DeclareConfig,
 ) -> int:
     """
@@ -63,7 +64,7 @@ def discover_declare_model(
     return len(model.constraints)
 
 
-def load_declare_model(dataset: str) -> DeclareModel:
+def load_declare_model(dataset: DatasetIdentity) -> DeclareModel:
     """Read back the model discovered at preprocessing time.
 
     Args:

@@ -33,15 +33,10 @@ def _deep_merge(base: dict, override: dict) -> dict:
 def load_config(path: str | Path) -> ExperimentConfig:
     """Load and validate an experiment config, merged over the sibling base.yaml.
 
-    The filename is the dataset's identity: `config/sepsis.yaml` describes `sepsis`, and every
-    path the pipelines read or write is derived from that name (see `src/paths.py`). It is filled
-    into `data.name` here rather than written in the YAML, where it could disagree with the file
-    holding it.
-
     Args:
-        path: The dataset's config YAML.
+        path: The dataset config YAML.
     Returns:
-        The validated config, with `data.name` set from `path`'s stem.
+        The validated config.
     """
     path = Path(path)
     # Load the base config and the override config
@@ -50,6 +45,4 @@ def load_config(path: str | Path) -> ExperimentConfig:
     with path.open('r') as f:
         override = yaml.safe_load(f)
     # Merge the two configs, with the override taking precedence
-    merged = _deep_merge(base, override)
-    merged['data']['name'] = path.stem
-    return ExperimentConfig.model_validate(merged)
+    return ExperimentConfig.model_validate(_deep_merge(base, override))

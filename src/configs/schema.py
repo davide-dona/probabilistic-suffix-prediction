@@ -4,6 +4,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.identity import DatasetIdentity
+
+# What a name that becomes a directory is allowed to be: lowercase, digits and hyphens, so it
+# cannot be empty, escape its parent or nest a level nothing expects.
+_NAME_PATTERN = r'^[a-z0-9][a-z0-9-]*$'
+
 
 class StrictModel(BaseModel):
     """Base model for all config sections: immutable and typo-proof."""
@@ -16,8 +22,16 @@ class DataConfig(StrictModel):
 
     name: str = Field(
         ...,
-        description='Dataset identifier; every path under `data/` and `outputs/` derives from '
-        "it. Filled in from the config's filename by `load_config`, not written in YAML",
+        pattern=_NAME_PATTERN,
+        description='The log this config describes, e.g. `sepsis`. Every variant of a log shares '
+        'its raw events and its figures',
+    )
+    variant: str = Field(
+        ...,
+        pattern=_NAME_PATTERN,
+        description='Which description of the log this is, e.g. `temporal` or `uedlstm`. Two '
+        'variants differ in how cases are split and which columns are read, so each keeps its own '
+        'preprocessed splits, codec and declarative model',
     )
 
     case_key: str = Field(..., description='Raw column identifying the case each event belongs to')
@@ -66,6 +80,11 @@ class DataConfig(StrictModel):
 
     batch_size: int = Field(..., gt=0)
     num_workers: int = Field(..., ge=0)
+
+    @property
+    def identity(self) -> DatasetIdentity:
+        """What this config's preprocessed files are stored under."""
+        return DatasetIdentity(name=self.name, variant=self.variant)
 
     @model_validator(mode='after')
     def _splits_sum_to_one(self) -> DataConfig:
@@ -187,6 +206,13 @@ class ModelConfig(StrictModel):
     Data-derived dimensions (vocabulary sizes, special-token indices, sequence length) are
     absent: they come from `DatasetCodec` at build time.
     """
+
+    name: str = Field(
+        ...,
+        pattern=_NAME_PATTERN,
+        description='What this architecture is called, e.g. `cvae`. Names the runs it produces, '
+        'and is what a figure tells two models apart by',
+    )
 
     d_model: int = Field(
         ..., gt=0, description='Shared width for the embeddings, both encoders and the decoder'
@@ -317,7 +343,6 @@ class ExperimentConfig(StrictModel):
     """
 
     seed: int
-    experiment_name: str
 
     data: DataConfig
     declare: DeclareConfig

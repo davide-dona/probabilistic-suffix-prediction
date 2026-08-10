@@ -2,6 +2,7 @@ from src.inference.generation import Generation, generate_batch, generation_batc
 from src.inference.generation_store import (
     open_generations,
     read_generation_block,
+    read_run_identity,
     table_from_generations,
 )
 
@@ -10,6 +11,7 @@ __all__ = [
     'generate_batch',
     'generation_batch_size',
     'read_generation_block',
+    'read_run_identity',
     'open_generations',
     'table_from_generations',
 ]

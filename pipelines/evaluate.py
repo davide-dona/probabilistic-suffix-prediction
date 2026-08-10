@@ -8,12 +8,12 @@ import pyarrow.parquet as pq
 from Declare4Py.ProcessModels.DeclareModel import DeclareModel
 from tqdm import tqdm
 
-from pipelines.preprocess import require_dataset
 from src import paths
 from src.configs import ExperimentConfig, load_config
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
-from src.inference import read_generation_block
+from src.identity import DatasetIdentity, require_same_dataset
+from src.inference import read_generation_block, read_run_identity
 from src.logs.declare import load_declare_model
 
 
@@ -31,7 +31,7 @@ class _Worker:
 _worker: _Worker
 
 
-def _init_worker(generations_file: Path, dataset: str, consider_vacuity: bool) -> None:
+def _init_worker(generations_file: Path, dataset: DatasetIdentity, consider_vacuity: bool) -> None:
     """Open the file and parse the declarative model once for this process.
 
     macOS spawns its workers, so neither an open file nor a parsed model can be inherited from the
@@ -69,7 +69,7 @@ def _score_block(block: int) -> list[ScoredPrefix]:
 def _score_in_parallel(
     generations_file: Path,
     *,
-    dataset: str,
+    dataset: DatasetIdentity,
     consider_vacuity: bool,
     workers: int | None,
 ) -> Iterator[ScoredPrefix]:
@@ -116,18 +116,28 @@ def run(config: ExperimentConfig, generations_file: Path, workers: int | None) -
 
     Args:
         config: The validated experiment config of the run that wrote the generations, read for
-            the dataset the suffixes belong to and the declarative model they are checked against.
-        generations_file: The generations to score, from `python -m pipelines.generate`.
+            the declarative model the suffixes are checked against.
+        generations_file: The generations to score, from `python -m pipelines.generate`. It says
+            which run wrote it, so the report is named after that run rather than after this
+            config or this filename.
         workers: How many processes to score with, or `None` for one per available CPU.
+    Raises:
+        FileNotFoundError: If the generations are missing.
+        ValueError: If the generations were written for a different dataset than the config
+            describes, whose declarative model conformance would then be checked against.
     """
-
-    dataset = config.data.name
-    require_dataset(dataset)
     if not generations_file.exists():
         raise FileNotFoundError(
             f'no generations at {generations_file}. Run `python -m pipelines.generate` first, '
             'or name the right generations file.'
         )
+
+    with pq.ParquetFile(generations_file) as parquet:
+        run = read_run_identity(parquet)
+    require_same_dataset(run, config.data.identity, artifact=generations_file)
+
+    dataset = run.dataset
+    paths.require_dataset(dataset)
 
     print(f'Scoring the suffixes generated for each prefix of {generations_file}...', flush=True)
 
@@ -142,11 +152,10 @@ def run(config: ExperimentConfig, generations_file: Path, workers: int | None) -
         )
     )
 
-    # The report is named after the run the generations belong to, so it sits beside them under
-    # the same `<dataset>/<run>` name.
-    run_name = f'{dataset}/{generations_file.stem}'
-    report = EvaluationReport(run_name=run_name, metrics=metrics)
-    path = report.write(paths.evaluation_path(run_name))
+    # The report is named after the run the generations carry, so it sits under `outputs/eval/`
+    # exactly where they sit under `outputs/generations/`.
+    report = EvaluationReport(run=run, metrics=metrics)
+    path = report.write(paths.evaluation_path(run))
     print(
         f'Scored {metrics.pairs} prefixes over {metrics.cases} cases. '
         f'Wrote evaluation report to {path}'

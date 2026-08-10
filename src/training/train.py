@@ -11,6 +11,7 @@ from src.configs.schema import (
     TrainingConfig,
 )
 from src.datasets.codec import DatasetCodec
+from src.identity import RunIdentity
 from src.model import TransformerCVAE, save_checkpoint
 from src.training.early_stopping import EarlyStopper
 from src.training.kl import cyclical_linear_weight
@@ -68,7 +69,7 @@ def train(
     generation_loader: DataLoader,
     generation_samples: int,
     codec: DatasetCodec,
-    run_name: str,
+    run: RunIdentity,
     experiment_config: dict,
     generator: torch.Generator,
     resume: dict | None,
@@ -95,11 +96,10 @@ def train(
             same number of draws.
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
-        run_name: The name every file this run writes is derived from (see `src/paths.py`). One
-            TensorBoard directory is one run, so a name reused across runs overlays their
-            curves instead of listing them side by side; what makes it unique is the
-            caller's business. A `/` in it nests the run, which is how TensorBoard groups
-            runs under a common prefix.
+        run: What every file this run writes is named after (see `src/paths.py`). One
+            TensorBoard directory is one run, so an identity reused across runs overlays their
+            curves instead of listing them side by side; what makes its tag unique is the
+            caller's business.
         experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into
             every checkpoint so the run can be rebuilt and carried on from the file alone.
         generator: The generator the training loader shuffles with, whose state is saved and
@@ -134,12 +134,12 @@ def train(
         # subsets are still drawn from the seeded stream exactly as an unresumed run draws them.
         restore_rng_state(resume['rng_state'], generator=generator, device=device)
         step = resume['step']
-        print(f'Resuming {run_name} from step {step}, best score {resume["selection_score"]:.4f}')
+        print(f'Resuming {run} from step {step}, best score {resume["selection_score"]:.4f}')
 
     # Overwrite the TensorBoard logs after the step we resumed from, so that a resumed run's
     # curves are continuous with the original.
     writer = SummaryWriter(
-        log_dir=paths.tensorboard_dir(run_name), purge_step=step if resume is not None else None
+        log_dir=paths.tensorboard_dir(run), purge_step=step if resume is not None else None
     )
     print(f'Logging to {writer.log_dir}')
 
@@ -229,18 +229,16 @@ def train(
                         experiment_config=experiment_config,
                         step=step,
                         selection_score=selection_score,
-                        run_name=run_name,
+                        run=run,
                         optimizer_state=optimizer.state_dict(),
                         early_stopping_state=early_stopper.state_dict(),
                         rng_state=rng_state(generator, device),
                     )
-                    save_checkpoint(model, **checkpoint, path=paths.checkpoint_path(run_name))
+                    save_checkpoint(model, **checkpoint, path=paths.checkpoint_path(run))
                     # If this validation improved on the best, save a second copy to the
                     # best-model directory.
                     if is_best:
-                        path = save_checkpoint(
-                            model, **checkpoint, path=paths.best_model_path(run_name)
-                        )
+                        path = save_checkpoint(model, **checkpoint, path=paths.best_model_path(run))
                         print(
                             f'New best model (step {step}, score {selection_score:.4f}) '
                             f'saved at {path}'

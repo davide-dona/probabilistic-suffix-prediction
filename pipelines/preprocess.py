@@ -105,29 +105,6 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def require_dataset(dataset: str) -> None:
-    """Check that everything preprocessing produces is on disk, and say what is missing if it
-    is not.
-
-    Args:
-        dataset: The dataset to check.
-    Raises:
-        FileNotFoundError: If any preprocessing output is missing, naming every one of them.
-    """
-    outputs = [paths.split_path(dataset=dataset, split=split) for split in Split]
-    outputs.append(paths.codec_path(dataset))
-    outputs.append(paths.declare_model_path(dataset))
-
-    missing = [output for output in outputs if not output.exists()]
-    if missing:
-        raise FileNotFoundError(
-            f'"{dataset}" has not been preprocessed: '
-            f'{", ".join(str(output) for output in missing)} '
-            f'{"are" if len(missing) > 1 else "is"} missing. Run '
-            f'"uv run python -m pipelines.preprocess -c <config>" first.'
-        )
-
-
 def _split(
     log: pd.DataFrame, *, data_config: DataConfig
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -166,7 +143,7 @@ def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
 
     The vocabularies and normalization statistics the model is built against are fit here too,
     on the train split alone, and written beside it as `dataset.json`. The declarative model is
-    discovered from the same split and written to `data/<dataset>/declare/model.decl`.
+    discovered from the same split and written to `data/<dataset>/<variant>/declare/model.decl`.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
@@ -178,7 +155,7 @@ def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
         data_config.resource_key: RESOURCE_KEY,
         data_config.timestamp_key: TIMESTAMP_KEY,
     }
-    dataset = data_config.name
+    dataset = data_config.identity
 
     # Read the raw log and derive the columns the model reads.
     print(f'Preprocessing "{dataset}"...')

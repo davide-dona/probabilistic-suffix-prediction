@@ -1,7 +1,10 @@
+from dataclasses import asdict
 from pathlib import Path
 
 import torch
 from torch import nn
+
+from src.identity import RunIdentity
 
 
 def save_checkpoint(
@@ -10,7 +13,7 @@ def save_checkpoint(
     experiment_config: dict,
     step: int,
     selection_score: float,
-    run_name: str,
+    run: RunIdentity,
     optimizer_state: dict,
     early_stopping_state: dict,
     rng_state: dict,
@@ -31,8 +34,9 @@ def save_checkpoint(
         step: The optimizer step the weights are from. The filename does not say, so the file
             has to.
         selection_score: That step's generation score, the number the best is chosen on.
-        run_name: The run these weights belong to, so a resumed run keeps writing to the same
-            TensorBoard directory and the same files.
+        run: Which run these weights belong to, so a resumed run keeps writing to the same
+            TensorBoard directory and the same files, and so the generations they produce are
+            named after the run rather than after the file the weights were read from.
         optimizer_state: The optimizer's `state_dict`.
         early_stopping_state: The `EarlyStopper`'s `state_dict`, which carries the best score
             seen as well as the patience count.
@@ -54,7 +58,7 @@ def save_checkpoint(
             'step': step,
             'selection_score': selection_score,
             'experiment_config': experiment_config,
-            'run_name': run_name,
+            'run': asdict(run),
             'optimizer_state': optimizer_state,
             'early_stopping_state': early_stopping_state,
             'rng_state': rng_state,

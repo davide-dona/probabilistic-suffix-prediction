@@ -33,14 +33,16 @@ python -m pipelines.train -c config/sepsis.yaml
 
 Training and generation read those outputs and stop with an error naming what is missing if the dataset has not been preprocessed.
 
-A run writes two things, both named by the same `<dataset>/<experiment_name>-<timestamp>` run name, so a run's curves and its result are found under one name:
+A run is identified by four fields the config declares rather than by any filename: the dataset's `name` and `variant`, the model's `name`, and a timestamp. Every artifact carries them inside it and is written under `<name>/<model>/<variant>/<timestamp>`, so a run's curves and its result are found under one path, and one log's directory says which models were run on it before any filename is read:
 
-- `outputs/tensorboard/<dataset>/<experiment_name>-<timestamp>/`: the loss and its terms under `train/` and `val/`, plus `kl_weight`. 
-Point TensorBoard at the root and every run shows up as its own toggleable set of curves, grouped by dataset:
+- `outputs/tensorboard/<name>/<model>/<variant>/<timestamp>/`: the loss and its terms under `train/` and `val/`, plus `kl_weight`.
+Point TensorBoard at the root and every run shows up as its own toggleable set of curves, grouped by dataset and model:
   ```bash
   tensorboard --logdir outputs/tensorboard
   ```
-- `outputs/best-models/<dataset>/<experiment_name>-<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it.
+- `outputs/best-models/<name>/<model>/<variant>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it.
+
+A variant is one description of a log: `config/sepsis.yaml` cuts it temporally, `config/sepsis-shuffled-split.yaml` reproduces U-ED-LSTM's seeded shuffle and feature set. Both read the same `data/sepsis/original.csv` and share one figure directory, but they do not share test cases, so a figure names the variant beside the model.
 
 ### Inference
 

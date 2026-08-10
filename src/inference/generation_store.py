@@ -1,10 +1,17 @@
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from src.identity import RunIdentity
 from src.inference.generation import DecodedEvents, Generation
+
+# The schema metadata key the writing run's identity is stored under, so a generations file says
+# what produced it rather than leaving that to be read off the path it happens to sit at.
+_RUN_KEY = b'run'
 
 # One run of activity names, the shape every activity column of the schema is built from.
 _ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
@@ -30,16 +37,39 @@ _SCHEMA = pa.schema(
 )
 
 
-def open_generations(path: Path) -> pq.ParquetWriter:
+def open_generations(path: Path, run: RunIdentity) -> pq.ParquetWriter:
     """Open a Parquet file for writing generations, creating its parent directories if needed.
+
     Args:
         path: The file to write, from `paths.generations_path`. Overwritten if it already exists.
+        run: The run these generations come from, stamped into the file so evaluation can read it
+            back instead of guessing at it.
     Returns:
         A writer bound to the generations schema, to be used as a context manager: closing it is
         what writes the file's footer.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    return pq.ParquetWriter(where=path, schema=_SCHEMA)
+    schema = _SCHEMA.with_metadata({_RUN_KEY: json.dumps(asdict(run)).encode()})
+    return pq.ParquetWriter(where=path, schema=schema)
+
+
+def read_run_identity(parquet: pq.ParquetFile) -> RunIdentity:
+    """Read back which run wrote a generations file.
+
+    Args:
+        parquet: The generations file, already open.
+    Returns:
+        The identity `open_generations` stamped into it.
+    Raises:
+        ValueError: If the file carries none, and so predates the identity it should name itself by.
+    """
+    metadata = parquet.schema_arrow.metadata or {}
+    if _RUN_KEY not in metadata:
+        raise ValueError(
+            'this generations file does not say which run wrote it. Generate it again with '
+            '`python -m pipelines.generate`.'
+        )
+    return RunIdentity.from_json(metadata[_RUN_KEY])
 
 
 def table_from_generations(generations: list[Generation]) -> pa.Table:
