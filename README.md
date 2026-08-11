@@ -30,7 +30,7 @@ Run once per dataset, before anything else:
 python -m pipelines.preprocess -c config/<dataset>.yaml
 ```
 
-This writes the out-of-time train/val/test splits to `data/<dataset>/processed/{train,val,test}.csv`, the vocabularies and normalization statistics used to encode and decode traces to `data/<dataset>/codec/dataset.json`, and the declarative model discovered from the train split to `data/<dataset>/declare/model.decl`.
+The out-of-time splits as well as the fitted codec and the declarative model are written to `data/<dataset>/`.
 
 > [!WARNING]
 > Training and generation read these outputs and will stop with an error naming what's missing if the dataset hasn't been preprocessed yet.
@@ -52,7 +52,15 @@ Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkp
 > python -m scripts.fetch
 > ```
 
-Training writes to three places. `outputs/tensorboard/<name>/<model>/<timestamp>/` holds the loss and its terms under `train/` and `val/`, plus `kl_weight`; point TensorBoard at the root (`tensorboard --logdir outputs/tensorboard`) to see every run as its own toggleable set of curves, grouped by dataset and model. `best-models/<name>/<model>/<timestamp>.pt` is a single file holding the run's last improvement, overwritten each time validation loss improves. `outputs/checkpoints/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
+The training logs are written to `outputs/tensorboard/<name>/<model>/<timestamp>/`. To see the training curves, point TensorBoard at the root:
+
+```bash
+tensorboard --logdir outputs/tensorboard
+```
+
+Model checkpoints are written to two places:
+ - `best-models/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time validation loss improves
+ - `outputs/checkpoints/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
 
 ### 3. Inference
 
@@ -62,7 +70,9 @@ After training, generate suffixes for the test set:
 python -m pipelines.generate -c config/<dataset>.yaml -m <path-to-model>
 ```
 
-`-m`/`--model` points to the checkpoint to generate with, from `best-models/` or `outputs/checkpoints/`. The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
+`-m`/`--model` points to the model to generate with, from either `best-models/` or `outputs/checkpoints/`. 
+
+The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
 
 ### 4. Evaluation
 
@@ -72,31 +82,32 @@ Reads the generated suffixes and writes an evaluation report:
 python -m pipelines.evaluate -c config/<dataset>.yaml -g <path-to-generations> -j <number-of-jobs>
 ```
 
-`-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`.
+- `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. 
+- `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. 
+
+The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`.
 
 ---
 
 ## Notebooks
 
-Two notebooks under `notebooks/` read what the pipelines wrote — they write nothing themselves. Each is driven by a constant set in its second cell.
-
-`data_exploration.ipynb` walks a log and its splits, from the raw overview down to the distribution of every event attribute. Set its `DATASET` constant to any preprocessed dataset.
-
-`generations.ipynb` walks one run's suffixes trace by trace, adding length, activity, diversity, and remaining-time diagnostics not covered by the report. Set its `RUN` constant to the run whose generations you want to open.
-
 ---
 
 ## Visualization
 
-Once a dataset has been evaluated, turn one or more evaluation reports into the paper's figures and comparison tables:
+Once a dataset has been evaluated, the results of one or more runs can be visualized and compared with:
 
 ```bash
 python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
 ```
 
-`-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. `-l`/`--labels` renames each report's series in legends and tables — two reports sharing a label are read as one model shown on two datasets. `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`), and `--coverage` bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes — `1.0` draws every length.
+- `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. 
+- `-l`/`--labels` renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. 
+- `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. 
+- `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`).
+- `--coverage` bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes — `1.0` draws every length.
 
-The paper's figures and comparison tables are written to `outputs/plots/`.
+The figures and comparison tables are written to `outputs/plots/`.
 
 ---
 
