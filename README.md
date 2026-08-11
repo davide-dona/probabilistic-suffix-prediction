@@ -8,7 +8,15 @@ This repository provides a comprehensive implementation of the C-VAE architectur
 
 ## Install
 
-**Requirements:** Python 3.13+ and [uv](https://docs.astral.sh/uv/)
+**Requirements:** Python 3.13+, [uv](https://docs.astral.sh/uv/) and [Git LFS](https://git-lfs.com)
+
+The datasets under `data/` (`original.csv` for each) are tracked with Git LFS, so a plain clone
+only checks out pointer files. Install Git LFS once per machine and pull them before preprocessing:
+
+```bash
+git lfs install
+git lfs pull
+```
 
 ```bash
 uv venv
