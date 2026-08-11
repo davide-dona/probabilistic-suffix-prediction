@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.logs.keys import CSV_SEPARATOR, TIMESTAMP_KEY
+from src import paths
+from src.configs import DataConfig
+from src.logs.keys import (
+    ACTIVITY_KEY,
+    CASE_KEY,
+    CSV_SEPARATOR,
+    RESOURCE_KEY,
+    TIMESTAMP_KEY,
+)
 
 
 def read_log(
@@ -38,6 +46,28 @@ def read_log(
     log[timestamp_key] = pd.to_datetime(log[timestamp_key], format='mixed')
 
     return log
+
+
+def read_original_log(data_config: DataConfig) -> pd.DataFrame:
+    """Read a dataset's raw log, renaming its structural columns to the canonical ones.
+
+    Args:
+        data_config: The `data` section naming the dataset and the raw columns holding the case,
+            the activity, the resource and the timestamp.
+
+    Returns:
+        The raw log as a DataFrame, one row per event, with no derived column added yet.
+    """
+    return read_log(
+        paths.original_log(data_config.name),
+        column_mapping={
+            data_config.case_key: CASE_KEY,
+            data_config.activity_key: ACTIVITY_KEY,
+            data_config.resource_key: RESOURCE_KEY,
+            data_config.timestamp_key: TIMESTAMP_KEY,
+        },
+        dtype=dict.fromkeys(data_config.string_features, str),
+    )
 
 
 def write_log(

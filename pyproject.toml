@@ -46,7 +46,7 @@ ignore = [
 known-first-party = ["src", "pipelines", "scripts"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/notebooks/*.ipynb" = ["E402"]  # notebook cells legitimately set up sys.path before importing
+"notebooks/*.ipynb" = ["E402"]  # notebook cells legitimately set up sys.path before importing
 
 [tool.ruff.format]
 quote-style = "single"
