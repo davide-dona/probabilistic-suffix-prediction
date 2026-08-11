@@ -10,9 +10,8 @@ from src.configs import DataConfig, DeclareConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.logs.declare import discover_declare_model
 from src.logs.filters import sort_log
-from src.logs.io import read_log, write_log
+from src.logs.io import read_original_log, write_log
 from src.logs.keys import (
-    ACTIVITY_KEY,
     CASE_ELAPSED_KEY,
     CASE_KEY,
     DAY_IN_WEEK_KEY,
@@ -20,7 +19,6 @@ from src.logs.keys import (
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
-    RESOURCE_KEY,
     SECONDS_IN_DAY_KEY,
     TIMESTAMP_KEY,
 )
@@ -123,21 +121,11 @@ def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
         data_config: The `data` section of this dataset's experiment config.
         declare_config: The `declare` section, driving the discovery of the declarative model.
     """
-    column_mapping = {
-        data_config.case_key: CASE_KEY,
-        data_config.activity_key: ACTIVITY_KEY,
-        data_config.resource_key: RESOURCE_KEY,
-        data_config.timestamp_key: TIMESTAMP_KEY,
-    }
     dataset = data_config.name
 
     # Read the raw log.
     print(f'Preprocessing "{dataset}"...')
-    log = read_log(
-        paths.original_log(dataset),
-        column_mapping=column_mapping,
-        dtype=dict.fromkeys(data_config.string_features, str),
-    )
+    log = read_original_log(data_config)
 
     # Derive the columns the model reads, all of which are read off neighbouring rows or off the
     # size of a case, so the log has to be in order first.
