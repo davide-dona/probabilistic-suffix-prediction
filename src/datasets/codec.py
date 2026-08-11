@@ -338,7 +338,7 @@ class DatasetCodec(StrictModel):
         return cls.model_validate(json.loads(path.read_text()) | {'dataset': name})
 
     def save(self) -> Path:
-        """Write this codec beside the splits, and return where it went."""
+        """Write this codec to its own directory, and return where it went."""
         path = paths.codec_path(self.dataset)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self.model_dump_json(indent=2))

@@ -1,55 +1,126 @@
 # C-VAE for Suffix Generation
-In this repository, we present a Conditional Variational Autoencoder (C-VAE) model designed for generating suffixes based on given prefixes.
-We provide a comprehensive implementation of the C-VAE architecture, along with training scripts, evaluation metrics, configuration files, and pre-trained models to facilitate research and experimentation in the field of predictive process monitoring.
 
+A Conditional Variational Autoencoder (C-VAE) for generating suffixes based on given prefixes.
+
+This repository provides a comprehensive implementation of the C-VAE architecture, along with training scripts, evaluation metrics, configuration files, and pre-trained models — built to support research and experimentation in **predictive process monitoring**.
+
+---
 
 ## Install
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
+
+**Requirements:** Python 3.13+ and [uv](https://docs.astral.sh/uv/)
 
 ```bash
 uv venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-uv sync                    # installs the locked dependencies into .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+uv sync                     # installs the locked dependencies into .venv
 ```
+
+---
 
 ## Reproducibility
-The repository is designed to ensure reproducibility of results. To reproduce the experiments, follow these steps:
 
+The repository is designed to make experiment results fully reproducible. The four pipelines below run in sequence, each reading what the previous one wrote. Every command takes `-c`/`--config`, the path to the dataset's experiment config YAML in `config/`.
 
-## Run
-A dataset is a raw log at `data/<name>/original.csv` plus a config declaring how to build it. Every pipeline below takes that config with `-c` and reads everything else from it.
+### 1. Preprocessing
 
-### Preprocessing
-Run once per dataset, before anything else. It writes the splits and dataset codec under `data/<name>/processed/` and the discovered declarative model to `data/<name>/declare/model.decl`:
+Run once per dataset, before anything else:
 
 ```bash
-python -m pipelines.preprocess -c config/sepsis.yaml
+python -m pipelines.preprocess -c config/<dataset>.yaml
 ```
 
-### Training
+The out-of-time splits as well as the fitted codec and the declarative model are written to `data/<dataset>/`.
+
+> [!WARNING]
+> Training and generation read these outputs and will stop with an error naming what's missing if the dataset hasn't been preprocessed yet.
+
+### 2. Training
+
+Once the dataset is preprocessed, start a new run or resume one already started:
+
 ```bash
-python -m pipelines.train -c config/sepsis.yaml
+python -m pipelines.train -c config/<dataset>.yaml
+python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting fresh
 ```
 
-Training and generation read those outputs and stop with an error naming what is missing if the dataset has not been preprocessed.
+Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. A resumed run keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
 
-A run is identified by three fields the config declares rather than by any filename: the dataset's `name`, the model's `name`, and a timestamp. Every artifact carries them inside it and is written under `<name>/<model>/<timestamp>`, so a run's curves and its result are found under one path, and one log's directory says which models were run on it before any filename is read:
+> [!NOTE]
+> **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published checkpoint into `best-models/` with:
+> ```bash
+> python -m scripts.fetch
+> ```
 
-- `outputs/tensorboard/<name>/<model>/<timestamp>/`: the loss and its terms under `train/` and `val/`, plus `kl_weight`.
-Point TensorBoard at the root and every run shows up as its own toggleable set of curves, grouped by dataset and model:
-  ```bash
-  tensorboard --logdir outputs/tensorboard
-  ```
-- `best-models/<name>/<model>/<timestamp>.pt`: the run's result. One file, overwritten every time the validation loss improves, so the last improvement of the run is what is left in it. Kept outside `outputs/` since these are the checkpoints shared through the Hugging Face repo, not disposable run output.
+The training logs are written to `outputs/tensorboard/<name>/<model>/<timestamp>/`. To see the training curves, point TensorBoard at the root:
 
-### Inference
-
-### Evaluation
-
-### Configs
-
-### Sharing best models
-Best checkpoints are shared through a Hugging Face model repo rather than committed to git. Fetch every published checkpoint into `best-models/`:
 ```bash
-python -m scripts.fetch
+tensorboard --logdir outputs/tensorboard
 ```
+
+Model checkpoints are written to two places:
+ - `best-models/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time validation loss improves
+ - `outputs/checkpoints/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
+
+### 3. Inference
+
+After training, generate suffixes for the test set:
+
+```bash
+python -m pipelines.generate -c config/<dataset>.yaml -m <path-to-model>
+```
+
+`-m`/`--model` points to the model to generate with, from either `best-models/` or `outputs/checkpoints/`. 
+
+The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
+
+### 4. Evaluation
+
+Reads the generated suffixes and writes an evaluation report:
+
+```bash
+python -m pipelines.evaluate -c config/<dataset>.yaml -g <path-to-generations> -j <number-of-jobs>
+```
+
+- `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. 
+- `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. 
+
+The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`.
+
+---
+
+## Notebooks
+
+---
+
+## Visualization
+
+Once a dataset has been evaluated, the results of one or more runs can be visualized and compared with:
+
+```bash
+python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
+```
+
+- `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. 
+- `-l`/`--labels` renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. 
+- `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. 
+- `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`).
+- `--coverage` bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes — `1.0` draws every length.
+
+The figures and comparison tables are written to `outputs/plots/`.
+
+---
+
+## Configs
+
+A dataset config declares everything a run needs: where to find the raw log and how to read it, the model architecture, and every training and inference hyperparameter. All configs are validated against `src/configs/schema.py`.
+
+### Config inheritance
+
+Every dataset config in `config/` (`sepsis.yaml`, `bpic17.yaml`, `bpic19.yaml`, ...) is deep-merged over the sibling `config/base.yaml`, which holds the model architecture and the shared training, optimizer, loss, and inference settings. A dataset config only needs to state its `data` section, `seed`, and the `declare` block if it deviates from the defaults, and nested dicts are merged key by key, so a config can override a single field of a nested section without repeating the rest.
+
+### The `data` section
+
+Names the raw log to build the run from — a CSV at `data/<name>/original.csv`. Its keys point to that CSV's columns: `case_key` for the case identifier, `activity_key` for the activity, `resource_key` for the resource, `timestamp_key` for the timestamp, and `event_features` for any other columns used as the model's categorical or numeric per-event inputs.
+
+Preprocessing reads this file, and everything downstream builds on what it writes.
