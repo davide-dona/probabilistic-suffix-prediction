@@ -35,6 +35,8 @@ The out-of-time splits as well as the fitted codec and the declarative model are
 > [!WARNING]
 > Training and generation read these outputs and will stop with an error naming what's missing if the dataset hasn't been preprocessed yet.
 
+Declarative model discovery is the slowest step and only evaluation reads its output, so it can be skipped with `--skip-discovery` when preprocessing for training or generation alone.
+
 ### 2. Training
 
 Once the dataset is preprocessed, start a new run or resume one already started:

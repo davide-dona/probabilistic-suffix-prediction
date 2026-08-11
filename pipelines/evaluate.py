@@ -138,6 +138,7 @@ def run(config: ExperimentConfig, generations_file: Path, workers: int | None) -
 
     dataset = run.dataset
     paths.require_dataset(dataset)
+    paths.require_declare_model(dataset)
 
     print(f'Scoring the suffixes generated for each prefix of {generations_file}...', flush=True)
 
