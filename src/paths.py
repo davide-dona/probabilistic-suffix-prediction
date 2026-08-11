@@ -59,8 +59,8 @@ def declare_model_path(dataset: str) -> Path:
 
 
 def require_dataset(dataset: str) -> None:
-    """Check that everything preprocessing produces is on disk, and say what is missing if it
-    is not.
+    """Check that everything training and generation read from preprocessing is on disk, and say
+    what is missing if it is not.
 
     Args:
         dataset: The dataset to check.
@@ -69,7 +69,6 @@ def require_dataset(dataset: str) -> None:
     """
     outputs = [split_path(dataset=dataset, split=split) for split in Split]
     outputs.append(codec_path(dataset))
-    outputs.append(declare_model_path(dataset))
 
     missing = [output for output in outputs if not output.exists()]
     if missing:
@@ -78,6 +77,23 @@ def require_dataset(dataset: str) -> None:
             f'{", ".join(str(output) for output in missing)} '
             f'{"are" if len(missing) > 1 else "is"} missing. Run '
             f'"uv run python -m pipelines.preprocess -c <config>" first.'
+        )
+
+
+def require_declare_model(dataset: str) -> None:
+    """Check that a dataset's declarative model is on disk, since discovery is optional at
+    preprocessing time and evaluation is the only reader.
+
+    Args:
+        dataset: The dataset to check.
+    Raises:
+        FileNotFoundError: If the declarative model is missing.
+    """
+    path = declare_model_path(dataset)
+    if not path.exists():
+        raise FileNotFoundError(
+            f'"{dataset}" has no declarative model at {path}. Run '
+            f'"uv run python -m pipelines.preprocess -c <config>" without --skip-discovery first.'
         )
 
 
