@@ -30,25 +30,44 @@ To reproduce the experiments, follow the steps below using the configuration fil
 Run **once per dataset**, before anything else.
 
 ```bash
-python -m pipelines.preprocess -c <path-to-config>
+python -m pipelines.preprocess -c config/<dataset>.yaml
 ```
 
-**Writes:**
-- Splits + dataset codec → `data/<name>/processed/`
-- Discovered declarative model → `data/<name>/declare/model.decl`
+**Parameters**
 
-> [!WARNING] 
+| Flag | Meaning |
+|---|---|
+| `-c`, `--config` | Path to this dataset's experiment config YAML. |
+
+**Outputs**
+
+| Path | Contents |
+|---|---|
+| `data/<dataset>/processed/{train,val,test}.csv` | The out-of-time train/val/test splits. |
+| `data/<dataset>/codec/dataset.json` | The vocabularies and normalization statistics fit on the train split, used to encode and decode every downstream run. |
+| `data/<dataset>/declare/model.decl` | The declarative model discovered from the train split. |
+
+> [!WARNING]
 > Training and generation read these outputs and will stop with an error naming what's missing if the dataset hasn't been preprocessed yet.
 
 ---
 
 ### 2. Training
 
-Once the dataset is preprocessed:
+Once the dataset is preprocessed, start a new run or resume one already started:
 
 ```bash
-python -m pipelines.train -c <path-to-config>
+python -m pipelines.train -c config/<dataset>.yaml
 ```
+
+**Parameters**
+
+| Flag | Meaning |
+|---|---|
+| `-c`, `--config` | Path to this experiment's config YAML, to start a new run. |
+| `-r`, `--resume` | Path to a checkpoint to carry on from, its config included. The run keeps its name, so it writes to the same TensorBoard directory and the same files. |
+
+Exactly one of `-c` / `-r` is required.
 
 > [!NOTE]
 > **Skip training:** Pre-trained models are available on the Hugging Face model hub. Fetch every published checkpoint into `best-models/` with:
@@ -56,13 +75,13 @@ python -m pipelines.train -c <path-to-config>
 > python -m scripts.fetch
 > ```
 
-#### Outputs
+**Outputs**
 
 | Path | Contents |
 |---|---|
 | `outputs/tensorboard/<name>/<model>/<timestamp>/` | Loss and its terms under `train/` and `val/`, plus `kl_weight`. Point TensorBoard at the root to see every run as its own toggleable set of curves, grouped by dataset and model: `tensorboard --logdir outputs/tensorboard` |
 | `best-models/<name>/<model>/<timestamp>.pt` | The run's result — a single file, overwritten each time validation loss improves. Contains the run's last improvement. |
-| `checkpoints/<name>/<model>/<timestamp>.pt` | Checkpoints written (and overwritten) at every validation step, enabling the run to resume from the last checkpoint. |
+| `outputs/checkpoints/<name>/<model>/<timestamp>.pt` | Checkpoints written (and overwritten) at every validation step, enabling the run to resume from the last checkpoint. |
 
 ---
 
@@ -71,8 +90,21 @@ python -m pipelines.train -c <path-to-config>
 After training, generate suffixes for the test set:
 
 ```bash
-python -m pipelines.generate -c <path-to-config> -m <path-to-model>
+python -m pipelines.generate -c config/<dataset>.yaml -m <path-to-model>
 ```
+
+**Parameters**
+
+| Flag | Meaning |
+|---|---|
+| `-c`, `--config` | Path to this experiment's config YAML. |
+| `-m`, `--model` | Path to the checkpoint to generate with, from `best-models/` or `outputs/checkpoints/`. |
+
+**Outputs**
+
+| Path | Contents |
+|---|---|
+| `outputs/generations/<name>/<model>/<timestamp>.parquet` | The generated suffixes for every prefix of the test split, named after the run the checkpoint carries. |
 
 ---
 
@@ -81,10 +113,22 @@ python -m pipelines.generate -c <path-to-config> -m <path-to-model>
 Reads the generated suffixes and writes an evaluation report:
 
 ```bash
-python -m pipelines.evaluate -c <path-to-config> -g <path-to-generations> -j <number-of-jobs>
+python -m pipelines.evaluate -c config/<dataset>.yaml -g <path-to-generations> -j <number-of-jobs>
 ```
 
-**Output:** `outputs/evaluation/<name>/<model>/<timestamp>/report.json`
+**Parameters**
+
+| Flag | Meaning |
+|---|---|
+| `-c`, `--config` | Path to the experiment config the generations were written under. |
+| `-g`, `--generations` | Path to the generations file to score, from `pipelines.generate`. |
+| `-j`, `--workers` | How many processes to score with. Defaults to one per available CPU. |
+
+**Outputs**
+
+| Path | Contents |
+|---|---|
+| `outputs/eval/<name>/<model>/<timestamp>.json` | The evaluation report scoring that run's generations. |
 
 ---
 
@@ -109,14 +153,21 @@ python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
 
 Passing several reports overlays them on the same axes — this is also how models or datasets are compared.
 
-| Flag | Effect |
+**Parameters**
+
+| Flag | Meaning |
 |---|---|
-| `-l` | Renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. |
+| `-e`, `--evaluations` | Paths to the evaluation reports to compare, from `pipelines.evaluate`. |
+| `-l`, `--labels` | Renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. |
 | `--dataset-labels bpic17=BPIC17` | Renames a dataset in the **tables only** (figures are already split one per dataset directory). |
-| `-f` | Picks image format(s) to write: `pdf`, `svg`, `png` (default: `pdf`). |
+| `-f`, `--formats` | Picks image format(s) to write: `pdf`, `svg`, `png` (default: `pdf`). |
 | `--coverage` | Bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes. `1.0` draws every length. |
 
-**Output:** `outputs/plots/`
+**Outputs**
+
+| Path | Contents |
+|---|---|
+| `outputs/plots/` | The paper's figures and comparison tables. |
 
 ---
 

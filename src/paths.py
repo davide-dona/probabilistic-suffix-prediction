@@ -49,8 +49,8 @@ def split_path(dataset: str, split: Split) -> Path:
 
 
 def codec_path(dataset: str) -> Path:
-    """A dataset's fitted codec, next to the splits it was fit on."""
-    return DATA_DIR / dataset / 'processed' / 'dataset.json'
+    """A dataset's fitted codec, separate from the splits it was fit on."""
+    return DATA_DIR / dataset / 'codec' / 'dataset.json'
 
 
 def declare_model_path(dataset: str) -> Path:

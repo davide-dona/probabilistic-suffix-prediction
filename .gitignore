@@ -18,10 +18,11 @@ ideas/
 # Virtual environments
 .venv
 
+
 # Preprocessed datasets
-processed/
-# Declarative models discovered from them
-declare/
+data/
+!original.csv
+
 
 # Temporary scripts
 tmp/
