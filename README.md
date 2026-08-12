@@ -130,7 +130,7 @@ A dataset config declares everything a run needs: where to find the raw log and 
 Two sections, `data` and `declare`, are hardware-independent: they're assembled from two layers, deep-merged in order, each taking precedence over the last:
 
 1. `config/base.yaml` — hardware- and dataset-agnostic defaults, including all of `declare`.
-2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, selected by name (e.g. `-c sepsis` loads `sepsis.yaml`). Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s extra regularization.
+2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, selected by name (e.g. `-c sepsis` loads `sepsis.yaml`). Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.
 
 This is what `pipelines.preprocess` and `pipelines.evaluate` load, since neither reads anything beyond `data`/`declare`, and so neither needs `-w`/`--hardware`.
 

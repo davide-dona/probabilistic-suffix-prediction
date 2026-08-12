@@ -1,5 +1,7 @@
-# Unregularized counterpart to sepsis.yaml (model `cvae`, vs. its `cvae-reg`), kept around so the
-# two can still be trained and compared side by side.
+# The other answer to sepsis overfitting: base.yaml's bpic-sized model (`cvae-reg`, 1.41M
+# parameters), held back by regularization rather than rebuilt smaller the way `sepsis.yaml`'s
+# `cvae-small` is. Same data section as `sepsis.yaml`, so the two are trained and compared on
+# identical splits.
 data:
   name: sepsis
 
@@ -53,3 +55,21 @@ data:
 
   log_scaled_features: []
   log_scaled_durations: false
+
+# Sepsis is by far the smallest of the three logs, and at base.yaml's sizes the model overfits
+# within the first ~5% of max_steps: gen/energy_score bottoms out around step 1600-2000 then
+# degrades steadily, with gen/sample_diversity collapsing from ~0.51 to ~0.31 over the next 2500
+# steps. Extra regularization here, on top of base.yaml's, is meant to push that ceiling back out.
+optimizer:
+  weight_decay: 0.01
+
+model:
+  name: cvae-reg  # names this architecture's runs apart from `sepsis.yaml`'s `cvae-small`
+  prefix_encoder:
+    dropout: 0.2
+  suffix_encoder:
+    dropout: 0.2
+  prior:
+    dropout: 0.2
+  decoder:
+    dropout: 0.2
