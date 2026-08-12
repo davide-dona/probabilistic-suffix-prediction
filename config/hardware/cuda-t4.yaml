@@ -1,0 +1,21 @@
+# Azure T4 VM: 8 vCPUs, 16GB GPU memory. 
+# Each parameter is scaled from mps.yaml's values by the same factor of 8x.
+# the lr is scaled by sqrt(8) because it is a per-step parameter, not a per-epoch parameter.
+training:
+  device: cuda
+  max_steps: 3750
+  val_every_n_steps: 100
+
+loss:
+  kl_annealing_period_steps: 1250
+
+optimizer:
+  lr: 0.00085
+
+dataloader:
+  batch_size: 2048
+  # 8 vCPUs, Linux forks cheaply unlike macOS spawn
+  num_workers: 6
+
+inference:
+  generation_rows_upper_bound: 5120

@@ -50,11 +50,11 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
     test_loader = DataLoader(
         dataset=test_dataset,
         batch_size=generation_batch_size(
-            inference=config.inference, upper_bound=config.data.batch_size
+            inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
         ),
         # sort the prefixes by length so the batches are more uniform and generation is faster
         sampler=test_dataset.length_sorted_indices(),
-        num_workers=config.data.num_workers,
+        num_workers=config.dataloader.num_workers,
     )
 
     # The output file is named after the run the checkpoint carries, not after the file it was
@@ -91,6 +91,12 @@ def main() -> None:
         '-c', '--config', type=Path, required=True, help="Path to this experiment's config YAML."
     )
     parser.add_argument(
+        '-w',
+        '--hardware',
+        required=True,
+        help='Hardware profile to run under, from config/hardware/.',
+    )
+    parser.add_argument(
         '-m',
         '--model',
         type=Path,
@@ -100,7 +106,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run(load_config(args.config), args.model)
+    run(load_config(args.config, args.hardware), args.model)
 
 
 if __name__ == '__main__':

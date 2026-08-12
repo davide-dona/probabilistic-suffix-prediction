@@ -4,9 +4,13 @@ from pathlib import Path
 from src.identity import RunIdentity
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG_DIR = ROOT / 'config'
 DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
 BEST_MODELS_DIR = ROOT / 'best-models'
+
+# The layer every config is merged over, dataset- and hardware-agnostic.
+BASE_CONFIG = CONFIG_DIR / 'base.yaml'
 
 
 class Split(StrEnum):
@@ -19,6 +23,17 @@ class Split(StrEnum):
     TRAIN = 'train'
     VAL = 'val'
     TEST = 'test'
+
+
+def hardware_config_path(hardware: str) -> Path:
+    """One hardware profile, the layer a config is merged over between base and the dataset.
+
+    Args:
+        hardware: The profile's name, as passed to `-w`/`--hardware`, e.g. `mps`.
+    Returns:
+        The path to that profile's file.
+    """
+    return CONFIG_DIR / 'hardware' / f'{hardware}.yaml'
 
 
 def _run_dir(run: RunIdentity) -> Path:

@@ -67,10 +67,10 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     train_dataset = TraceDataset(codec=codec, split=Split.TRAIN)
     train_loader = DataLoader(
         dataset=train_dataset,
-        batch_size=config.data.batch_size,
+        batch_size=config.dataloader.batch_size,
         shuffle=True,
         generator=generator,
-        num_workers=config.data.num_workers,
+        num_workers=config.dataloader.num_workers,
     )
 
     validation_dataset = TraceDataset(codec=codec, split=Split.VAL)
@@ -80,19 +80,19 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         dataset=fixed_subset(
             validation_dataset, size=config.training.validation_pairs, generator=generator
         ),
-        batch_size=config.data.batch_size,
+        batch_size=config.dataloader.batch_size,
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=config.dataloader.num_workers,
     )
     generation_loader = DataLoader(
         dataset=fixed_subset(
             validation_dataset, size=config.training.generation_pairs, generator=generator
         ),
         batch_size=generation_batch_size(
-            inference=config.inference, upper_bound=config.data.batch_size
+            inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
         ),
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=config.dataloader.num_workers,
     )
 
     print(
@@ -150,12 +150,20 @@ def main() -> None:
         'run keeps its name, so it writes to the same TensorBoard directory '
         'and the same files.',
     )
+    parser.add_argument(
+        '-w',
+        '--hardware',
+        help='Hardware profile to run under, from config/hardware/. Required with '
+        '-c/--config; not used with -r/--resume, whose config is already resolved.',
+    )
     args = parser.parse_args()
 
     if args.resume is not None:
         run(*resumed(args.resume))
     else:
-        run(load_config(args.config))
+        if args.hardware is None:
+            parser.error('-w/--hardware is required with -c/--config')
+        run(load_config(args.config, args.hardware))
 
 
 if __name__ == '__main__':

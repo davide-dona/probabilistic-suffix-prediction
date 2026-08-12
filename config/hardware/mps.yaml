@@ -1,0 +1,18 @@
+# Apple-silicon GPU, local development.
+training:
+  device: mps
+  max_steps: 30000
+  val_every_n_steps: 400
+
+loss:
+  kl_annealing_period_steps: 10000
+
+optimizer:
+  lr: 0.0003
+
+dataloader:
+  batch_size: 256
+  num_workers: 0  # 0, not 4: macOS spawn overhead measured 2.1x slower end to end
+
+inference:
+  generation_rows_upper_bound: 2560
