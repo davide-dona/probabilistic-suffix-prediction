@@ -1,3 +1,5 @@
+# Unregularized counterpart to sepsis.yaml (model `cvae`, vs. its `cvae-reg`), kept around so the
+# two can still be trained and compared side by side.
 data:
   name: sepsis
 
@@ -55,21 +57,3 @@ data:
   log_scaled_durations: false
   batch_size: 256
   num_workers: 0  # 0, not 4: macOS spawn overhead measured 2.1x slower end to end
-
-# Sepsis is by far the smallest of the three logs, and overfits within the first ~5% of
-# max_steps: gen/energy_score bottoms out around step 1600-2000 then degrades steadily, with
-# gen/sample_diversity collapsing from ~0.51 to ~0.31 over the next 2500 steps. Extra
-# regularization here, on top of base.yaml's, is meant to push that ceiling back out.
-optimizer:
-  weight_decay: 0.01
-
-model:
-  name: cvae-reg  # distinguishes this run's TensorBoard/best-models path from the un-regularized cvae runs
-  prefix_encoder:
-    dropout: 0.2
-  suffix_encoder:
-    dropout: 0.2
-  prior:
-    dropout: 0.2
-  decoder:
-    dropout: 0.2
