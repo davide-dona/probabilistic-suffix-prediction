@@ -1,25 +1,25 @@
 data:
   name: sepsis
 
+  # Keys of the raw event log to be mapped to the standard keys used in the framework.
   case_key: "Case ID"
   activity_key: Activity
   resource_key: Resource
   timestamp_key: "time:timestamp"
 
-  # The test block is the last fifth of cases by start time, and validation the latest-starting
-  # share of what remains.
+  # Split the dataset into train, validation, and test sets.
+  # Splits are applied on the case level, with an out-of-time split
   train_split: 0.65
   val_split: 0.15
   test_split: 0.2
-  max_seq_len_percentile: 98.5
 
+  # Remove cases outside the 98.5 percentile of case length
+  max_seq_len_percentile: 98.5
+  # Set of raw features that need to be casted to string type
   string_features: []
 
-  # Every column but the structural ones above and: `lifecycle:transition`, constant at
-  # `complete` for every row; `Diagnose`, 95% missing over a 145-way vocabulary and effectively
-  # the case outcome; and `DiagnosticOther`, 93% missing where the other `Diagnostic*` flags are
-  # far denser.
   event_features:
+    # Event-level: vary per row in a case
     - DiagnosticArtAstrup
     - DiagnosticBlood
     - DiagnosticECG
@@ -49,12 +49,8 @@ data:
     - day_in_week
     - seconds_in_day
 
-  # Every numeric channel is standardized raw, as both baselines do: SuTraN runs with
-  # `log_transformed = False`, U-ED-LSTM with an empty `num_dyn_log`.
   log_scaled_features: []
   log_scaled_durations: false
-  batch_size: 256
-  num_workers: 0  # 0, not 4: macOS spawn overhead measured 2.1x slower end to end
 
 # Sepsis is by far the smallest of the three logs, and overfits within the first ~5% of
 # max_steps: gen/energy_score bottoms out around step 1600-2000 then degrades steadily, with

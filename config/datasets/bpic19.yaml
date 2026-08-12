@@ -1,0 +1,46 @@
+data:
+  name: bpic19
+
+  # Keys of the raw event log to be mapped to the standard keys used in the framework.
+  case_key: "case:concept:name"
+  activity_key: "concept:name"
+  resource_key: "org:resource"
+  timestamp_key: "time:timestamp"
+
+  # Split the dataset into train, validation, and test sets.
+  # Splits are applied on the case level, with an out-of-time split
+  train_split: 0.65
+  val_split: 0.15
+  test_split: 0.2
+
+  # Remove cases outside the 98.5 percentile of case length
+  max_seq_len_percentile: 98.5
+  # Set of raw features that need to be casted to string type
+  string_features:
+    - case:GR-Based Inv. Verif.
+    - case:Goods Receipt
+
+  event_features:
+    # Case-level: share the same value for every row in a case
+    - case:Spend area text
+    - case:Company
+    - case:Document Type
+    - case:Sub spend area text
+    - case:Purch. Doc. Category name
+    - case:Vendor
+    - case:Item Type
+    - case:Item Category
+    - case:Spend classification text
+    - case:Source
+    - case:GR-Based Inv. Verif.
+    - case:Goods Receipt
+    # Event-level: vary per row in a case
+    - Cumulative net worth (EUR)
+    # Calendar position of the event
+    - day_in_week
+    - seconds_in_day
+
+  log_scaled_features: []
+  log_scaled_durations: false
+
+# Same size as `bpic17.yaml`: base.yaml is already sized for the bpic logs.

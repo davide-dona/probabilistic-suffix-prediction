@@ -9,7 +9,7 @@ from Declare4Py.ProcessModels.DeclareModel import DeclareModel
 from tqdm import tqdm
 
 from src import paths
-from src.configs import ExperimentConfig, load_config
+from src.configs import DatasetConfig, load_dataset_config
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
 from src.identity import require_same_dataset
@@ -111,11 +111,11 @@ def _score_in_parallel(
             yield from block
 
 
-def run(config: ExperimentConfig, generations_file: Path, workers: int | None) -> None:
+def run(config: DatasetConfig, generations_file: Path, workers: int | None) -> None:
     """Score a run's generated suffixes and write the result under `outputs/eval/`.
 
     Args:
-        config: The validated experiment config of the run that wrote the generations, read for
+        config: The dataset/declare config of the run that wrote the generations, read for
             the declarative model the suffixes are checked against.
         generations_file: The generations to score, from `python -m pipelines.generate`. It says
             which run wrote it, so the report is named after that run rather than after this
@@ -190,7 +190,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run(load_config(args.config), args.generations, args.workers)
+    run(load_dataset_config(args.config), args.generations, args.workers)
 
 
 if __name__ == '__main__':

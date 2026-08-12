@@ -1,26 +1,28 @@
-from .loader import load_config, load_dataset_config
-from .schema import (
-    DataConfig,
-    DataLoaderConfig,
-    DatasetConfig,
-    DeclareConfig,
+"""Every config section, one module per concern, re-exported here so a caller imports from
+`src.configs.schema` without knowing which module a class lives in.
+"""
+
+from .base import StrictModel
+from .data import DataConfig, DeclareConfig
+from .experiment import DatasetConfig, ExperimentConfig
+from .inference import InferenceConfig
+from .model import (
     DecoderConfig,
-    EarlyStoppingConfig,
     EmbeddingConfig,
-    ExperimentConfig,
-    InferenceConfig,
     LatentConfig,
-    LossConfig,
     ModelConfig,
-    OptimizerConfig,
     PriorConfig,
     TraceEncoderConfig,
+)
+from .training import (
+    DataLoaderConfig,
+    EarlyStoppingConfig,
+    LossConfig,
+    OptimizerConfig,
     TrainingConfig,
 )
 
 __all__ = [
-    'load_config',
-    'load_dataset_config',
     'DataConfig',
     'DataLoaderConfig',
     'DatasetConfig',
@@ -35,6 +37,7 @@ __all__ = [
     'ModelConfig',
     'OptimizerConfig',
     'PriorConfig',
+    'StrictModel',
     'TraceEncoderConfig',
     'TrainingConfig',
 ]

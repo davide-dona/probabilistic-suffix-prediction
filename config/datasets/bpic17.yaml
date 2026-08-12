@@ -1,18 +1,21 @@
 data:
   name: bpic17
 
+  # Keys of the raw event log to be mapped to the standard keys used in the framework.
   case_key: "case:concept:name"
   activity_key: "concept:name"
   resource_key: "org:resource"
   timestamp_key: "time:timestamp"
 
-  # The test block is the last fifth of cases by start time, and validation the latest-starting
-  # share of what remains.
+  # Split the dataset into train, validation, and test sets.
+  # Splits are applied on the case level, with an out-of-time split
   train_split: 0.65
   val_split: 0.15
   test_split: 0.2
-  max_seq_len_percentile: 98.5
 
+  # Remove cases outside the 98.5 percentile of case length
+  max_seq_len_percentile: 98.5
+  # Set of raw features that need to be casted to string type
   string_features: []
 
   event_features:
@@ -35,9 +38,5 @@ data:
     - day_in_week
     - seconds_in_day
 
-  # Every numeric channel is standardized raw, as both baselines do: SuTraN runs with
-  # `log_transformed = False`, U-ED-LSTM with an empty `num_dyn_log`.
   log_scaled_features: []
   log_scaled_durations: false
-  batch_size: 256
-  num_workers: 0

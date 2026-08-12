@@ -58,23 +58,24 @@ model:
 # All the hyperparameters below are defined in steps, not epochs, 
 # so that they are independent of the dataset size and batch size.
 loss:
-  # KL annealing: for each period, the KL term is ramped up from 0 to full weight over a fraction of the period, 
+  # KL annealing: for each period, the KL term is ramped up from 0 to full weight over a fraction of the period,
   # then kept at full weight until the end of the period. This helps prevent posterior collapse early in training.
-  kl_annealing_period_steps: 10000
+  # kl_annealing_period_steps is set per hardware profile, in config/hardware/, since it scales
+  # with batch_size (each step covers batch_size worth of data).
   kl_annealing_ratio: 0.3   # fraction of the period spent ramping up from 0 to full weight
   kl_annealing_start_weight: 0.0
   kl_annealing_full_weight: 0.5  # below 1 keeps deviating from the prior cheaper than losing reconstruction
   free_bits: 0.3  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
 
+# lr is set per hardware profile, in config/hardware/, since it scales with batch_size.
 optimizer:
-  lr: 0.0003
   weight_decay: 0.0
 
+# device, max_steps and val_every_n_steps are set per hardware profile, in config/hardware/:
+# device varies by machine, and max_steps/val_every_n_steps scale with batch_size (each step
+# covers batch_size worth of data).
 training:
-  max_steps: 30000 
   grad_clip_norm: 5.0  # null to leave gradients unclipped
-  device: mps  # Apple-silicon GPU; ['cpu', 'cuda', 'mps']
-  val_every_n_steps: 400
   # Fixed slice of the evaluation set used for validation;
   # Using the full evaluation set for validation would be too slow
   validation_pairs: 20000
@@ -84,12 +85,9 @@ early_stopping:
   patience: 30   # number of validation checks with no improvement after which training will be stopped
   min_delta_perc: 0.005  # z is sampled, so the score is noisy; this is the margin that counts as progress
 
+# generation_rows_upper_bound is set per hardware profile, in config/hardware/, since it bounds
+# decoder memory per call the same way dataloader.batch_size does.
 inference:
   # k suffixes per prefix differ only in z ~ p(z|prefix); heads are read greedily.
   # At least ten, since hit_rate_at_10 reads the tenth draw.
   num_samples: 10
-  
-  # Caps decoder memory usage per batch. The decoder receives
-  # num_samples * min(batch_size, upper_bound) rows at once; this bounds
-  # that total regardless of num_samples, which is set independently.
-  generation_rows: 2560

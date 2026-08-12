@@ -6,7 +6,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 from src import paths
-from src.configs import DataConfig, DeclareConfig, load_config
+from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
 from src.logs.declare import discover_declare_model
 from src.logs.filters import sort_log
@@ -207,7 +207,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config = load_dataset_config(args.config)
     run(data_config=config.data, declare_config=config.declare, skip_discovery=args.skip_discovery)
 
 

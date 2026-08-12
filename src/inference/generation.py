@@ -40,20 +40,24 @@ class Generation:
         return len(self.prefix_activities)
 
 
-def generation_batch_size(inference: InferenceConfig, upper_bound: int) -> int:
+def generation_batch_size(inference: InferenceConfig, prefixes_upper_bound: int) -> int:
     """How many prefixes to hand the decoder at once, to protect its memory.
 
-    Each prefix expands into `num_samples` rows, so the batch size is
-    `generation_rows // num_samples`: the row count stays bounded however `num_samples` is
-    configured. Capped at `upper_bound` and floored at 1.
+    Two bounds apply, in two different units: `prefixes_upper_bound` counts prefixes, and
+    `generation_rows_upper_bound` counts the rows they expand into, one prefix being
+    `num_samples` rows. They are weighed in rows, since rows are what decoder memory is spent on,
+    and the smaller of the two is divided back into prefixes.
 
     Args:
-        inference: Provides `generation_rows` (the row budget) and `num_samples`.
-        upper_bound: Hard ceiling on the batch size, typically `data.batch_size`.
+        inference: Provides `generation_rows_upper_bound` (the row budget) and `num_samples`.
+        prefixes_upper_bound: Ceiling on prefixes per call, typically `dataloader.batch_size`.
     Returns:
-        The batch size, at least 1.
+        The batch size in prefixes, at least 1.
     """
-    return max(1, min(upper_bound, inference.generation_rows // inference.num_samples))
+    rows_per_call = min(
+        inference.generation_rows_upper_bound, prefixes_upper_bound * inference.num_samples
+    )
+    return max(1, rows_per_call // inference.num_samples)
 
 
 def generate_batch(
