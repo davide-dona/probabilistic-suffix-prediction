@@ -20,9 +20,15 @@ from src.training.validation import validate, validate_generation
 
 # The device's own stream, which dropout and the latent sampling draw from, lives behind a
 # namespace of its own; `cpu` has none beside the global one.
+# Both halves take the device the run is on: on a multi-GPU machine `torch.cuda`'s zero-argument
+# form would capture the current device's stream rather than the pinned one, so a run on `cuda:1`
+# would checkpoint and restore `cuda:0`. `torch.mps` has one device and so takes no argument.
 DEVICE_RNG = {
     'cuda': (torch.cuda.get_rng_state, torch.cuda.set_rng_state),
-    'mps': (torch.mps.get_rng_state, torch.mps.set_rng_state),
+    'mps': (
+        lambda _device: torch.mps.get_rng_state(),
+        lambda state, _device: torch.mps.set_rng_state(state),
+    ),
 }
 
 
@@ -40,7 +46,7 @@ def rng_state(generator: torch.Generator, device: torch.device) -> dict:
     return {
         'cpu': torch.get_rng_state(),
         'dataloader': generator.get_state(),
-        'device': capture[0]() if capture is not None else None,
+        'device': capture[0](device) if capture is not None else None,
     }
 
 
@@ -58,7 +64,7 @@ def restore_rng_state(state: dict, *, generator: torch.Generator, device: torch.
 
     restore = DEVICE_RNG.get(device.type)
     if restore is not None:
-        restore[1](state['device'])
+        restore[1](state['device'], device)
 
 
 def train(

@@ -35,6 +35,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
     paths.require_dataset(config.data.name)
     torch.manual_seed(config.seed)
 
+    print('Loading codec...', flush=True)
     codec = DatasetCodec.load(config.data)
 
     # Load the model from the checkpoint and put it on the right device
@@ -46,14 +47,19 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
     model.eval()
 
     # Build the DataLoader for the test split
+    print('Loading test split...', flush=True)
     test_dataset = TraceDataset(codec=codec, split=Split.TEST)
+
+    print('Sorting prefixes by suffix length...', flush=True)
+    sampler = test_dataset.length_sorted_indices()
+
     test_loader = DataLoader(
         dataset=test_dataset,
         batch_size=generation_batch_size(
             inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
         ),
         # sort the prefixes by length so the batches are more uniform and generation is faster
-        sampler=test_dataset.length_sorted_indices(),
+        sampler=sampler,
         num_workers=config.dataloader.num_workers,
     )
 

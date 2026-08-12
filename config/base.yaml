@@ -61,7 +61,9 @@ loss:
   # KL annealing: for each period, the KL term is ramped up from 0 to full weight over a fraction of the period,
   # then kept at full weight until the end of the period. This helps prevent posterior collapse early in training.
   # kl_annealing_period_steps is set per hardware profile, in config/hardware/, since it scales
-  # with batch_size (each step covers batch_size worth of data).
+  # with batch_size (each step covers batch_size worth of data). It is a fixed schedule length,
+  # not a fraction of max_steps, so a run repeats the cycle for as long as it goes on rather than
+  # stretching it over a ceiling early stopping is expected to cut short.
   kl_annealing_ratio: 0.3   # fraction of the period spent ramping up from 0 to full weight
   kl_annealing_start_weight: 0.0
   kl_annealing_full_weight: 0.5  # below 1 keeps deviating from the prior cheaper than losing reconstruction
@@ -73,7 +75,8 @@ optimizer:
 
 # device, max_steps and val_every_n_steps are set per hardware profile, in config/hardware/:
 # device varies by machine, and max_steps/val_every_n_steps scale with batch_size (each step
-# covers batch_size worth of data).
+# covers batch_size worth of data). max_steps is a ceiling rather than the expected end of a
+# run; see the early_stopping section below.
 training:
   grad_clip_norm: 5.0  # null to leave gradients unclipped
   # Fixed slice of the evaluation set used for validation;
@@ -81,6 +84,10 @@ training:
   validation_pairs: 20000
   generation_pairs: 1024
   
+# Early stopping, not max_steps, is what is expected to end a run: max_steps is a wall-clock
+# guard. Since patience counts validations rather than steps, it only means something relative to
+# max_steps / val_every_n_steps, so every hardware profile is sized for 120 validations per run
+# and a plateau is caught a quarter of the way in.
 early_stopping:
   patience: 30   # number of validation checks with no improvement after which training will be stopped
   min_delta_perc: 0.005  # z is sampled, so the score is noisy; this is the margin that counts as progress

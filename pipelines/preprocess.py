@@ -127,11 +127,13 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     dataset = data_config.name
 
     # Read the raw log.
-    print(f'Preprocessing "{dataset}"...')
+    print(f'Preprocessing "{dataset}"...', flush=True)
+    print('Reading the original log...', flush=True)
     log = read_original_log(data_config)
 
     # Derive the columns the model reads, all of which are read off neighbouring rows or off the
     # size of a case, so the log has to be in order first.
+    print('Deriving the temporal and calendar features...', flush=True)
     log = sort_log(log, case_key=CASE_KEY, timestamp_key=TIMESTAMP_KEY)
     log = preprocess(log, feature_columns=data_config.event_features)
     log = add_prefix_bounds(log)
@@ -139,7 +141,7 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     # Split the log into train/val/test out of time, dropping the cases longer than
     # `max_seq_len` at the point in the procedure where that does not bias its blocks.
     max_seq_len = case_length_cutoff(log, data_config=data_config)
-    print(f'Splitting "{dataset}" into train/val/test...')
+    print(f'Splitting "{dataset}" into train/val/test...', flush=True)
     train, val, test = out_of_time_split(
         log,
         case_key=CASE_KEY,
@@ -153,14 +155,17 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     dropped = cases_read - sum(rows[CASE_KEY].nunique() for rows in (train, val, test))
     print(
         f'Dropped {dropped} of {cases_read} cases longer than {max_seq_len} events '
-        f'({dropped / cases_read:.2%})'
+        f'({dropped / cases_read:.2%})',
+        flush=True,
     )
 
+    print('Writing the splits...', flush=True)
     for split, rows in ((Split.TRAIN, train), (Split.VAL, val), (Split.TEST, test)):
         write_log(rows, paths.split_path(dataset=dataset, split=split))
 
     # Fit the vocabularies and normalization statistics on the train split, writng them out to
     # `dataset.json`. The generated values can be decoded back using the same codec.
+    print('Fitting the dataset codec...', flush=True)
     codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
     codec.save()
 
@@ -169,6 +174,8 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     if skip_discovery:
         constraints_summary = 'declarative model discovery skipped'
     else:
+        # The slowest step of the pipeline by a wide margin.
+        print('Discovering the declarative model...', flush=True)
         num_constraints = discover_declare_model(
             train,
             dataset=dataset,
@@ -182,7 +189,8 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
         f'{len(codec.resource.vocab)} resources, '
         f'{len(codec.categorical_features)} categorical and '
         f'{len(codec.numeric_features)} numeric feature channels, '
-        f'{constraints_summary}'
+        f'{constraints_summary}',
+        flush=True,
     )
 
 

@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import Field
 
 from .base import StrictModel
@@ -59,7 +57,12 @@ class TrainingConfig(StrictModel):
     grad_clip_norm: float | None = Field(
         None, gt=0.0, description='Max gradient norm; null or absent leaves gradients unclipped'
     )
-    device: Literal['cpu', 'cuda', 'mps']
+    device: str = Field(
+        ...,
+        pattern=r'^(cpu|mps|cuda(:\d+)?)$',
+        description='Torch device. `cuda:<n>` pins one GPU on a multi-GPU machine; bare `cuda` '
+        'takes whatever the current device is',
+    )
     val_every_n_steps: int = Field(
         ...,
         gt=0,

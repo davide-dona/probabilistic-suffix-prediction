@@ -1,0 +1,24 @@
+# Dual RTX A6000 workstation, 48GB GPU memory each; `cuda:0` pins one of the two.
+# Each parameter is scaled from mps.yaml's values by the same factor of 16x,
+# the lr is scaled by sqrt(16) because it is a per-step parameter, not a per-epoch parameter.
+training:
+  device: cuda:0
+  # A ceiling, not the expected end of a run: 120 validations, so early stopping's
+  # 30-validation patience governs. See base.yaml's early_stopping section.
+  max_steps: 6000
+  val_every_n_steps: 50
+
+loss:
+  kl_annealing_period_steps: 625
+
+optimizer:
+  lr: 0.0012
+
+dataloader:
+  batch_size: 4096
+  # 48 vCPUs, so cores are not the constraint: each worker prefetches two of these batches,
+  # and a batch of 4096 padded prefix/suffix pairs is hundreds of MB of host memory.
+  num_workers: 12
+
+inference:
+  generation_rows_upper_bound: 10240
