@@ -1,5 +1,4 @@
 import argparse
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -194,9 +193,8 @@ def main() -> None:
     parser.add_argument(
         '-c',
         '--config',
-        type=Path,
         required=True,
-        help="Path to this dataset's experiment config YAML.",
+        help="Name of this dataset's experiment config, from config/datasets/ (e.g. 'bpic17').",
     )
     parser.add_argument(
         '--skip-discovery',

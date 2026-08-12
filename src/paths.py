@@ -36,6 +36,18 @@ def hardware_config_path(hardware: str) -> Path:
     return CONFIG_DIR / 'hardware' / f'{hardware}.yaml'
 
 
+def dataset_config_path(config: str) -> Path:
+    """One dataset's experiment config, the layer a config is merged over on top of the base
+    config (and, for hardware-dependent pipelines, the hardware profile).
+
+    Args:
+        config: The config's name, as passed to `-c`/`--config`, e.g. `bpic17`.
+    Returns:
+        The path to that config's file.
+    """
+    return CONFIG_DIR / 'datasets' / f'{config}.yaml'
+
+
 def _run_dir(run: RunIdentity) -> Path:
     """Where a run's files sit, relative to whichever `outputs/` directory holds them.
 

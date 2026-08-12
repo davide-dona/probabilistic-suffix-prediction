@@ -28,14 +28,14 @@ uv sync                     # installs the locked dependencies into .venv
 
 ## Reproducibility
 
-The repository is designed to make experiment results fully reproducible. The four pipelines below run in sequence, each reading what the previous one wrote. Every command takes `-c`/`--config`, the path to the dataset's experiment config YAML in `config/datasets/`. Training and generation, which build a model and a `DataLoader`, also take `-w`/`--hardware`, the name of a hardware profile YAML in `config/hardware/` (e.g. `mps`, `cuda-t4`); preprocessing and evaluation never read a hardware-dependent value, so they don't take it.
+The repository is designed to make experiment results fully reproducible. The four pipelines below run in sequence, each reading what the previous one wrote. Every command takes `-c`/`--config`, the name of the dataset's experiment config YAML in `config/datasets/` (e.g. `bpic17`). Training and generation, which build a model and a `DataLoader`, also take `-w`/`--hardware`, the name of a hardware profile YAML in `config/hardware/` (e.g. `mps`, `cuda-t4`); preprocessing and evaluation never read a hardware-dependent value, so they don't take it.
 
 ### 1. Preprocessing
 
 Run once per dataset, before anything else:
 
 ```bash
-python -m pipelines.preprocess -c config/datasets/<dataset>.yaml
+python -m pipelines.preprocess -c <dataset>
 ```
 
 The out-of-time splits as well as the fitted codec and the declarative model are written to `data/<dataset>/`.
@@ -50,7 +50,7 @@ Declarative model discovery is the slowest step and only evaluation reads its ou
 Once the dataset is preprocessed, start a new run or resume one already started:
 
 ```bash
-python -m pipelines.train -c config/datasets/<dataset>.yaml -w <hardware>
+python -m pipelines.train -c <dataset> -w <hardware>
 python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting fresh
 ```
 
@@ -77,7 +77,7 @@ Model checkpoints are written to two places:
 After training, generate suffixes for the test set:
 
 ```bash
-python -m pipelines.generate -c config/datasets/<dataset>.yaml -w <hardware> -m <path-to-model>
+python -m pipelines.generate -c <dataset> -w <hardware> -m <path-to-model>
 ```
 
 `-m`/`--model` points to the model to generate with, from either `best-models/` or `outputs/checkpoints/`. 
@@ -89,7 +89,7 @@ The generated suffixes for every prefix of the test split are written to `output
 Reads the generated suffixes and writes an evaluation report:
 
 ```bash
-python -m pipelines.evaluate -c config/datasets/<dataset>.yaml -g <path-to-generations> -j <number-of-jobs>
+python -m pipelines.evaluate -c <dataset> -g <path-to-generations> -j <number-of-jobs>
 ```
 
 - `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. 
@@ -130,7 +130,7 @@ A dataset config declares everything a run needs: where to find the raw log and 
 Two sections, `data` and `declare`, are hardware-independent: they're assembled from two layers, deep-merged in order, each taking precedence over the last:
 
 1. `config/base.yaml` — hardware- and dataset-agnostic defaults, including all of `declare`.
-2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `sepsis.yaml`. Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s extra regularization.
+2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, selected by name (e.g. `-c sepsis` loads `sepsis.yaml`). Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s extra regularization.
 
 This is what `pipelines.preprocess` and `pipelines.evaluate` load, since neither reads anything beyond `data`/`declare`, and so neither needs `-w`/`--hardware`.
 

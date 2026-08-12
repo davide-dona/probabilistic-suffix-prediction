@@ -88,7 +88,10 @@ def main() -> None:
         description='Generate test-split suffixes from a trained model.'
     )
     parser.add_argument(
-        '-c', '--config', type=Path, required=True, help="Path to this experiment's config YAML."
+        '-c',
+        '--config',
+        required=True,
+        help="Name of this experiment's dataset config, from config/datasets/ (e.g. 'bpic17').",
     )
     parser.add_argument(
         '-w',

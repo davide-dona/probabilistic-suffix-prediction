@@ -139,8 +139,8 @@ def main() -> None:
     source.add_argument(
         '-c',
         '--config',
-        type=Path,
-        help="Path to this experiment's config YAML, to start a new run.",
+        help="Name of this experiment's dataset config, from config/datasets/ (e.g. 'bpic17'), "
+        'to start a new run.',
     )
     source.add_argument(
         '-r',
