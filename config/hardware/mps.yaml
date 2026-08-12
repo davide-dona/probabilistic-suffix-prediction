@@ -1,8 +1,10 @@
 # Apple-silicon GPU, local development.
 training:
   device: mps
-  max_steps: 30000
-  val_every_n_steps: 400
+  # A ceiling, not the expected end of a run: 120 validations, so early stopping's
+  # 30-validation patience governs. See base.yaml's early_stopping section.
+  max_steps: 96000
+  val_every_n_steps: 800
 
 loss:
   kl_annealing_period_steps: 10000

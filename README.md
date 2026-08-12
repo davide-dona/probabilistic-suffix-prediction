@@ -144,12 +144,17 @@ Nested dicts are merged key by key, so any layer can override a single field of 
 
 ### Hardware profiles
 
-Two profiles are checked in under `config/hardware/`:
+Three profiles are checked in under `config/hardware/`:
 
 - `mps.yaml` — local development on Apple-silicon GPUs.
 - `cuda-t4.yaml` — an Azure T4 VM: larger batch size and worker count, and the learning rate, step count, and KL-annealing period scaled to match.
+- `cuda-a6000.yaml`: a dual RTX A6000 workstation (48GB per GPU), batch size and every derived hyperparameter at twice the T4 profile, pinned to one of the two cards.
 
 Add a new profile by dropping a `<name>.yaml` file into `config/hardware/` with the same keys; it becomes selectable as `-w <name>` immediately.
+
+**Picking a GPU.** `training.device` takes `cuda:<n>` as well as a bare `cuda`, so a profile on a multi-GPU machine names the card it runs on rather than leaving it to whichever device happens to be current. To put a run on the other card, either edit that field or launch with `CUDA_VISIBLE_DEVICES=1`, which hides the first card and remaps the second to `cuda:0`; the second form is what lets two experiments run concurrently, one per GPU, without a second profile.
+
+**`max_steps` is a ceiling, not the expected end of a run.** Early stopping is what normally ends one, and since `early_stopping.patience` counts validations rather than steps, it only means something relative to `max_steps / val_every_n_steps`. Every profile is therefore sized for 120 validations per run, so the checked-in patience of 30 catches a plateau a quarter of the way in and the same setting means the same thing on every machine. A profile that shrinks that ratio far enough makes early stopping unreachable and silently hands the decision back to `max_steps`.
 
 ### The `data` section
 

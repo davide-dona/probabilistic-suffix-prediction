@@ -3,7 +3,9 @@
 # the lr is scaled by sqrt(8) because it is a per-step parameter, not a per-epoch parameter.
 training:
   device: cuda
-  max_steps: 3750
+  # A ceiling, not the expected end of a run: 120 validations, so early stopping's
+  # 30-validation patience governs. See base.yaml's early_stopping section.
+  max_steps: 12000
   val_every_n_steps: 100
 
 loss:

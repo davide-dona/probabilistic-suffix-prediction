@@ -59,11 +59,13 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     torch.manual_seed(config.seed)
     generator = torch.Generator().manual_seed(config.seed)
 
+    print('Loading codec...', flush=True)
     codec = DatasetCodec.load(config.data)
 
     model = TransformerCVAE(config.model, codec).to(config.training.device)
 
     # Build the datasets and loaders
+    print('Loading train split...', flush=True)
     train_dataset = TraceDataset(codec=codec, split=Split.TRAIN)
     train_loader = DataLoader(
         dataset=train_dataset,
@@ -73,6 +75,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         num_workers=config.dataloader.num_workers,
     )
 
+    print('Loading validation split...', flush=True)
     validation_dataset = TraceDataset(codec=codec, split=Split.VAL)
     # Validation and generation loaders are fixed subsets of the validation split, so every run
     # of a config reads the same traces and their curves can be laid over each other.
