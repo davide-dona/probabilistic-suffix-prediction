@@ -52,20 +52,41 @@ data:
   log_scaled_features: []
   log_scaled_durations: false
 
-# Sepsis is by far the smallest of the three logs, and overfits within the first ~5% of
-# max_steps: gen/energy_score bottoms out around step 1600-2000 then degrades steadily, with
-# gen/sample_diversity collapsing from ~0.51 to ~0.31 over the next 2500 steps. Extra
-# regularization here, on top of base.yaml's, is meant to push that ceiling back out.
-optimizer:
-  weight_decay: 0.01
-
+# Sepsis is by far the smallest of the three logs: 608 training cases, ~7.5k prefix/suffix pairs,
+# 16 activities, 25 resources, traces of at most 42 events. base.yaml is sized for the bpic logs -
+# 149 resources, suffixes running to 95 events - and at those sizes the model carries 1.41M
+# parameters against those 7.5k pairs, so it overfits within the first ~5% of max_steps:
+# gen/energy_score bottoms out around step 1600-2000 then degrades steadily, with
+# gen/sample_diversity collapsing from ~0.51 to ~0.31 over the next 2500 steps. The sizes below
+# build the same architecture at 190k parameters instead, leaving base.yaml's dropout and
+# weight decay as they are: capacity is the lever here.
 model:
-  name: cvae-reg  # distinguishes this run's TensorBoard/best-models path from the un-regularized cvae runs
+  name: cvae-small  # sized for sepsis; base.yaml's `cvae` is the bpic sizing
+
+  d_model: 64
+
+  embeddings:
+    resource_dim: 16  # 25 resources, not bpic17's 149
+    feature_dim: 4    # 21 categorical features with 85 categories between them, and each one
+                      # widens the projection's input
+
   prefix_encoder:
-    dropout: 0.2
+    num_layers: 1
+    feedforward_dim: 256  # keep the 4x d_model ratio
+
+  # Training only, and the cheapest place to memorize a suffix on a log this small.
   suffix_encoder:
-    dropout: 0.2
+    num_layers: 1
+    feedforward_dim: 256
+
   prior:
-    dropout: 0.2
+    hidden_dims: [64]
+
+  # Halves the total free-bits budget too, since loss.free_bits floors the KL per dimension.
+  latent:
+    latent_dim: 8
+
   decoder:
-    dropout: 0.2
+    num_layers: 1
+    feedforward_dim: 256
+    head_hidden_dim: 64
