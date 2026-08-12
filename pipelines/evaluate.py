@@ -170,9 +170,9 @@ def main() -> None:
     parser.add_argument(
         '-c',
         '--config',
-        type=Path,
         required=True,
-        help='Path to the experiment config the generations were written under.',
+        help='Name of the dataset config the generations were written under, from '
+        "config/datasets/ (e.g. 'bpic17').",
     )
     parser.add_argument(
         '-g',
