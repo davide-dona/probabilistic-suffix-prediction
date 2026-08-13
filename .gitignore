@@ -5,11 +5,8 @@ outputs/
 CLAUDE.md
 *DS_Store
 
-# Best checkpoints, published to the Hugging Face repo rather than committed
-best-models/
-
-# Publishing is a maintainer-only action, not shared with the repo's collaborators
-scripts/publish.py
+# Published models, fetched from the Hugging Face repo rather than committed
+pretrained/
 
 
 # Notes on things worth trying, kept out of the repo until one of them is actually done

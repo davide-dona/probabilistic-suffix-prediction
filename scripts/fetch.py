@@ -4,22 +4,25 @@ from huggingface_hub import snapshot_download
 
 from src import paths
 
-REPO_ID = '446f6e6e79/CVAE-Suffix-Generation'
-
 
 def run() -> None:
-    """Download every checkpoint published to the Hugging Face repo into `best-models/`,
-    mirroring the repo's `dataset/model/tag.pt` layout exactly."""
-    snapshot_download(repo_id=REPO_ID, repo_type='model', local_dir=paths.BEST_MODELS_DIR)
+    """Download every published model into `pretrained/`, mirroring the Hugging Face repo's
+    `dataset/model.pt` layout exactly.
+
+    These are the checkpoints `scripts/publish.py` proposed and a maintainer merged, trimmed to
+    what generation reads, so they cannot be resumed from. A run's own checkpoints live under
+    `outputs/checkpoints/` instead.
+    """
+    snapshot_download(repo_id=paths.HF_REPO_ID, repo_type='model', local_dir=paths.PRETRAINED_DIR)
 
 
 def main() -> None:
     argparse.ArgumentParser(
-        description='Fetch every checkpoint published to the Hugging Face repo into `best-models/`.'
+        description='Fetch every published model from the Hugging Face repo into `pretrained/`.'
     ).parse_args()
 
     run()
-    print(f'Fetched every published checkpoint into {paths.BEST_MODELS_DIR}')
+    print(f'Fetched every published model into {paths.PRETRAINED_DIR}')
 
 
 if __name__ == '__main__':

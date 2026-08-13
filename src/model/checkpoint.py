@@ -72,3 +72,40 @@ def save_checkpoint(
 def load_checkpoint(model_path: str | Path) -> dict:
     """Read a checkpoint file written by `save_checkpoint`."""
     return torch.load(f=Path(model_path), map_location='cpu', weights_only=False)
+
+
+# What a checkpoint is worth keeping for once it will only ever be generated from: the two keys
+# `TransformerCVAE.from_checkpoint` reads, the one `pipelines/generate.py` names its output after,
+# and three that say which step of which run this is and how well it scored.
+_INFERENCE_KEYS = (
+    'model_config',
+    'model_state_dict',
+    'run',
+    'experiment_config',
+    'step',
+    'selection_score',
+)
+
+
+def inference_payload(checkpoint: dict) -> dict:
+    """Trim a checkpoint to what generating from it needs.
+
+    The optimizer, early-stopping and RNG state exist so `pipelines/train.py -r` can pick a run
+    back up, and a published checkpoint is never resumed from. Dropping them costs nothing a
+    reader uses and saves the larger part of the file, Adam's two moments per parameter above all.
+
+    Args:
+        checkpoint: What `load_checkpoint` read.
+    Returns:
+        A new dict holding only the keys inference and provenance need.
+    Raises:
+        ValueError: If the checkpoint is missing any of them, naming every one, so a file written
+            before this format fails here rather than half-way through someone else's generation.
+    """
+    missing = [key for key in _INFERENCE_KEYS if key not in checkpoint]
+    if missing:
+        raise ValueError(
+            f'checkpoint is missing {", ".join(missing)}, so it cannot be published. It was '
+            'written by an older version of `save_checkpoint`; retrain, or publish a newer run.'
+        )
+    return {key: checkpoint[key] for key in _INFERENCE_KEYS}

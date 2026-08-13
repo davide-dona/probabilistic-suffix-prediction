@@ -7,10 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / 'config'
 DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
-BEST_MODELS_DIR = ROOT / 'best-models'
+PRETRAINED_DIR = ROOT / 'pretrained'
 
 # The layer every config is merged over, dataset- and hardware-agnostic.
 BASE_CONFIG = CONFIG_DIR / 'base.yaml'
+
+# The Hugging Face model repo `scripts/publish.py` proposes checkpoints to and `scripts/fetch.py`
+# pulls them from, written down once so the two cannot drift apart.
+HF_REPO_ID = '446f6e6e79/CVAE-Suffix-Generation'
 
 
 class Split(StrEnum):
@@ -132,16 +136,33 @@ def tensorboard_dir(run: RunIdentity) -> Path:
 
 def checkpoint_path(run: RunIdentity) -> Path:
     """A run's last validated step, overwritten every validation; what `--resume` reads."""
-    return OUTPUTS_DIR / 'checkpoints' / f'{_run_dir(run)}.pt'
+    return OUTPUTS_DIR / 'checkpoints' / 'last' / f'{_run_dir(run)}.pt'
 
 
 def best_model_path(run: RunIdentity) -> Path:
     """A run's best step, overwritten whenever the selection score improves.
 
-    Kept outside `outputs/` since these are the checkpoints published to the Hugging Face repo
-    (`pipelines/publish.py`), not disposable run output.
+    The same file as `checkpoint_path` in everything but when it is written, which is why the two
+    sit under one directory: both are a run's own output, and neither is what anyone downloads.
+    `scripts/publish.py` promotes one of these to the curated name `pretrained_path` describes.
     """
-    return BEST_MODELS_DIR / f'{_run_dir(run)}.pt'
+    return OUTPUTS_DIR / 'checkpoints' / 'best' / f'{_run_dir(run)}.pt'
+
+
+def pretrained_path(dataset: str, model: str) -> Path:
+    """One published checkpoint, as `scripts/fetch.py` lays the Hugging Face repo out on disk.
+
+    There is one per model per log rather than one per run: a run's tag is what tells two attempts
+    apart, and which attempt became the published one is a decision that has already been taken by
+    the time a file lands here.
+
+    Args:
+        dataset: The log the model was trained on.
+        model: The model's name, as `model.name` in its config, e.g. `cvae-small`.
+    Returns:
+        The path that model's published checkpoint is fetched to.
+    """
+    return PRETRAINED_DIR / dataset / f'{model}.pt'
 
 
 def generations_path(run: RunIdentity) -> Path:

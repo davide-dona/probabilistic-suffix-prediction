@@ -110,8 +110,8 @@ def main() -> None:
         '--model',
         type=Path,
         required=True,
-        help='Path to the checkpoint to generate with, from '
-        '`best-models/` or `outputs/checkpoints/`.',
+        help='Path to the checkpoint to generate with, from `pretrained/`, '
+        '`outputs/checkpoints/best/` or `outputs/checkpoints/last/`.',
     )
     args = parser.parse_args()
 
