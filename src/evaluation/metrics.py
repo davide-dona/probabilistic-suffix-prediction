@@ -2,14 +2,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Self
 
-from Declare4Py.ProcessModels.DeclareModel import DeclareModel
-
 from src.evaluation.accuracy import AccuracyScores, score_generation
 from src.evaluation.conformance import ConformanceScores, score_conformance
-from src.inference import Generation
+from src.inference.generation import Generation
+from src.logs.declare import ConformanceChecker
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PairScores:
     """One prefix's scores, or their mean over a set of prefixes.
 
@@ -35,7 +34,7 @@ class PairScores:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScoredPrefix:
     """One prefix's identity beside its scores, the unit a worker hands back."""
 
@@ -129,17 +128,15 @@ class EvaluationMetrics:
 def score_prefixes(
     generations: Iterable[Generation],
     *,
-    declare_model: DeclareModel,
-    consider_vacuity: bool,
+    checker: ConformanceChecker,
 ) -> list[ScoredPrefix]:
     """Score generated suffixes against the ground truth they were generated for, and against the
     declarative model the dataset was mined for.
 
     Args:
         generations: The model's answers, one per prefix, decoded into the log's own units.
-        declare_model: The declarative model to check conformance against, from
-            `load_declare_model`.
-        consider_vacuity: Whether a constraint a trace never activates counts as satisfied.
+        checker: The declarative model to check conformance against, held by the process doing
+            the scoring.
     Returns:
         One entry per prefix, in the order they were read. Only what `EvaluationMetrics.aggregate`
         needs travels back, the generations themselves being dropped here.
@@ -152,11 +149,7 @@ def score_prefixes(
             samples=len(generation.samples),
             scores=PairScores(
                 accuracy=score_generation(generation),
-                conformance=score_conformance(
-                    generation,
-                    model=declare_model,
-                    consider_vacuity=consider_vacuity,
-                ),
+                conformance=score_conformance(generation, checker=checker),
             ),
         )
         for generation in generations

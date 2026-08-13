@@ -10,12 +10,8 @@ from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
 from src.identity import RunIdentity, require_same_dataset
-from src.inference import (
-    generate_batch,
-    generation_batch_size,
-    open_generations,
-    table_from_generations,
-)
+from src.inference.generate import generate_batch, generation_batch_size
+from src.inference.generation_store import open_generations, table_from_generations
 from src.model import TransformerCVAE, load_checkpoint
 from src.paths import Split
 

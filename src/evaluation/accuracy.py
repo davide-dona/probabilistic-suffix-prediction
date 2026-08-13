@@ -1,13 +1,17 @@
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 
-from src.inference import Generation
+import numpy as np
+from rapidfuzz import process
+from rapidfuzz.distance import OSA
+
+from src.inference.generation import Generation
 from src.metrics import ScalarMetrics, mean
 
 MINUTES_PER_DAY = 1440.0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AccuracyScores(ScalarMetrics):
     """The scores of one prefix's generated samples, or their mean over a set of prefixes.
 
@@ -65,43 +69,8 @@ class AccuracyScores(ScalarMetrics):
     suffix_length: float
 
 
-def damerau_levenshtein_distance(first: Sequence[Hashable], second: Sequence[Hashable]) -> int:
-    """The number of edits to turn one sequence into another, allowing transpositions of
-    adjacent elements as one edit.
-
-    Args:
-        first: The first sequence.
-        second: The sequence to measure it against.
-    Returns:
-        The number of edits, at least `abs(len(first) - len(second))` and at most
-        `max(len(first), len(second))`.
-    """
-    # Row i, column j holds the distance between the first i and the first j elements.
-    distances = [[0] * (len(second) + 1) for _ in range(len(first) + 1)]
-
-    # Initialize the first row and column to the distance from the empty sequence.
-    for i in range(len(first) + 1):
-        distances[i][0] = i
-    for j in range(len(second) + 1):
-        distances[0][j] = j
-
-    for i in range(1, len(first) + 1):
-        for j in range(1, len(second) + 1):
-            substitution_cost = 0 if first[i - 1] == second[j - 1] else 1
-            distances[i][j] = min(
-                distances[i - 1][j] + 1,  # delete
-                distances[i][j - 1] + 1,  # insert
-                distances[i - 1][j - 1] + substitution_cost,  # substitute, or match for free
-            )
-            # The two elements are each other's, the other way round: one edit, not two.
-            if i > 1 and j > 1 and first[i - 1] == second[j - 2] and first[i - 2] == second[j - 1]:
-                distances[i][j] = min(distances[i][j], distances[i - 2][j - 2] + 1)
-
-    return distances[len(first)][len(second)]
-
-
 def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable]) -> float:
-    """Damerau-Levenshtein similarity, the distance normalized into `[0, 1]`.
+    """Damerau-Levenshtein similarity, the edit distance normalized into `[0, 1]`.
 
     Args:
         predicted: The generated sequence.
@@ -110,15 +79,11 @@ def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable])
         1.0 for identical sequences (two empty ones included), down to 0.0 for sequences
         sharing nothing.
     """
-    longest = max(len(predicted), len(true))
-    if longest == 0:
-        return 1.0
-    return 1.0 - damerau_levenshtein_distance(predicted, true) / longest
+    return OSA.normalized_similarity(predicted, true)
 
 
 def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
-    """
-    How far apart a set of sequences generated for one prefix are from each other, in `[0, 1]`.
+    """How far apart a set of sequences generated for one prefix are from each other, in `[0, 1]`.
 
     The mean distance over every pair, which is 0.0 when a prefix's samples are all the same
     sequence (or there are fewer than two to compare). Comparing samples of one prefix against
@@ -129,12 +94,18 @@ def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
     Returns:
         0.0 for identical (or singleton) sample sets, up to 1.0 for sequences sharing nothing.
     """
-    pairs = [
-        1.0 - sequence_similarity(samples[first], samples[second])
-        for first in range(len(samples))
-        for second in range(first + 1, len(samples))
-    ]
-    return mean(pairs)
+    if len(samples) < 2:
+        return 0.0
+    # [num_samples, num_samples], every sample against every other in one call.
+    similarities = process.cdist(
+        queries=samples,
+        choices=samples,
+        scorer=OSA.normalized_similarity,
+        dtype=np.float64,
+    )
+    # The matrix is symmetric with a diagonal of 1.0, so one triangle holds each pair once.
+    rows, columns = np.triu_indices(n=len(samples), k=1)
+    return mean((1.0 - similarities[rows, columns]).tolist())
 
 
 def energy_score(dls_mean: float, sample_diversity: float) -> float:

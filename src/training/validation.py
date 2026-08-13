@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
 from src.evaluation.accuracy import AccuracyScores, score_generation
-from src.inference import generate_batch
+from src.inference.generate import generate_batch
 from src.model import TransformerCVAE
 from src.training.loss import Loss, compute_loss
 

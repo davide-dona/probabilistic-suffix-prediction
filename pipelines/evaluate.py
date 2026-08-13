@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow.parquet as pq
-from Declare4Py.ProcessModels.DeclareModel import DeclareModel
 from tqdm import tqdm
 
 from src import paths
@@ -13,8 +12,8 @@ from src.configs import DatasetConfig, load_dataset_config
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
 from src.identity import require_same_dataset
-from src.inference import read_generation_block, read_run_identity
-from src.logs.declare import load_declare_model
+from src.inference.generation_store import read_generation_block, read_run_identity
+from src.logs.declare import ConformanceChecker
 
 
 @dataclass(frozen=True)
@@ -22,8 +21,7 @@ class _Worker:
     """What one pool process holds for the whole of its life, rather than per block."""
 
     parquet: pq.ParquetFile
-    declare_model: DeclareModel
-    consider_vacuity: bool
+    checker: ConformanceChecker
 
 
 # Set by `_init_worker` in each pool process, and read by `_score_block` there. Left
@@ -32,10 +30,7 @@ _worker: _Worker
 
 
 def _init_worker(generations_file: Path, dataset: str, consider_vacuity: bool) -> None:
-    """Open the file and parse the declarative model once for this process.
-
-    macOS spawns its workers, so neither an open file nor a parsed model can be inherited from the
-    parent; doing this per block instead would repeat it once per task.
+    """Open the file and prepare the declarative model once for this process.
 
     Args:
         generations_file: The generations every task of this process reads from.
@@ -45,8 +40,7 @@ def _init_worker(generations_file: Path, dataset: str, consider_vacuity: bool) -
     global _worker
     _worker = _Worker(
         parquet=pq.ParquetFile(generations_file),
-        declare_model=load_declare_model(dataset),
-        consider_vacuity=consider_vacuity,
+        checker=ConformanceChecker(dataset, consider_vacuity=consider_vacuity),
     )
 
 
@@ -59,11 +53,7 @@ def _score_block(block: int) -> list[ScoredPrefix]:
         One entry per prefix of the block, in the order it was written.
     """
     generations = read_generation_block(parquet=_worker.parquet, block=block)
-    return score_prefixes(
-        generations=generations,
-        declare_model=_worker.declare_model,
-        consider_vacuity=_worker.consider_vacuity,
-    )
+    return score_prefixes(generations=generations, checker=_worker.checker)
 
 
 def _score_in_parallel(
@@ -75,10 +65,10 @@ def _score_in_parallel(
 ) -> Iterator[ScoredPrefix]:
     """Score a generations file across a pool of processes, a block at a time.
 
-    A prefix's score depends on nothing but the prefix, and both the edit distances and the
-    conformance checks are pure Python that holds the GIL. Each prefix is scored down to a handful
-    of floats and its generation dropped in the worker, so a split of hundreds of thousands of them
-    never brings more than a block's objects back here.
+    A prefix's score depends on nothing but the prefix, and the conformance checks that dominate
+    it are pure Python that holds the GIL. Each prefix is scored down to a handful of floats and
+    its generation dropped in the worker, so a split of hundreds of thousands of them never brings
+    more than a block's objects back here.
 
     Args:
         generations_file: The generations to score, from `python -m pipelines.generate`. Passed as

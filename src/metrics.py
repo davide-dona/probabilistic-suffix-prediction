@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 from dataclasses import asdict, fields
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
-from torch.utils.tensorboard import SummaryWriter
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
 
 
 def mean(values: Sequence[float]) -> float:
@@ -18,6 +19,9 @@ class ScalarMetrics:
     however the batches fell. A per-prefix score is already reduced when it is produced, so it is
     averaged with `mean` over the prefixes themselves.
     """
+
+    # Subclasses declare `slots=True`, which only saves anything if this carries no `__dict__`.
+    __slots__ = ()
 
     @classmethod
     def mean(cls, values: Sequence[Self]) -> Self:
@@ -52,7 +56,7 @@ class ScalarMetrics:
             **{field.name: getattr(self, field.name) / divisor for field in fields(self)}
         )
 
-    def log(self, writer: SummaryWriter, step: int, *, prefix: str) -> None:
+    def log(self, writer: 'SummaryWriter', step: int, *, prefix: str) -> None:
         """
         Write every field to TensorBoard under a shared prefix.
 
