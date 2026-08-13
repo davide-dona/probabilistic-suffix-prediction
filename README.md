@@ -57,10 +57,11 @@ python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting
 Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. `-w`/`--hardware` is required alongside `-c`, and not used with `-r`, whose config is already resolved. A resumed run keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
 
 > [!NOTE]
-> **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published checkpoint into `best-models/` with:
+> **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published model into `pretrained/` with:
 > ```bash
 > python -m scripts.fetch
 > ```
+> There is one file per model per log, at `pretrained/<name>/<model>.pt`. They are trimmed to what generation reads, so they can be generated from but not resumed from.
 
 The training logs are written to `outputs/tensorboard/<name>/<model>/<timestamp>/`. To see the training curves, point TensorBoard at the root:
 
@@ -69,8 +70,8 @@ tensorboard --logdir outputs/tensorboard
 ```
 
 Model checkpoints are written to two places:
- - `best-models/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time validation loss improves
- - `outputs/checkpoints/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
+ - `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time the selection score improves
+ - `outputs/checkpoints/last/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
 
 ### 3. Inference
 
@@ -80,7 +81,7 @@ After training, generate suffixes for the test set:
 python -m pipelines.generate -c <dataset> -w <hardware> -m <path-to-model>
 ```
 
-`-m`/`--model` points to the model to generate with, from either `best-models/` or `outputs/checkpoints/`. 
+`-m`/`--model` points to the model to generate with, from `pretrained/`, `outputs/checkpoints/best/` or `outputs/checkpoints/last/`. 
 
 The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
 
@@ -96,6 +97,18 @@ python -m pipelines.evaluate -c <dataset> -g <path-to-generations> -j <number-of
 - `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. 
 
 The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`.
+
+### 5. Publishing
+
+Once a run has been evaluated and is worth being the one others reach for, propose its best checkpoint as that model's published version:
+
+```bash
+python -m scripts.publish -m <path-to-best-checkpoint>
+```
+
+`-m`/`--model` points to the checkpoint to publish, from `outputs/checkpoints/best/`. Which run deserves the name is exactly the decision this step exists to record, so it is named rather than searched for.
+
+The checkpoint is trimmed to what generation reads, dropping the optimizer, early-stopping and RNG state that only `--resume` needs, and uploaded to `<name>/<model>.pt` in the Hugging Face model repo. It goes up as a pull request, printed as a link, and only becomes what `python -m scripts.fetch` hands out once a maintainer merges it. Publishing a second run of the same model on the same log therefore proposes replacing the first: the published set holds one file per model per log, and the run's timestamp is deliberately not part of that name.
 
 ---
 
