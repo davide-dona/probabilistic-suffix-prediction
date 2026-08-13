@@ -10,7 +10,7 @@ from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
-from src.inference import generation_batch_size
+from src.inference.generate import generation_batch_size
 from src.model import TransformerCVAE, load_checkpoint
 from src.paths import Split
 from src.training.train import train

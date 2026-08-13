@@ -2,7 +2,6 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -112,44 +111,40 @@ def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generatio
         parquet: The generations file to read from, already open.
         block: Which of its blocks to decode, in `range(parquet.num_row_groups)`.
     Returns:
-        The generation for each prefix of the block, in the order they were written.
+        The generation for each prefix of the block, in the order they were written, exactly as
+        `generate_batch` produced them. Read a column at a time: Arrow converts a whole column to
+        Python in one call, and the lists that come back are the plain lists `DecodedEvents`
+        promises, so nothing is copied a second time and the block itself is dropped as soon as
+        this returns.
     """
-    frame = parquet.read_row_group(block).to_pandas()
-    return [_generation_from_row(row) for _, row in frame.iterrows()]
+    table = parquet.read_row_group(block)
+    columns = {name: table.column(name).to_pylist() for name in table.schema.names}
 
-
-def _generation_from_row(row: pd.Series) -> Generation:
-    """Read one prefix's generation back out of the row a generations file holds it as.
-
-    What lets a written file be scored through the same `score_generation` a training run reports
-    from.
-
-    Args:
-        row: One row of a generations file, holding a prefix and every suffix drawn for it.
-    Returns:
-        The same generation `generate_batch` produced. Parquet hands the activity columns back as
-        arrays, so they are copied into lists: `DecodedEvents` promises lists, and the edit
-        distance that reads them is quicker to index for it. Copying is also what lets the row
-        group behind them be dropped once the prefix has been scored.
-    """
-    return Generation(
-        case_id=str(row.case_id),
-        prefix_activities=list(row.prefix_activities),
-        samples=[
-            DecodedEvents(
-                activities=list(activities),
-                remaining_time_minutes=float(remaining_time_minutes),
+    generations = []
+    for position in range(table.num_rows):
+        generations.append(
+            Generation(
+                case_id=columns['case_id'][position],
+                prefix_activities=columns['prefix_activities'][position],
+                samples=[
+                    DecodedEvents(
+                        activities=activities,
+                        remaining_time_minutes=remaining_time_minutes,
+                    )
+                    for activities, remaining_time_minutes in zip(
+                        columns['generated_activities'][position],
+                        columns['generated_remaining_time_minutes'][position],
+                        strict=True,
+                    )
+                ],
+                point=DecodedEvents(
+                    activities=columns['point_activities'][position],
+                    remaining_time_minutes=columns['point_remaining_time_minutes'][position],
+                ),
+                truth=DecodedEvents(
+                    activities=columns['true_activities'][position],
+                    remaining_time_minutes=columns['true_remaining_time_minutes'][position],
+                ),
             )
-            for activities, remaining_time_minutes in zip(
-                row.generated_activities, row.generated_remaining_time_minutes, strict=True
-            )
-        ],
-        point=DecodedEvents(
-            activities=list(row.point_activities),
-            remaining_time_minutes=float(row.point_remaining_time_minutes),
-        ),
-        truth=DecodedEvents(
-            activities=list(row.true_activities),
-            remaining_time_minutes=float(row.true_remaining_time_minutes),
-        ),
-    )
+        )
+    return generations

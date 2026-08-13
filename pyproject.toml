@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=25.0.0",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
+    "rapidfuzz>=3.14.5",
     "tensorboard>=2.21.0",
     "torch>=2.13.0",
     "tqdm>=4.69.1",
