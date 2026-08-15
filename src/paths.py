@@ -9,7 +9,8 @@ DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
 PRETRAINED_DIR = ROOT / 'pretrained'
 
-# The layer every config is merged over, dataset- and hardware-agnostic.
+# The layer every config is merged over, dataset- and hardware-agnostic. The only config file
+# named here: the dataset config and the hardware profile are paths a pipeline is given.
 BASE_CONFIG = CONFIG_DIR / 'base.yaml'
 
 # The Hugging Face model repo `scripts/publish.py` proposes checkpoints to and `scripts/fetch.py`
@@ -27,29 +28,6 @@ class Split(StrEnum):
     TRAIN = 'train'
     VAL = 'val'
     TEST = 'test'
-
-
-def hardware_config_path(hardware: str) -> Path:
-    """One hardware profile, the layer a config is merged over between base and the dataset.
-
-    Args:
-        hardware: The profile's name, as passed to `-w`/`--hardware`, e.g. `mps`.
-    Returns:
-        The path to that profile's file.
-    """
-    return CONFIG_DIR / 'hardware' / f'{hardware}.yaml'
-
-
-def dataset_config_path(config: str) -> Path:
-    """One dataset's experiment config, the layer a config is merged over on top of the base
-    config (and, for hardware-dependent pipelines, the hardware profile).
-
-    Args:
-        config: The config's name, as passed to `-c`/`--config`, e.g. `bpic17`.
-    Returns:
-        The path to that config's file.
-    """
-    return CONFIG_DIR / 'datasets' / f'{config}.yaml'
 
 
 def _run_dir(run: RunIdentity) -> Path:
@@ -107,7 +85,7 @@ def require_dataset(dataset: str) -> None:
             f'"{dataset}" has not been preprocessed: '
             f'{", ".join(str(output) for output in missing)} '
             f'{"are" if len(missing) > 1 else "is"} missing. Run '
-            f'"uv run python -m pipelines.preprocess -c <config>" first.'
+            f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" first.'
         )
 
 
@@ -124,7 +102,8 @@ def require_declare_model(dataset: str) -> None:
     if not path.exists():
         raise FileNotFoundError(
             f'"{dataset}" has no declarative model at {path}. Run '
-            f'"uv run python -m pipelines.preprocess -c <config>" without --skip-discovery first.'
+            f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
+            'without --skip-discovery first.'
         )
 
 

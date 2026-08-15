@@ -28,14 +28,16 @@ uv sync                     # installs the locked dependencies into .venv
 
 ## Reproducibility
 
-The repository is designed to make experiment results fully reproducible. The four pipelines below run in sequence, each reading what the previous one wrote. Every command takes `-c`/`--config`, the name of the dataset's experiment config YAML in `config/datasets/` (e.g. `bpic17`). Training and generation, which build a model and a `DataLoader`, also take `-w`/`--hardware`, the name of a hardware profile YAML in `config/hardware/` (e.g. `mps`, `cuda-t4`); preprocessing and evaluation never read a hardware-dependent value, so they don't take it.
+The repository is designed to make experiment results fully reproducible. The four pipelines below run in sequence, each reading what the previous one wrote.
+
+Every argument that names a file is a path to it, so there is one form to learn and everything completes in a shell. Preprocessing and training take `-c`/`--config`, the dataset's experiment config YAML (e.g. `config/datasets/bpic17.yaml`). Training and generation, which build a model and a `DataLoader`, take `-w`/`--hardware`, a hardware profile YAML (e.g. `config/hardware/mps.yaml`). Generation and evaluation read no config file at all: a checkpoint carries the config of the run that wrote it, and a generations file carries its own run and dataset identity.
 
 ### 1. Preprocessing
 
 Run once per dataset, before anything else:
 
 ```bash
-python -m pipelines.preprocess -c <dataset>
+python -m pipelines.preprocess -c config/datasets/<dataset>.yaml
 ```
 
 The out-of-time splits as well as the fitted codec and the declarative model are written to `data/<dataset>/`.
@@ -50,11 +52,11 @@ Declarative model discovery is the slowest step and only evaluation reads its ou
 Once the dataset is preprocessed, start a new run or resume one already started:
 
 ```bash
-python -m pipelines.train -c <dataset> -w <hardware>
+python -m pipelines.train -c config/datasets/<dataset>.yaml -w config/hardware/<hardware>.yaml
 python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting fresh
 ```
 
-Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. `-w`/`--hardware` is required alongside `-c`, and not used with `-r`, whose config is already resolved. A resumed run keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
+Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. `-w`/`--hardware` is required alongside `-c`, and rejected with `-r`: a resumed run keeps the batch size, learning rate and annealing schedule it started with, all of which a profile carries. A resumed run also keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
 
 > [!NOTE]
 > **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published model into `pretrained/` with:
@@ -78,10 +80,12 @@ Model checkpoints are written to two places:
 After training, generate suffixes for the test set:
 
 ```bash
-python -m pipelines.generate -c <dataset> -w <hardware> -m <path-to-model>
+python -m pipelines.generate -m <path-to-checkpoint> -w config/hardware/<hardware>.yaml
 ```
 
-`-m`/`--model` points to the model to generate with, from `pretrained/`, `outputs/checkpoints/best/` or `outputs/checkpoints/last/`. 
+- `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/`, `outputs/checkpoints/best/` or `outputs/checkpoints/last/`. No dataset config is passed alongside it: the checkpoint carries the config of the run that wrote it, so the model, the dataset and the sampling are already settled and cannot be made to disagree with it.
+- `-w`/`--hardware` is the profile to generate under, replacing the one the run was trained with — a run trained on a workstation is routinely generated from on a laptop.
+- `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.num_samples`.
 
 The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
 
@@ -90,11 +94,13 @@ The generated suffixes for every prefix of the test split are written to `output
 Reads the generated suffixes and writes an evaluation report:
 
 ```bash
-python -m pipelines.evaluate -c <dataset> -g <path-to-generations> -j <number-of-jobs>
+python -m pipelines.evaluate -g <path-to-generations> -j <number-of-jobs>
 ```
 
-- `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. 
+- `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`. Its embedded run identity says which dataset's declarative model to check conformance against, so no config is needed.
 - `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. 
+
+Conformance is checked the way the declarative models were discovered, with `declare.consider_vacuity` false: a constraint a trace never activates counts as violated. That is not a flag, since it is a property of the models under `data/*/declare/` rather than a choice made at scoring time.
 
 The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`.
 
@@ -106,7 +112,7 @@ Once a run has been evaluated and is worth being the one others reach for, propo
 python -m scripts.publish -m <path-to-best-checkpoint>
 ```
 
-`-m`/`--model` points to the checkpoint to publish, from `outputs/checkpoints/best/`. Which run deserves the name is exactly the decision this step exists to record, so it is named rather than searched for.
+`-m`/`--checkpoint` points to the checkpoint to publish, from `outputs/checkpoints/best/`. Which run deserves the name is exactly the decision this step exists to record, so it is named rather than searched for.
 
 The checkpoint is trimmed to what generation reads, dropping the optimizer, early-stopping and RNG state that only `--resume` needs, and uploaded to `<name>/<model>.pt` in the Hugging Face model repo. It goes up as a pull request, printed as a link, and only becomes what `python -m scripts.fetch` hands out once a maintainer merges it. Publishing a second run of the same model on the same log therefore proposes replacing the first: the published set holds one file per model per log, and the run's timestamp is deliberately not part of that name.
 
@@ -122,9 +128,11 @@ Once a dataset has been evaluated, the results of one or more runs can be visual
 
 ```bash
 python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
+python -m pipelines.visualize -E <path-to-directory>
 ```
 
 - `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. 
+- `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset. Each report says which model and dataset it belongs to, so nothing has to be typed alongside it. Two runs of one model on one dataset are an error, since a figure cannot draw them apart, so keep the directory to the runs being reported. One of `-e` and `-E` is required, and they cannot be combined.
 - `-l`/`--labels` renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. 
 - `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. 
 - `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`).
@@ -143,15 +151,15 @@ A dataset config declares everything a run needs: where to find the raw log and 
 Two sections, `data` and `declare`, are hardware-independent: they're assembled from two layers, deep-merged in order, each taking precedence over the last:
 
 1. `config/base.yaml` — hardware- and dataset-agnostic defaults, including all of `declare`.
-2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, selected by name (e.g. `-c sepsis` loads `sepsis.yaml`). Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.
+2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, named by path (e.g. `-c config/datasets/sepsis.yaml`). Owns the `data` section's dataset-specific keys (columns, splits, features) and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones. Its filename means nothing beyond being what you type: `data.name` and `model.name` inside it are what name a run and its output directories.
 
-This is what `pipelines.preprocess` and `pipelines.evaluate` load, since neither reads anything beyond `data`/`declare`, and so neither needs `-w`/`--hardware`.
+This is what `pipelines.preprocess` loads, since it reads nothing beyond `data`/`declare` and so needs no `-w`/`--hardware`. `pipelines.evaluate` reads no config at all: the generations file it scores already says which run and dataset produced it.
 
 Every other section — `model`, `loss`, `optimizer`, `training`, `dataloader`, `early_stopping`, `inference` — adds a third layer in between:
 
-2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `mps.yaml` or `cuda-t4.yaml`. Owns everything that varies with the machine a run executes on: `training.device`, `dataloader.batch_size`, `dataloader.num_workers`, `inference.generation_rows_upper_bound`, and the batch-size-derived `optimizer.lr`, `training.max_steps`, `training.val_every_n_steps`, and `loss.kl_annealing_period_steps`.
+2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/mps.yaml`. Owns everything that varies with the machine a run executes on: `training.device`, `dataloader.batch_size`, `dataloader.num_workers`, `inference.generation_rows_upper_bound`, and the batch-size-derived `optimizer.lr`, `training.max_steps`, `training.val_every_n_steps`, and `loss.kl_annealing_period_steps`.
 
-This is what `pipelines.train` and `pipelines.generate` load, since both build a model and a `DataLoader` and so need `-w`/`--hardware`.
+This is what `pipelines.train` loads, since it builds a model and a `DataLoader` and so needs `-w`/`--hardware`. `pipelines.generate` needs a profile too, but merges it over the config stored inside the checkpoint rather than over a dataset config: the run's model and data are settled, and only the machine has changed.
 
 Nested dicts are merged key by key, so any layer can override a single field of a nested section without repeating the rest — some sections, like `training` and `inference`, get some of their keys from `base.yaml` and others from the hardware profile.
 

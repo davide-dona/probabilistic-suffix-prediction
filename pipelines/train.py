@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src import paths
+from src.cli import add_config_argument, add_hardware_argument, existing_file
 from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
@@ -139,29 +140,24 @@ def main() -> None:
     # A run is either started from a config or carried on from a checkpoint, which already
     # describes the run that wrote it. Two descriptions of one run could only disagree.
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument(
-        '-c',
-        '--config',
-        help="Name of this experiment's dataset config, from config/datasets/ (e.g. 'bpic17'), "
-        'to start a new run.',
-    )
+    add_config_argument(source, required=False)
     source.add_argument(
         '-r',
         '--resume',
-        type=Path,
+        type=existing_file,
+        metavar='CHECKPOINT',
         help='Path to a checkpoint to carry on from, its config included. The '
         'run keeps its name, so it writes to the same TensorBoard directory '
         'and the same files.',
     )
-    parser.add_argument(
-        '-w',
-        '--hardware',
-        help='Hardware profile to run under, from config/hardware/. Required with '
-        '-c/--config; not used with -r/--resume, whose config is already resolved.',
-    )
+    add_hardware_argument(parser, required=False)
     args = parser.parse_args()
 
     if args.resume is not None:
+        # A resumed run keeps the batch size, learning rate and annealing schedule it started
+        # with, all of which a profile carries, so there is nothing a second one could mean here.
+        if args.hardware is not None:
+            parser.error('-w/--hardware is not used with -r/--resume: the checkpoint carries one')
         run(*resumed(args.resume))
     else:
         if args.hardware is None:

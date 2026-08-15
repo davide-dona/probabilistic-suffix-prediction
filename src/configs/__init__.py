@@ -1,4 +1,4 @@
-from .loader import load_config, load_dataset_config
+from .loader import load_config, load_dataset_config, load_generation_config
 from .schema import (
     DataConfig,
     DataLoaderConfig,
@@ -21,6 +21,7 @@ from .schema import (
 __all__ = [
     'load_config',
     'load_dataset_config',
+    'load_generation_config',
     'DataConfig',
     'DataLoaderConfig',
     'DatasetConfig',

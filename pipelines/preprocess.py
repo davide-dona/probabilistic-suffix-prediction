@@ -5,6 +5,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 from src import paths
+from src.cli import add_config_argument
 from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
 from src.logs.declare import discover_declare_model
@@ -198,12 +199,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description='Turn a raw event log into the train/val/test CSVs the model consumes.'
     )
-    parser.add_argument(
-        '-c',
-        '--config',
-        required=True,
-        help="Name of this dataset's experiment config, from config/datasets/ (e.g. 'bpic17').",
-    )
+    add_config_argument(parser, required=True)
     parser.add_argument(
         '--skip-discovery',
         action='store_true',

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from pydantic import TypeAdapter
 
@@ -51,24 +50,6 @@ class RunIdentity:
             pydantic.ValidationError: If the JSON is malformed or does not describe a run.
         """
         return _RUN_ADAPTER.validate_json(data)
-
-
-def require_same_dataset(run: RunIdentity, dataset: str, *, artifact: Path) -> None:
-    """Check an artifact was produced for the dataset a config describes.
-
-    Args:
-        run: The run the artifact says wrote it.
-        dataset: The dataset the config in hand describes.
-        artifact: The file being read, named in the error so it says which one to replace.
-    Raises:
-        ValueError: If the two datasets differ, since everything downstream would then be read
-            through the wrong codec, splits and declarative model.
-    """
-    if run.dataset != dataset:
-        raise ValueError(
-            f'{artifact} was produced for {run.dataset}, but this config describes {dataset}. '
-            'Name the config it belongs to.'
-        )
 
 
 # Built once, since a `TypeAdapter` compiles the schema it validates against.

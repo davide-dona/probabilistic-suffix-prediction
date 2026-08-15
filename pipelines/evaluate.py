@@ -8,12 +8,15 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src import paths
-from src.configs import DatasetConfig, load_dataset_config
+from src.cli import existing_file
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
-from src.identity import require_same_dataset
 from src.inference.generation_store import read_generation_block, read_run_identity
 from src.logs.declare import ConformanceChecker
+
+# Conformance checker configuration.
+# If True, the checker will consider not satisfying a constraint as a failure.
+CONSIDER_VACUITY = False
 
 
 @dataclass(frozen=True)
@@ -29,18 +32,17 @@ class _Worker:
 _worker: _Worker
 
 
-def _init_worker(generations_file: Path, dataset: str, consider_vacuity: bool) -> None:
+def _init_worker(generations_file: Path, dataset: str) -> None:
     """Open the file and prepare the declarative model once for this process.
 
     Args:
         generations_file: The generations every task of this process reads from.
         dataset: The dataset whose declarative model conformance is checked against.
-        consider_vacuity: Whether a constraint a trace never activates counts as satisfied.
     """
     global _worker
     _worker = _Worker(
         parquet=pq.ParquetFile(generations_file),
-        checker=ConformanceChecker(dataset, consider_vacuity=consider_vacuity),
+        checker=ConformanceChecker(dataset, consider_vacuity=CONSIDER_VACUITY),
     )
 
 
@@ -60,7 +62,6 @@ def _score_in_parallel(
     generations_file: Path,
     *,
     dataset: str,
-    consider_vacuity: bool,
     workers: int | None,
 ) -> Iterator[ScoredPrefix]:
     """Score a generations file across a pool of processes, a block at a time.
@@ -76,7 +77,6 @@ def _score_in_parallel(
             the scores it computes cross back.
         dataset: The dataset the prefixes were cut from, naming the declarative model to check
             conformance against.
-        consider_vacuity: Whether a constraint a trace never activates counts as satisfied.
         workers: How many processes to score with, or `None` for one per available CPU.
     Yields:
         Each prefix's scores, in the order the file holds them. The pool is shut down once they
@@ -90,7 +90,7 @@ def _score_in_parallel(
         ProcessPoolExecutor(
             max_workers=workers,
             initializer=_init_worker,
-            initargs=(generations_file, dataset, consider_vacuity),
+            initargs=(generations_file, dataset),
         ) as executor,
         tqdm(total=prefixes, desc='Scoring', unit='prefix') as progress,
     ):
@@ -101,30 +101,17 @@ def _score_in_parallel(
             yield from block
 
 
-def run(config: DatasetConfig, generations_file: Path, workers: int | None) -> None:
+def run(generations_file: Path, workers: int | None) -> None:
     """Score a run's generated suffixes and write the result under `outputs/eval/`.
 
     Args:
-        config: The dataset/declare config of the run that wrote the generations, read for
-            the declarative model the suffixes are checked against.
         generations_file: The generations to score, from `python -m pipelines.generate`. It says
-            which run wrote it, so the report is named after that run rather than after this
-            config or this filename.
+            which run and dataset wrote it, so the report is named after that run and the
+            declarative model is looked up under that dataset.
         workers: How many processes to score with, or `None` for one per available CPU.
-    Raises:
-        FileNotFoundError: If the generations are missing.
-        ValueError: If the generations were written for a different dataset than the config
-            describes, whose declarative model conformance would then be checked against.
     """
-    if not generations_file.exists():
-        raise FileNotFoundError(
-            f'no generations at {generations_file}. Run `python -m pipelines.generate` first, '
-            'or name the right generations file.'
-        )
-
     with pq.ParquetFile(generations_file) as parquet:
         run = read_run_identity(parquet)
-    require_same_dataset(run, config.data.name, artifact=generations_file)
 
     dataset = run.dataset
     paths.require_dataset(dataset)
@@ -135,12 +122,7 @@ def run(config: DatasetConfig, generations_file: Path, workers: int | None) -> N
     # Compute the metrics of the generation, folding each prefix's scores in as the pool hands
     # them back.
     metrics = EvaluationMetrics.aggregate(
-        _score_in_parallel(
-            generations_file,
-            dataset=dataset,
-            consider_vacuity=config.declare.consider_vacuity,
-            workers=workers,
-        )
+        _score_in_parallel(generations_file, dataset=dataset, workers=workers)
     )
 
     # The report is named after the run the generations carry, so it sits under `outputs/eval/`
@@ -158,16 +140,10 @@ def main() -> None:
         description="Score a run's generated test-split suffixes against the ground truth."
     )
     parser.add_argument(
-        '-c',
-        '--config',
-        required=True,
-        help='Name of the dataset config the generations were written under, from '
-        "config/datasets/ (e.g. 'bpic17').",
-    )
-    parser.add_argument(
         '-g',
         '--generations',
-        type=Path,
+        type=existing_file,
+        metavar='GENERATIONS',
         required=True,
         help='Path to the generations file to score, from `pipelines.generate`.',
     )
@@ -176,11 +152,12 @@ def main() -> None:
         '--workers',
         type=int,
         default=None,
+        metavar='N',
         help='How many processes to score with. Defaults to one per available CPU.',
     )
     args = parser.parse_args()
 
-    run(load_dataset_config(args.config), args.generations, args.workers)
+    run(args.generations, args.workers)
 
 
 if __name__ == '__main__':
