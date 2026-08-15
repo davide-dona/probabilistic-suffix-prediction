@@ -6,38 +6,41 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.configs import ExperimentConfig, load_config
+from src.cli import add_hardware_argument, existing_file
+from src.configs import load_generation_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
-from src.identity import RunIdentity, require_same_dataset
+from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
 from src.model import TransformerCVAE, load_checkpoint
 from src.paths import Split
 
 
-def run(config: ExperimentConfig, model_path: Path) -> None:
+def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> None:
     """Generate suffixes for every prefix of the test split and write them out.
 
     Args:
-        config: The validated experiment config.
-        model_path: The checkpoint to generate with. Named rather than guessed at: a config
+        checkpoint_path: The checkpoint to generate with. Named rather than guessed at: a config
             matches every run ever started from it, and picking one of them is a decision the
-            caller makes, not one to be inferred from a filename.
-    Raises:
-        ValueError: If the checkpoint was trained on a different dataset than the config
-            describes, which would decode its output through the wrong codec.
+            caller makes, not one to be inferred from a filename. It carries the config of the
+            run that wrote it, so nothing about the model or the dataset is passed alongside it.
+        hardware: The hardware profile to generate under, replacing the one the run was trained
+            with.
+        num_samples: How many suffixes to draw per prefix, or `None` for the run's own.
     """
+    print(f'Loading the checkpoint at {checkpoint_path}...', flush=True)
+    checkpoint = load_checkpoint(checkpoint_path)
+    run = RunIdentity.from_dict(checkpoint['run'])
+    config = load_generation_config(
+        checkpoint['experiment_config'], hardware=hardware, num_samples=num_samples
+    )
+
     paths.require_dataset(config.data.name)
     torch.manual_seed(config.seed)
 
     print('Loading codec...', flush=True)
     codec = DatasetCodec.load(config.data)
-
-    # Load the model from the checkpoint and put it on the right device
-    checkpoint = load_checkpoint(model_path)
-    run = RunIdentity.from_dict(checkpoint['run'])
-    require_same_dataset(run, config.data.name, artifact=model_path)
 
     model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
     model.eval()
@@ -66,7 +69,7 @@ def run(config: ExperimentConfig, model_path: Path) -> None:
 
     print(
         f'Generating {config.inference.num_samples} suffixes for each of '
-        f'{len(test_dataset)} test prefixes, with {model_path}',
+        f'{len(test_dataset)} test prefixes, with {checkpoint_path}',
         flush=True,
     )
 
@@ -90,28 +93,28 @@ def main() -> None:
         description='Generate test-split suffixes from a trained model.'
     )
     parser.add_argument(
-        '-c',
-        '--config',
-        required=True,
-        help="Name of this experiment's dataset config, from config/datasets/ (e.g. 'bpic17').",
-    )
-    parser.add_argument(
-        '-w',
-        '--hardware',
-        required=True,
-        help='Hardware profile to run under, from config/hardware/.',
-    )
-    parser.add_argument(
         '-m',
-        '--model',
-        type=Path,
+        '--checkpoint',
+        type=existing_file,
+        metavar='CHECKPOINT',
         required=True,
         help='Path to the checkpoint to generate with, from `pretrained/`, '
-        '`outputs/checkpoints/best/` or `outputs/checkpoints/last/`.',
+        '`outputs/checkpoints/best/` or `outputs/checkpoints/last/`. Its own config is what '
+        'the model and the dataset are read from.',
+    )
+    add_hardware_argument(parser, required=True)
+    parser.add_argument(
+        '-n',
+        '--num-samples',
+        type=int,
+        default=None,
+        metavar='N',
+        help='How many suffixes to draw per prefix, overriding the config the checkpoint '
+        "carries. Defaults to the run's own `inference.num_samples`.",
     )
     args = parser.parse_args()
 
-    run(load_config(args.config, args.hardware), args.model)
+    run(args.checkpoint, hardware=args.hardware, num_samples=args.num_samples)
 
 
 if __name__ == '__main__':

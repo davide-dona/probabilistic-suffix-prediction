@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import yaml
 
-from src.paths import BASE_CONFIG, dataset_config_path, hardware_config_path
+from src.paths import BASE_CONFIG
 
 from .schema import DatasetConfig, ExperimentConfig
 
@@ -30,42 +32,69 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
-def load_config(config: str, hardware: str) -> ExperimentConfig:
+def _read(path: Path) -> dict:
+    """Read one layer of a config."""
+    with path.open('r') as f:
+        return yaml.safe_load(f)
+
+
+def load_config(config: Path, hardware: Path) -> ExperimentConfig:
     """Load and validate an experiment config.
     Merges with the base config and the selected hardware profile.
 
     Args:
-        config: Name of the dataset config YAML, under config/datasets/ (e.g. 'bpic17').
-        hardware: Name of the hardware profile YAML, under config/hardware/ (e.g. 'mps').
+        config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
+        hardware: Path to the hardware profile YAML, e.g. config/hardware/mps.yaml.
     Returns:
         The validated config.
     """
     # Load the base config, the hardware profile, and the dataset.
     # Overrides are applied in that same order.
-    with BASE_CONFIG.open('r') as f:
-        base = yaml.safe_load(f)
-    with hardware_config_path(hardware).open('r') as f:
-        hardware_profile = yaml.safe_load(f)
-    with dataset_config_path(config).open('r') as f:
-        override = yaml.safe_load(f)
-
-    merged = _deep_merge(_deep_merge(base, hardware_profile), override)
+    merged = _deep_merge(_deep_merge(_read(BASE_CONFIG), _read(hardware)), _read(config))
     return ExperimentConfig.model_validate(merged)
 
 
-def load_dataset_config(config: str) -> DatasetConfig:
+def load_dataset_config(config: Path) -> DatasetConfig:
     """Load and validate the hardware-independent parts of an experiment config: `data` and
     `declare`, merged over `paths.BASE_CONFIG` alone. For pipelines that never read a
     hardware-dependent value, so they never need a hardware profile.
 
     Args:
-        config: Name of the dataset config YAML, under config/datasets/ (e.g. 'bpic17').
+        config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
     Returns:
         The validated `data`/`declare` sections.
     """
-    with BASE_CONFIG.open('r') as f:
-        base = yaml.safe_load(f)
-    with dataset_config_path(config).open('r') as f:
-        override = yaml.safe_load(f)
-    merged = _deep_merge(base, override)
+    merged = _deep_merge(_read(BASE_CONFIG), _read(config))
     return DatasetConfig.model_validate({'data': merged['data'], 'declare': merged['declare']})
+
+
+def load_generation_config(
+    experiment_config: dict, *, hardware: Path, num_samples: int | None
+) -> ExperimentConfig:
+    """Load and validate the config a checkpoint is generated from, under the hardware in hand.
+
+    The run's own config travels inside the checkpoint, so generating needs no dataset config: the
+    model, the data and the sampling it was trained under are already settled. Only the profile
+    changes, since a run trained on one machine is routinely generated from on another.
+
+    The profile carries training-only values too - `training.max_steps`, `optimizer.lr`,
+    `loss.kl_annealing_period_steps` - and merging brings them along. Nothing generation reads
+    touches them and the merged config is never written back out, so they go no further than here.
+
+    Args:
+        experiment_config: The run's config as the checkpoint stores it, from
+            `checkpoint['experiment_config']`.
+        hardware: Path to the hardware profile to generate under, whose device, batch size,
+            workers and row bound replace the ones the run was trained with.
+        num_samples: How many suffixes to draw per prefix, or `None` to keep the run's own.
+    Returns:
+        The validated config.
+    Raises:
+        pydantic.ValidationError: If the merged config is not a valid experiment, `num_samples`
+            below `InferenceConfig`'s floor included.
+    """
+    merged = _deep_merge(experiment_config, _read(hardware))
+    if num_samples is not None:
+        # Merged in rather than set on the config, which is frozen once validated.
+        merged = _deep_merge(merged, {'inference': {'num_samples': num_samples}})
+    return ExperimentConfig.model_validate(merged)

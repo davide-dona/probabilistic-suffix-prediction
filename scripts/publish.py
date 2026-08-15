@@ -7,6 +7,7 @@ from huggingface_hub import CommitOperationAdd, create_commit, file_exists, whoa
 from huggingface_hub.errors import HfHubHTTPError, LocalTokenNotFoundError
 
 from src import paths
+from src.cli import existing_file
 from src.identity import RunIdentity
 from src.model import inference_payload, load_checkpoint
 
@@ -17,7 +18,7 @@ def _mebibytes(path: Path) -> str:
 
 
 def _account() -> str:
-    """Check the Hugging Face credentials and return the account name a pull 
+    """Check the Hugging Face credentials and return the account name a pull
     request would be opened under.
 
     Returns:
@@ -84,8 +85,7 @@ def run(model_paths: list[Path]) -> None:
                 CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=published)
             )
             descriptions.append(
-                f'- {run}: step {payload["step"]}, '
-                f'selection score {payload["selection_score"]:.4f}'
+                f'- {run}: step {payload["step"]}, selection score {payload["selection_score"]:.4f}'
             )
 
         print(f'Author:  {account}\n')
@@ -119,15 +119,16 @@ def main() -> None:
     )
     parser.add_argument(
         '-m',
-        '--model',
-        type=Path,
+        '--checkpoint',
+        type=existing_file,
+        metavar='CHECKPOINT',
         nargs='+',
         required=True,
         help='Path(s) to the checkpoint(s) to publish, from `outputs/checkpoints/best/`.',
     )
     args = parser.parse_args()
 
-    run(args.model)
+    run(args.checkpoint)
 
 
 if __name__ == '__main__':

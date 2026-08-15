@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 from src import paths
+from src.cli import existing_directory, existing_file
 from src.visualization import (
     ACCURACY_METRICS,
     BY_PREFIX_LENGTH,
@@ -100,6 +101,29 @@ def _dataset_labels(pairs: Sequence[str] | None) -> dict[str, str]:
     return labels
 
 
+def _swept_reports(directory: Path) -> list[Path]:
+    """Find every evaluation report under a directory.
+
+    The walk is recursive, so the whole of `outputs/eval/`, one log's directory or one model's
+    all read the same way, and sorted, so a legend is ordered by log and then by model however
+    the filesystem lists them.
+
+    Args:
+        directory: The directory to sweep.
+    Returns:
+        The reports under it, in path order.
+    Raises:
+        FileNotFoundError: If it holds no reports at all.
+    """
+    reports = sorted(directory.rglob('*.json'))
+    if not reports:
+        raise FileNotFoundError(
+            f'no evaluation reports under {directory}. Run `python -m pipelines.evaluate` '
+            'first, or sweep the right directory.'
+        )
+    return reports
+
+
 def run(
     evaluation_files: Sequence[Path],
     labels: Sequence[str] | None,
@@ -151,13 +175,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description='Plot and tabulate a set of evaluation reports for a paper.'
     )
-    parser.add_argument(
+    # The reports are either named one by one or swept out of a directory. Both at once could
+    # only name a report twice.
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
         '-e',
         '--evaluations',
-        type=Path,
+        type=existing_file,
+        metavar='REPORT',
         nargs='+',
-        required=True,
         help='Paths to the evaluation reports to compare, from `pipelines.evaluate`.',
+    )
+    source.add_argument(
+        '-E',
+        '--evaluations-dir',
+        type=existing_directory,
+        metavar='DIR',
+        help='Path to a directory to compare every evaluation report under, at any depth, e.g. '
+        '`outputs/eval` for all of them or `outputs/eval/bpic17` for one log. Each report says '
+        'which model and log it belongs to.',
     )
     parser.add_argument(
         '-l',
@@ -191,7 +227,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run(args.evaluations, args.labels, args.dataset_labels, args.formats, args.coverage)
+    evaluations = args.evaluations or _swept_reports(args.evaluations_dir)
+    run(evaluations, args.labels, args.dataset_labels, args.formats, args.coverage)
 
 
 if __name__ == '__main__':
