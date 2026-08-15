@@ -6,7 +6,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from src import paths
-from src.cli import add_config_argument, add_hardware_argument, existing_file
+from src.cli import (
+    add_config_argument,
+    add_hardware_argument,
+    banner,
+    existing_file,
+    step,
+)
 from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
@@ -60,14 +66,47 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     torch.manual_seed(config.seed)
     generator = torch.Generator().manual_seed(config.seed)
 
-    print('Loading codec...', flush=True)
-    codec = DatasetCodec.load(config.data)
+    # When resuming, keep the identity the checkpoint carries, so it writes to the same
+    # TensorBoard directory and the same files.
+    run = (
+        RunIdentity(
+            dataset=config.data.name,
+            model=config.model.name,
+            tag=f'{datetime.now():%Y%m%d-%H%M%S}',
+        )
+        if checkpoint is None
+        else RunIdentity.from_dict(checkpoint['run'])
+    )
 
-    model = TransformerCVAE(config.model, codec).to(config.training.device)
+    banner(
+        'Resuming training' if checkpoint is not None else 'Training a suffix-prediction model',
+        {
+            'run': run,
+            'dataset': config.data.name,
+            'model': config.model.name,
+            'device': config.training.device,
+            'steps': f'at most {config.training.max_steps:,}, validating every '
+            f'{config.training.val_every_n_steps:,}',
+            'batch': f'{config.dataloader.batch_size} pairs, '
+            f'{config.dataloader.num_workers} loader workers',
+            'optimizer': f'Adam, lr {config.optimizer.lr}, '
+            f'weight decay {config.optimizer.weight_decay}',
+            'checkpoints': paths.checkpoint_path(run),
+            'tensorboard': paths.tensorboard_dir(run),
+        },
+    )
+
+    with step('Loading the dataset codec'):
+        codec = DatasetCodec.load(config.data)
+
+    with step(f'Building the model and moving it onto {config.training.device}'):
+        model = TransformerCVAE(config.model, codec).to(config.training.device)
+        parameters = sum(parameter.numel() for parameter in model.parameters())
+        print(f'  {parameters:,} parameters', flush=True)
 
     # Build the datasets and loaders
-    print('Loading train split...', flush=True)
-    train_dataset = TraceDataset(codec=codec, split=Split.TRAIN)
+    with step('Reading and encoding the train split'):
+        train_dataset = TraceDataset(codec=codec, split=Split.TRAIN)
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=config.dataloader.batch_size,
@@ -76,8 +115,8 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         num_workers=config.dataloader.num_workers,
     )
 
-    print('Loading validation split...', flush=True)
-    validation_dataset = TraceDataset(codec=codec, split=Split.VAL)
+    with step('Reading and encoding the validation split'):
+        validation_dataset = TraceDataset(codec=codec, split=Split.VAL)
     # Validation and generation loaders are fixed subsets of the validation split, so every run
     # of a config reads the same traces and their curves can be laid over each other.
     val_loader = DataLoader(
@@ -100,21 +139,9 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     )
 
     print(
-        f'Training on {len(train_loader.dataset)} prefix/suffix pairs, scoring '
-        f'{len(val_loader.dataset)} of the {len(validation_dataset)} validation pairs and '
-        f'generating for {len(generation_loader.dataset)}'
-    )
-
-    # When resuming, keep the identity the checkpoint carries, so it writes to the same
-    # TensorBoard directory and the same files.
-    run = (
-        RunIdentity(
-            dataset=config.data.name,
-            model=config.model.name,
-            tag=f'{datetime.now():%Y%m%d-%H%M%S}',
-        )
-        if checkpoint is None
-        else RunIdentity.from_dict(checkpoint['run'])
+        f'Training on {len(train_loader.dataset):,} prefix/suffix pairs, scoring '
+        f'{len(val_loader.dataset):,} of the {len(validation_dataset):,} validation pairs and '
+        f'generating for {len(generation_loader.dataset):,}'
     )
 
     train(

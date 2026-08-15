@@ -5,7 +5,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 from src import paths
-from src.cli import add_config_argument
+from src.cli import add_config_argument, banner, step
 from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
 from src.logs.declare import discover_declare_model
@@ -127,65 +127,79 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     """
     dataset = data_config.name
 
+    banner(
+        f'Preprocessing "{dataset}"',
+        {
+            'original log': paths.original_log(dataset),
+            'split': f'{data_config.train_split:.0%} train, {data_config.val_split:.0%} val, '
+            f'{data_config.test_split:.0%} test, out of time',
+            'splits': paths.split_path(dataset=dataset, split=Split.TRAIN).parent,
+            'codec': paths.codec_path(dataset),
+            'declarative model': paths.declare_model_path(dataset)
+            if not skip_discovery
+            else 'skipped (--skip-discovery)',
+        },
+    )
+
     # Read the raw log.
-    print(f'Preprocessing "{dataset}"...', flush=True)
-    print('Reading the original log...', flush=True)
-    log = read_original_log(data_config)
+    with step('Reading the original log'):
+        log = read_original_log(data_config)
+        print(f'  {len(log):,} events over {log[CASE_KEY].nunique():,} cases', flush=True)
 
     # Derive the columns the model reads, all of which are read off neighbouring rows or off the
     # size of a case, so the log has to be in order first.
-    print('Deriving the temporal and calendar features...', flush=True)
-    log = sort_log(log, case_key=CASE_KEY, timestamp_key=TIMESTAMP_KEY)
-    log = preprocess(log, feature_columns=data_config.event_features)
-    log = add_prefix_bounds(log)
+    with step('Sorting the log and deriving the temporal and calendar features'):
+        log = sort_log(log, case_key=CASE_KEY, timestamp_key=TIMESTAMP_KEY)
+        log = preprocess(log, feature_columns=data_config.event_features)
+        log = add_prefix_bounds(log)
 
     # Split the log into train/val/test out of time, dropping the cases longer than
     # `max_seq_len` at the point in the procedure where that does not bias its blocks.
     max_seq_len = case_length_cutoff(log, data_config=data_config)
-    print(f'Splitting "{dataset}" into train/val/test...', flush=True)
-    train, val, test = out_of_time_split(
-        log,
-        case_key=CASE_KEY,
-        timestamp_key=TIMESTAMP_KEY,
-        val_frac=data_config.val_split,
-        test_frac=data_config.test_split,
-        max_seq_len=max_seq_len,
-    )
+    with step(f'Splitting the log out of time, at a cutoff of {max_seq_len} events per case'):
+        train, val, test = out_of_time_split(
+            log,
+            case_key=CASE_KEY,
+            timestamp_key=TIMESTAMP_KEY,
+            val_frac=data_config.val_split,
+            test_frac=data_config.test_split,
+            max_seq_len=max_seq_len,
+        )
 
-    cases_read = log[CASE_KEY].nunique()
-    dropped = cases_read - sum(rows[CASE_KEY].nunique() for rows in (train, val, test))
-    print(
-        f'Dropped {dropped} of {cases_read} cases longer than {max_seq_len} events '
-        f'({dropped / cases_read:.2%})',
-        flush=True,
-    )
+        cases_read = log[CASE_KEY].nunique()
+        dropped = cases_read - sum(rows[CASE_KEY].nunique() for rows in (train, val, test))
+        print(
+            f'  dropped {dropped:,} of {cases_read:,} cases longer than {max_seq_len} events '
+            f'({dropped / cases_read:.2%})',
+            flush=True,
+        )
 
-    print('Writing the splits...', flush=True)
-    for split, rows in ((Split.TRAIN, train), (Split.VAL, val), (Split.TEST, test)):
-        write_log(rows, paths.split_path(dataset=dataset, split=split))
+    with step('Writing the splits'):
+        for split, rows in ((Split.TRAIN, train), (Split.VAL, val), (Split.TEST, test)):
+            write_log(rows, paths.split_path(dataset=dataset, split=split))
 
     # Fit the vocabularies and normalization statistics on the train split, writng them out to
     # `dataset.json`. The generated values can be decoded back using the same codec.
-    print('Fitting the dataset codec...', flush=True)
-    codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
-    codec.save()
+    with step('Fitting the dataset codec on the train split'):
+        codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
+        codec.save()
 
     # Discover the declarative model from the train split and write it out to `model.decl`,
     # unless discovery was skipped.
     if skip_discovery:
         constraints_summary = 'declarative model discovery skipped'
     else:
-        # The slowest step of the pipeline by a wide margin.
-        print('Discovering the declarative model...', flush=True)
-        num_constraints = discover_declare_model(
-            train,
-            dataset=dataset,
-            declare_config=declare_config,
-        )
+        # The slowest step of the pipeline by a wide margin, and pm4py reports its own progress.
+        with step('Discovering the declarative model'):
+            num_constraints = discover_declare_model(
+                train,
+                dataset=dataset,
+                declare_config=declare_config,
+            )
         constraints_summary = f'{num_constraints} declarative constraints'
 
     print(
-        f'Preprocessed "{dataset}": {len(train)} train, {len(val)} val, {len(test)} test '
+        f'Preprocessed "{dataset}": {len(train):,} train, {len(val):,} val, {len(test):,} test '
         f'events, {len(codec.activity.vocab)} activities, '
         f'{len(codec.resource.vocab)} resources, '
         f'{len(codec.categorical_features)} categorical and '

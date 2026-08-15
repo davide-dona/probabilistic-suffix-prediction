@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -34,6 +35,30 @@ def existing_directory(value: str) -> Path:
     if not path.is_dir():
         raise argparse.ArgumentTypeError(f'no such directory: {path}')
     return path
+
+
+def label_map(pairs: Sequence[str] | None) -> dict[str, str]:
+    """Read the `name=Display` pairs a flag renames something through.
+
+    Args:
+        pairs: What the flag was given, or `None` for no renaming at all.
+    Returns:
+        The display name of everything named, keyed by its own name.
+    Raises:
+        ValueError: If a pair is not `name=Display`, or if one name is given two displays,
+            which a plain dict would resolve silently.
+    """
+    labels: dict[str, str] = {}
+    for pair in pairs or ():
+        name, separator, display = pair.partition('=')
+        if not separator or not name or not display:
+            raise ValueError(f'expected a label as `name=Display`, got {pair!r}.')
+        if name in labels:
+            raise ValueError(
+                f'{name!r} is labelled twice, as {labels[name]!r} and {display!r}. Name it once.'
+            )
+        labels[name] = display
+    return labels
 
 
 def add_config_argument(container: argparse._ActionsContainer, *, required: bool) -> None:

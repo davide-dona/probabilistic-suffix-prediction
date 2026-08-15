@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.cli import add_hardware_argument, existing_file
+from src.cli import add_hardware_argument, banner, existing_file, step
 from src.configs import load_generation_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
@@ -29,8 +29,10 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
             with.
         num_samples: How many suffixes to draw per prefix, or `None` for the run's own.
     """
-    print(f'Loading the checkpoint at {checkpoint_path}...', flush=True)
-    checkpoint = load_checkpoint(checkpoint_path)
+    # The run's own config, resized for the machine in hand. Read before the codec, since it is
+    # what says which dataset's codec to read.
+    with step(f'Reading the checkpoint at {checkpoint_path}'):
+        checkpoint = load_checkpoint(checkpoint_path)
     run = RunIdentity.from_dict(checkpoint['run'])
     config = load_generation_config(
         checkpoint['experiment_config'], hardware=hardware, num_samples=num_samples
@@ -39,37 +41,56 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
     paths.require_dataset(config.data.name)
     torch.manual_seed(config.seed)
 
-    print('Loading codec...', flush=True)
-    codec = DatasetCodec.load(config.data)
+    # The output file is named after the run the checkpoint carries, not after the file it was
+    # read from, so the generations land under the run that produced them whatever it is called.
+    path = paths.generations_path(run)
+    device = torch.device(config.training.device)
+    batch_size = generation_batch_size(
+        inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
+    )
+    # A checkpoint that has been trimmed for publishing still carries both of these.
+    trained_step, score = checkpoint.get('step'), checkpoint.get('selection_score')
 
-    model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
-    model.eval()
+    banner(
+        'Generating suffixes',
+        {
+            'run': run,
+            'dataset': config.data.name,
+            'model': f'{config.model.name} (step {trained_step}, selection score {score:.4f})'
+            if trained_step is not None and score is not None
+            else config.model.name,
+            'device': device,
+            'samples': f'{config.inference.num_samples} suffixes per prefix',
+            'batch': f'{batch_size} prefixes, {config.dataloader.num_workers} loader workers',
+            'generations': path,
+        },
+    )
+
+    with step('Loading the dataset codec'):
+        codec = DatasetCodec.load(config.data)
+
+    with step(f'Building the model and moving it onto {device}'):
+        model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
+        model.eval()
 
     # Build the DataLoader for the test split
-    print('Loading test split...', flush=True)
-    test_dataset = TraceDataset(codec=codec, split=Split.TEST)
+    with step('Reading and encoding the test split'):
+        test_dataset = TraceDataset(codec=codec, split=Split.TEST)
 
-    print('Sorting prefixes by suffix length...', flush=True)
-    sampler = test_dataset.length_sorted_indices()
+    with step(f'Sorting {len(test_dataset):,} prefixes by suffix length'):
+        sampler = test_dataset.length_sorted_indices()
 
     test_loader = DataLoader(
         dataset=test_dataset,
-        batch_size=generation_batch_size(
-            inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
-        ),
+        batch_size=batch_size,
         # sort the prefixes by length so the batches are more uniform and generation is faster
         sampler=sampler,
         num_workers=config.dataloader.num_workers,
     )
 
-    # The output file is named after the run the checkpoint carries, not after the file it was
-    # read from, so the generations land under the run that produced them whatever it is called.
-    path = paths.generations_path(run)
-    device = torch.device(config.training.device)
-
     print(
         f'Generating {config.inference.num_samples} suffixes for each of '
-        f'{len(test_dataset)} test prefixes, with {checkpoint_path}',
+        f'{len(test_dataset):,} test prefixes, in {len(test_loader):,} batches',
         flush=True,
     )
 
