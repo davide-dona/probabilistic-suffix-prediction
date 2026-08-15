@@ -1,4 +1,6 @@
 import argparse
+import os
+import time
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -8,7 +10,7 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src import paths
-from src.cli import existing_file
+from src.cli import banner, duration, existing_file
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
 from src.inference.generation_store import read_generation_block, read_run_identity
@@ -112,15 +114,31 @@ def run(generations_file: Path, workers: int | None) -> None:
     """
     with pq.ParquetFile(generations_file) as parquet:
         run = read_run_identity(parquet)
+        blocks, prefixes = parquet.num_row_groups, parquet.metadata.num_rows
 
     dataset = run.dataset
     paths.require_dataset(dataset)
     paths.require_declare_model(dataset)
 
-    print(f'Scoring the suffixes generated for each prefix of {generations_file}...', flush=True)
+    # What the pool will actually start, which is what the wait before the first block is spent on.
+    processes = workers if workers is not None else os.cpu_count()
+
+    banner(
+        'Scoring generated suffixes',
+        {
+            'run': run,
+            'dataset': dataset,
+            'generations': f'{generations_file} ({prefixes:,} prefixes)',
+            'declarative model': paths.declare_model_path(dataset),
+            'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
+            'prefixes each',
+            'report': paths.evaluation_path(run),
+        },
+    )
 
     # Compute the metrics of the generation, folding each prefix's scores in as the pool hands
     # them back.
+    started = time.perf_counter()
     metrics = EvaluationMetrics.aggregate(
         _score_in_parallel(generations_file, dataset=dataset, workers=workers)
     )
@@ -130,8 +148,8 @@ def run(generations_file: Path, workers: int | None) -> None:
     report = EvaluationReport(run=run, metrics=metrics)
     path = report.write(paths.evaluation_path(run))
     print(
-        f'Scored {metrics.pairs} prefixes over {metrics.cases} cases. '
-        f'Wrote evaluation report to {path}'
+        f'Scored {metrics.pairs:,} prefixes over {metrics.cases:,} cases in '
+        f'{duration(time.perf_counter() - started)}. Wrote evaluation report to {path}'
     )
 
 

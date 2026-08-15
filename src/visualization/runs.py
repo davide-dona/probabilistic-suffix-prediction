@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,30 +39,25 @@ def _read_report(file: Path) -> EvaluationReport:
         raise ValueError(f'{file} is not an evaluation report: {error}') from error
 
 
-def load_runs(files: Sequence[Path], labels: Sequence[str] | None) -> dict[str, list[PlottedRun]]:
+def load_runs(files: Sequence[Path], labels: Mapping[str, str]) -> dict[str, list[PlottedRun]]:
     """Read a set of evaluation reports and group them by the log they were scored on.
 
-    A label is a model rather than a run, so two reports sharing one are the same model on two
-    logs and are drawn in the same colour throughout.
+    A label is a model rather than a run, so one model shown on two logs is drawn in the same
+    colour throughout.
 
     Args:
         files: The reports to read, from `pipelines.evaluate`.
-        labels: What to call each of them, in the same order, or `None` for the model's own name.
+        labels: What to call a model in legends and tables, keyed by its own name. A model not
+            named here keeps that name.
     Returns:
         The runs of each log, both the logs and the runs within one in the order the files were
         named, so a legend reads in the order they were asked for.
     Raises:
         FileNotFoundError: If a report does not exist.
-        ValueError: If a file is not a report, if the labels do not match the files one for one,
-            if a log ends up with two runs of the same name, or if there are more models than the
-            palette can tell apart.
+        ValueError: If a file is not a report, if a label names no report's model, if a log ends
+            up with two runs of the same name, or if there are more models than the palette can
+            tell apart.
     """
-    if labels is not None and len(labels) != len(files):
-        raise ValueError(
-            f'got {len(labels)} labels for {len(files)} evaluation reports. Name one label per '
-            'report, in the same order, or none at all.'
-        )
-
     missing = [file for file in files if not file.exists()]
     if missing:
         raise FileNotFoundError(
@@ -71,7 +66,14 @@ def load_runs(files: Sequence[Path], labels: Sequence[str] | None) -> dict[str, 
         )
 
     reports = [_read_report(file) for file in files]
-    names = list(labels) if labels is not None else [report.run.model for report in reports]
+
+    unmatched = sorted(set(labels) - {report.run.model for report in reports})
+    if unmatched:
+        raise ValueError(
+            f'nothing to label called {", ".join(repr(model) for model in unmatched)}. '
+            f'The models read are {", ".join(sorted({report.run.model for report in reports}))}.'
+        )
+    names = [labels.get(report.run.model, report.run.model) for report in reports]
 
     # One style per model, assigned in the order the models first appear, so the same model keeps
     # its colour across every figure of every log.

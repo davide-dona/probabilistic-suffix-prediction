@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 from src import paths
-from src.cli import existing_directory, existing_file
+from src.cli import banner, existing_directory, existing_file, label_map, step
 from src.visualization import (
     ACCURACY_METRICS,
     BY_PREFIX_LENGTH,
@@ -27,14 +27,14 @@ from src.visualization import (
 IMAGE_FORMATS = ('pdf', 'svg', 'png')
 
 
-def save_figure(figure: Figure, paths: Iterable[Path]) -> None:
+def save_figure(figure: Figure, destinations: Iterable[Path]) -> None:
     """Write a figure to every path asked for and close it.
 
     Args:
         figure: The finished figure. Closed here, since nothing reads it back.
-        paths: Where to write it, one per format; the suffix of each decides the format.
+        destinations: Where to write it, one per format; the suffix of each decides the format.
     """
-    for path in paths:
+    for path in destinations:
         path.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(path)
     plt.close(figure)
@@ -82,25 +82,6 @@ def _write_dataset_figures(
     return figures
 
 
-def _dataset_labels(pairs: Sequence[str] | None) -> dict[str, str]:
-    """Read the `name=Display` pairs a table's Dataset column is rendered through.
-
-    Args:
-        pairs: What the flag was given, or `None` for no renaming at all.
-    Returns:
-        The display name of each log named, keyed by the log's own name.
-    Raises:
-        ValueError: If a pair is not `name=Display`.
-    """
-    labels = {}
-    for pair in pairs or ():
-        name, separator, display = pair.partition('=')
-        if not separator or not name or not display:
-            raise ValueError(f'expected a dataset label as `name=Display`, got {pair!r}.')
-        labels[name] = display
-    return labels
-
-
 def _swept_reports(directory: Path) -> list[Path]:
     """Find every evaluation report under a directory.
 
@@ -126,8 +107,8 @@ def _swept_reports(directory: Path) -> list[Path]:
 
 def run(
     evaluation_files: Sequence[Path],
-    labels: Sequence[str] | None,
-    dataset_labels: Sequence[str] | None,
+    labels: dict[str, str],
+    dataset_labels: dict[str, str],
     formats: Sequence[str],
     coverage: float,
 ) -> None:
@@ -135,35 +116,49 @@ def run(
 
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`.
-        labels: What to call each of them in legends and tables, in the same order, or `None` for
-            each run's model.
-        dataset_labels: `name=Display` pairs renaming a log in the tables, e.g. `bpic17=BPIC17`.
-            Only the tables: a figure directory keeps the log's own name.
+        labels: What to call a model in legends and tables, keyed by its own name. A model not
+            named here keeps that name.
+        dataset_labels: What to call a log in the tables, keyed by its own name. Only the tables:
+            a figure directory keeps the log's own name.
         formats: The image formats to write each figure in.
         coverage: The share of prefix pairs the x-axis of a metric figure must cover, which bounds
             it short of the sparse tail of long prefixes. 1.0 draws every length.
     Raises:
-        ValueError: If `coverage` is not a share of the pairs, or a dataset label is malformed.
+        ValueError: If `coverage` is not a share of the pairs, or a label names no report's model.
+        FileNotFoundError: If a report does not exist.
     """
     if not 0.0 < coverage <= 1.0:
         raise ValueError(f'coverage must be a share of the pairs in (0, 1], got {coverage}.')
 
-    displayed = _dataset_labels(dataset_labels)
-    grouped = load_runs(evaluation_files, labels)
+    with step(f'Reading {len(evaluation_files)} evaluation report(s)'):
+        grouped = load_runs(evaluation_files, labels)
+
+    banner(
+        'Drawing the figures and tables',
+        {
+            'datasets': ', '.join(
+                f'{dataset} ({len(runs)} run(s))' for dataset, runs in grouped.items()
+            ),
+            'formats': ', '.join(formats),
+            'coverage': f'{coverage:.0%} of the prefix pairs on the x-axis',
+            'output': paths.comparison_table_path(TABLES[0].name).parent,
+        },
+    )
     use_paper_style()
 
     figures = 0
     for dataset, runs in grouped.items():
-        figures += _write_dataset_figures(dataset, runs, formats=formats, coverage=coverage)
-        print(f'Drew {dataset} from {len(runs)} run(s).', flush=True)
+        with step(f'Drawing {dataset} from {len(runs)} run(s)'):
+            figures += _write_dataset_figures(dataset, runs, formats=formats, coverage=coverage)
 
     # The tables see the display names, the figures the log's own: one is read by a person, the
     # other is a directory.
-    tabulated = {displayed.get(dataset, dataset): runs for dataset, runs in grouped.items()}
-    for table in TABLES:
-        path = paths.comparison_table_path(table.name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(latex_table(tabulated, table))
+    tabulated = {dataset_labels.get(dataset, dataset): runs for dataset, runs in grouped.items()}
+    with step(f'Writing {len(TABLES)} comparison tables'):
+        for table in TABLES:
+            path = paths.comparison_table_path(table.name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(latex_table(tabulated, table))
 
     print(
         f'\nWrote {figures} figures in {", ".join(formats)} and {len(TABLES)} tables in tex '
@@ -200,13 +195,15 @@ def main() -> None:
         '--labels',
         nargs='+',
         default=None,
-        help='What to call each report in legends and tables, in the same order. Two reports '
-        'sharing a label are one model on two datasets. Defaults to `<model>`.',
+        metavar='MODEL=DISPLAY',
+        help='How to name a model in legends and tables, as `name=Display` pairs, e.g. '
+        '`cvae-small=CVAE-S`. A model not named here keeps its own name.',
     )
     parser.add_argument(
         '--dataset-labels',
         nargs='+',
         default=None,
+        metavar='DATASET=DISPLAY',
         help='How to name a dataset in the tables, as `name=Display` pairs, e.g. `bpic17=BPIC17`. '
         "Figures keep the dataset's own name, since it is a directory.",
     )
@@ -228,7 +225,13 @@ def main() -> None:
     args = parser.parse_args()
 
     evaluations = args.evaluations or _swept_reports(args.evaluations_dir)
-    run(evaluations, args.labels, args.dataset_labels, args.formats, args.coverage)
+    run(
+        evaluations,
+        label_map(args.labels),
+        label_map(args.dataset_labels),
+        args.formats,
+        args.coverage,
+    )
 
 
 if __name__ == '__main__':

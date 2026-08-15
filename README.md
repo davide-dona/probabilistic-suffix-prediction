@@ -133,7 +133,7 @@ python -m pipelines.visualize -E <path-to-directory>
 
 - `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. 
 - `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset. Each report says which model and dataset it belongs to, so nothing has to be typed alongside it. Two runs of one model on one dataset are an error, since a figure cannot draw them apart, so keep the directory to the runs being reported. One of `-e` and `-E` is required, and they cannot be combined.
-- `-l`/`--labels` renames each report's series in legends and tables. Two reports sharing a label are read as one model shown on two datasets. 
+- `-l`/`--labels` renames a model in legends and tables, as `name=Display` pairs, e.g. `cvae-small=CVAE-S`. A model not named here keeps its own name, and one entry renames it on every dataset it appears in. 
 - `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. 
 - `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`).
 - `--coverage` bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes — `1.0` draws every length.
