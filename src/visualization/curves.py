@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 from src.evaluation.metrics import ByLengthMetrics, EvaluationMetrics
-from src.visualization.metrics import MetricSpec, axis_label, metric_value
+from src.visualization.metrics import MetricSpec, axis_label, direction_marker, metric_value
 from src.visualization.runs import PlottedRun
 from src.visualization.style import COLUMN_WIDTH, PAGE_WIDTH, figure_size
 
@@ -176,7 +176,8 @@ def metric_grid(
     for index, spec in enumerate(specs):
         axes = panels[index]
         _draw(axes, runs, spec, cutoff, axis, x_bins=GRID_X_BINS)
-        axes.set_title(textwrap.fill(spec.label, width=GRID_TITLE_WIDTH))
+        title = f'{spec.label}{direction_marker(spec)}'
+        axes.set_title(textwrap.fill(title, width=GRID_TITLE_WIDTH))
         if spec.unit is not None:
             axes.set_ylabel(spec.unit)
         # A shared x-axis labels the bottom row alone, which leaves the last panel of a short

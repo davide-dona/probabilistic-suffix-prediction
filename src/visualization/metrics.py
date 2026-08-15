@@ -188,9 +188,23 @@ def metric_value(scores: PairScores, spec: MetricSpec) -> float:
     return getattr(getattr(scores, spec.family), spec.key)
 
 
+def direction_marker(spec: MetricSpec) -> str:
+    """The arrow marking whether higher or lower is better, for a figure's label or title.
+
+    Args:
+        spec: The metric to mark.
+    Returns:
+        ` ↑`/` ↓` with a leading space, or `''` for a metric with no best value.
+    """
+    if spec.higher_is_better is None:
+        return ''
+    return ' ↑' if spec.higher_is_better else ' ↓'
+
+
 def axis_label(spec: MetricSpec) -> str:
-    """A metric's axis label, its unit appended where it has one."""
-    return spec.label if spec.unit is None else f'{spec.label} [{spec.unit}]'
+    """A metric's axis label, its unit and which way is better appended where it has them."""
+    unit = '' if spec.unit is None else f' [{spec.unit}]'
+    return f'{spec.label}{unit}{direction_marker(spec)}'
 
 
 def format_value(value: float, spec: MetricSpec) -> str:
