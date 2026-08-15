@@ -182,41 +182,36 @@ def latex_table(grouped: dict[str, list[PlottedRun]], spec: TableSpec) -> str:
         spec: The table to render.
     Returns:
         The tabular alone, with one column per model, the best value of each row in bold and a
-        rule between metrics. Needs the `booktabs`, `multirow` and `graphicx` packages, and
+        rule between metrics. Needs the `booktabs`, `multirow` and `tabularx` packages, and
         belongs inside the paper's own float, which is where its caption and label are written.
     """
     models = _models(grouped)
+    header_row = '  Metric & Dataset & ' + ' & '.join(_escape_latex(model) for model in models)
 
     # Only the dataset and the model are free text; the row headers are written with LaTeX arrows
-    # and the values are formatted numbers already wrapped in their emphasis.
-    blocks = []
-    for row, block in zip(spec.rows, _blocks(grouped, spec, models), strict=True):
-        label = _row_header(row)
-        header = f'\\multirow{{{len(block)}}}{{*}}{{{label}}}'
-        blocks.append(
-            ' \\\\\n'.join(
-                '  ' + ' & '.join([header if index == 0 else '', _escape_latex(dataset), *cells])
-                for index, (dataset, cells) in enumerate(block)
-            )
-        )
+    # and the values are formatted numbers already wrapped in their emphasis. Every line below is
+    # one complete row, terminated where it is written, so the body is just every line in order.
+    # The multirow header sits alone on its own line, above the row it labels, rather than sharing
+    # a line with the first dataset's cells.
+    lines = ['\\toprule', header_row + ' \\\\', '\\midrule']
+    for block_index, (row, block) in enumerate(
+        zip(spec.rows, _blocks(grouped, spec, models), strict=True)
+    ):
+        if block_index > 0:
+            lines.append('\\midrule')
+        # `=` rather than `*`: the Metric column is a fixed-width `X` column, and `multirow` only
+        # wraps its label to that width, instead of overflowing past it, when told to match it.
+        lines.append(f'  \\multirow{{{len(block)}}}{{=}}{{{_row_header(row)}}}')
+        for dataset, cells in block:
+            lines.append('   & ' + ' & '.join([_escape_latex(dataset), *cells]) + ' \\\\')
+    lines.append('\\bottomrule')
 
-    return (
-        '\n'.join(
-            (
-                # `\linewidth` is the column in a `table` and the page in a `table*`, so the table
-                # fits whichever the paper puts it in.
-                '\\resizebox{\\linewidth}{!}{%',
-                f'\\begin{{tabular}}{{ll|{"r" * len(models)}}}',
-                '\\toprule',
-                '  Metric & Dataset & '
-                + ' & '.join(_escape_latex(model) for model in models)
-                + ' \\\\',
-                '\\midrule',
-                ' \\\\\n\\midrule\n'.join(blocks) + ' \\\\',
-                '\\bottomrule',
-                '\\end{tabular}%',
-                '}',
-            )
-        )
-        + '\n'
-    )
+    # `tabularx` targets `\linewidth`, the column in a `table` and the page in a `table*`, so the
+    # table fits whichever the paper puts it in; every column is an `X` column, so all of them,
+    # Metric and Dataset included, split that width evenly rather than sizing to their own content.
+    # Metric and Dataset hold free text and wrap ragged-right; a model's values are short enough
+    # to always fit their column on one line, so centering them reads as alignment, not wrapping.
+    text_columns = '*{2}{>{\\raggedright\\arraybackslash}X}'
+    value_columns = f'*{{{len(models)}}}{{>{{\\centering\\arraybackslash}}X}}'
+    preamble = f'\\begin{{tabularx}}{{\\linewidth}}{{{text_columns}|{value_columns}}}'
+    return '\n'.join((preamble, *lines, '\\end{tabularx}')) + '\n'
