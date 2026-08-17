@@ -2,51 +2,33 @@ from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from rapidfuzz import process
-from rapidfuzz.distance import OSA
 
 from src.inference.generation import Generation
 from src.metrics import ScalarMetrics, mean
+from src.suffixes import distances, sequence_similarity
 
 MINUTES_PER_DAY = 1440.0
 
 
 @dataclass(frozen=True, slots=True)
 class AccuracyScores(ScalarMetrics):
-    """The scores of one prefix's generated samples, or their mean over a set of prefixes.
+    """The scores of one prefix's generated samples, or their mean over a set of prefixes."""
 
-    These are the free-running numbers: the model wrote every suffix scored here on its own, one
-    event at a time. `Loss.remaining_time_loss` scores the same head teacher-forced, which is a
-    different question and a far easier one.
-
-    Everything here is cheap enough to compute at every validation, and everything here is
-    computed on both paths, the training curve and the final report. A number only the report can
-    afford belongs beside `ConformanceScores` in `conformance.py` instead.
-
-    No defaults: a field added here must be set in `score_generation`, and a `TypeError` is how
-    that is enforced.
-    """
-
-    # The Damerau-Levenshtein Similarity (DLS) is the edit distance normalized to [0, 1] and
-    # inverted.
+    # The Damerau-Levenshtein Similarity (DLS) between the samples and the ground truth [0, 1].
     dls_mean: float  # The mean similarity of a prefix's samples to the ground truth
     dls_point: (
         float  # z = mean(p(z | prefix), a single greedy answer, scored against the ground truth
     )
-    # The closest of a prefix's samples to the ground truth: what a set of suggestions is worth to
-    # a user who only needs one of them to be usable. The graded reading of `hit_rate_at_10`,
-    # which asks the same question but only counts an exact match.
+    # The closest of a prefix's samples to the ground truth.
     dls_best: float
 
-    # The share of prefixes whose true suffix is exactly among their first k samples: what k
-    # suggestions are worth to a user who only needs one of them to be right. 0.0 or 1.0 for a
-    # single prefix, a rate once averaged over a set of them.
+    # The share of prefixes whose true suffix is exactly among their first k samples.
     hit_rate_at_1: float
     hit_rate_at_5: float
     hit_rate_at_10: float
 
-    # The samples read as a predictive distribution, lower being better. The score a checkpoint
-    # is selected on.
+    # The samples read as a predictive distribution, lower being better.
+    # The score a checkpoint is selected on.
     energy_score: float
 
     # How far apart the samples of a prefix are, and how many of them are distinct sequences.
@@ -55,8 +37,6 @@ class AccuracyScores(ScalarMetrics):
     unique_sample_rate: float
 
     # Absolute error (AE) between the predicted and true remaining cycle time, in days.
-    # No best since the closest of ten draws of a scalar measures how widely the head scatters
-    # rather than how well it predicts.
     remaining_time_ae_mean_days: float
     remaining_time_ae_point_days: float
 
@@ -67,19 +47,6 @@ class AccuracyScores(ScalarMetrics):
     # Events left after the cut point: the scale every error above is read against. A property of
     # the prefixes scored rather than of the model, so it is flat across a training run.
     suffix_length: float
-
-
-def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable]) -> float:
-    """Damerau-Levenshtein similarity, the edit distance normalized into `[0, 1]`.
-
-    Args:
-        predicted: The generated sequence.
-        true: The ground-truth sequence.
-    Returns:
-        1.0 for identical sequences (two empty ones included), down to 0.0 for sequences
-        sharing nothing.
-    """
-    return OSA.normalized_similarity(predicted, true)
 
 
 def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
@@ -96,32 +63,16 @@ def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
     """
     if len(samples) < 2:
         return 0.0
-    # [num_samples, num_samples], every sample against every other in one call.
-    similarities = process.cdist(
-        queries=samples,
-        choices=samples,
-        scorer=OSA.normalized_similarity,
-        dtype=np.float64,
-    )
-    # The matrix is symmetric with a diagonal of 1.0, so one triangle holds each pair once.
+    # Compute the full pairwise distance matrix
+    pairs = distances(queries=samples, choices=samples, dtype=np.float64)
+    # The matrix is symmetric with a diagonal of 0.0, so one triangle holds each pair once.
     rows, columns = np.triu_indices(n=len(samples), k=1)
-    return mean((1.0 - similarities[rows, columns]).tolist())
+    return mean(pairs[rows, columns].tolist())
 
 
 def energy_score(dls_mean: float, sample_diversity: float) -> float:
-    """The samples read as a predictive distribution, lower being better.
-
-    The mean distance to the truth, discounted by half the spread the samples already cover.
-    Spread only pays off where the truth is far from a single guess, which is what makes this a
-    score to minimize rather than a number to read beside `dls_mean`, neither of which having a
-    target value.
-
-    The discount stays below the distance, so the score stays at or above 0.0, only where
-    `1 - DLS` obeys the triangle inequality. Dividing by the longer of two lengths does not
-    guarantee that: `eb` and `bc` are 1.0 apart while both sit 1/3 from `ebc`. Such sequences
-    are rare enough not to show up in a real generation, so this is normalized the way the
-    reported similarity is rather than a second way that would be.
-    """
+    """A score balancing how close a prefix's samples are to the truth
+    and how far apart they are from each other."""
     return (1.0 - dls_mean) - 0.5 * sample_diversity
 
 
@@ -144,12 +95,7 @@ def is_hit(samples: Sequence[tuple[str, ...]], truth: tuple[str, ...], *, k: int
 def score_generation(generation: Generation) -> AccuracyScores:
     """
     Score the suffixes generated for one prefix against the ground truth they continue.
-
-    The one place these numbers are defined: `validate_generation` averages them over a
-    validation slice while training, `score_prefixes` over the test split afterwards, so a
-    training curve and a final report measure the same thing rather than agreeing by coincidence.
-    What the report adds on top of them is `conformance.py`, computed there alone.
-
+    
     Args:
         generation: The model's answer for one prefix, decoded into the log's own units.
     Returns:

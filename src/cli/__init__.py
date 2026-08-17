@@ -3,7 +3,7 @@ from src.cli.arguments import (
     add_hardware_argument,
     existing_directory,
     existing_file,
-    label_map,
+    swept,
 )
 from src.cli.console import banner, duration, step
 
@@ -14,6 +14,6 @@ __all__ = [
     'duration',
     'existing_directory',
     'existing_file',
-    'label_map',
     'step',
+    'swept',
 ]

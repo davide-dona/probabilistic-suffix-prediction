@@ -1,187 +1,139 @@
 import argparse
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.figure import Figure
 
 from src import paths
-from src.cli import banner, existing_directory, existing_file, label_map, step
+from src.cli import banner, existing_directory, existing_file, step, swept
+from src.evaluation.report import read_reports
 from src.visualization import (
-    ACCURACY_METRICS,
-    BY_PREFIX_LENGTH,
-    BY_SUFFIX_LENGTH,
-    ERROR_METRICS,
-    METRICS,
+    FIGURES,
     TABLES,
-    PlottedRun,
-    coverage_cutoff,
+    apply_style,
+    compose_figure,
+    distribution_grid,
+    embed_suffixes,
     latex_table,
-    length_curve,
-    load_runs,
-    metric_grid,
-    support_curve,
-    use_paper_style,
+    reported_models,
 )
 
-IMAGE_FORMATS = ('pdf', 'svg', 'png')
 
-
-def save_figure(figure: Figure, destinations: Iterable[Path]) -> None:
-    """Write a figure to every path asked for and close it.
+def _save_figure(figure: Figure, path: Path) -> None:
+    """Write one finished figure and close it, creating its parent directories.
 
     Args:
-        figure: The finished figure. Closed here, since nothing reads it back.
-        destinations: Where to write it, one per format; the suffix of each decides the format.
+        figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
+            all open.
+        path: Where to write it, from `paths.plot_path`.
     """
-    for path in destinations:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        figure.savefig(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(path)
     plt.close(figure)
 
 
-def _write_dataset_figures(
-    dataset: str,
-    runs: Sequence[PlottedRun],
-    *,
-    formats: Sequence[str],
-    coverage: float,
-) -> int:
-    """Draw every figure of one log and write it under `outputs/plots/<dataset>/`.
+def _draw_figures(frame: pd.DataFrame) -> int:
+    """Draw every figure of the catalogue, for every log the reports cover.
 
     Args:
-        dataset: The log the runs were scored on, which names the directory.
-        runs: The runs to compare, drawn on the same axes.
-        formats: The image formats to write each figure in.
-        coverage: The share of prefix pairs the x-axis of the metric figures must cover.
+        frame: Every report read, from `read_reports`.
     Returns:
-        How many figures were drawn, whatever the number of formats each was written in.
+        How many figures were written, under `outputs/plots/<dataset>/`.
     """
-
-    def write(figure: Figure, name: str) -> None:
-        save_figure(
-            figure,
-            [paths.plot_path(dataset, name, image_format) for image_format in formats],
-        )
-
-    figures = 0
-    for axis, prefix in (
-        (BY_PREFIX_LENGTH, 'by-prefix-length/'),
-        (BY_SUFFIX_LENGTH, 'by-suffix-length/'),
-    ):
-        cutoff = coverage_cutoff(runs, coverage, axis)
-
-        for spec in METRICS:
-            write(length_curve(runs, spec, cutoff, axis), f'{prefix}{spec.key}')
-
-        write(metric_grid(runs, ACCURACY_METRICS, cutoff, axis), f'{prefix}accuracy-grid')
-        write(metric_grid(runs, ERROR_METRICS, cutoff, axis), f'{prefix}error-grid')
-        write(support_curve(runs, cutoff, coverage, axis), f'{prefix}support')
-        figures += len(METRICS) + 3
-
-    return figures
+    written = 0
+    for dataset, rows in frame.groupby('dataset', sort=False):
+        for plot in FIGURES:
+            _save_figure(
+                figure=compose_figure(rows[rows['axis'] == plot.axis], plot),
+                path=paths.plot_path(str(dataset), plot.name),
+            )
+            written += 1
+    return written
 
 
-def _swept_reports(directory: Path) -> list[Path]:
-    """Find every evaluation report under a directory.
-
-    The walk is recursive, so the whole of `outputs/eval/`, one log's directory or one model's
-    all read the same way, and sorted, so a legend is ordered by log and then by model however
-    the filesystem lists them.
+def _write_tables(frame: pd.DataFrame) -> int:
+    """Write every comparison table, over every log at once, under `outputs/plots/`.
 
     Args:
-        directory: The directory to sweep.
+        frame: Every report read, from `read_reports`.
     Returns:
-        The reports under it, in path order.
-    Raises:
-        FileNotFoundError: If it holds no reports at all.
+        How many tables were written.
     """
-    reports = sorted(directory.rglob('*.json'))
-    if not reports:
-        raise FileNotFoundError(
-            f'no evaluation reports under {directory}. Run `python -m pipelines.evaluate` '
-            'first, or sweep the right directory.'
-        )
-    return reports
+    for table in TABLES:
+        path = paths.comparison_table_path(table.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(latex_table(frame, table))
+    return len(TABLES)
 
 
-def run(
-    evaluation_files: Sequence[Path],
-    labels: dict[str, str],
-    dataset_labels: dict[str, str],
-    formats: Sequence[str],
-    coverage: float,
-) -> None:
+def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> None:
     """Draw a set of evaluation reports and tabulate them, under `outputs/plots/`.
 
     Args:
-        evaluation_files: The reports to compare, from `python -m pipelines.evaluate`.
-        labels: What to call a model in legends and tables, keyed by its own name. A model not
-            named here keeps that name.
-        dataset_labels: What to call a log in the tables, keyed by its own name. Only the tables:
-            a figure directory keeps the log's own name.
-        formats: The image formats to write each figure in.
-        coverage: The share of prefix pairs the x-axis of a metric figure must cover, which bounds
-            it short of the sparse tail of long prefixes. 1.0 draws every length.
+        evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw
+            the metric figures and the comparison tables.
+        generation_files: The generations of the same runs, from `python -m pipelines.generate`,
+            or none. These draw the distribution figure, which costs minutes per log.
     Raises:
-        ValueError: If `coverage` is not a share of the pairs, or a label names no report's model.
-        FileNotFoundError: If a report does not exist.
+        ValueError: If a file is not what it should be, if a model has no look declared in
+            `src.visualization.labels`, or if one log is given two runs of the same model.
     """
-    if not 0.0 < coverage <= 1.0:
-        raise ValueError(f'coverage must be a share of the pairs in (0, 1], got {coverage}.')
-
-    with step(f'Reading {len(evaluation_files)} evaluation report(s)'):
-        grouped = load_runs(evaluation_files, labels)
-
+    apply_style()
     banner(
         'Drawing the figures and tables',
         {
-            'datasets': ', '.join(
-                f'{dataset} ({len(runs)} run(s))' for dataset, runs in grouped.items()
-            ),
-            'formats': ', '.join(formats),
-            'coverage': f'{coverage:.0%} of the prefix pairs on the x-axis',
-            'output': paths.comparison_table_path(TABLES[0].name).parent,
+            'reports': f'{len(evaluation_files)} file(s)',
+            'generations': f'{len(generation_files)} file(s)' if generation_files else 'none',
+            'output': paths.PLOTS_DIR,
         },
     )
-    use_paper_style()
 
-    figures = 0
-    for dataset, runs in grouped.items():
-        with step(f'Drawing {dataset} from {len(runs)} run(s)'):
-            figures += _write_dataset_figures(dataset, runs, formats=formats, coverage=coverage)
+    with step(f'Reading {len(evaluation_files)} evaluation report(s)'):
+        # Models sharing a style are one model from here on: one line, one column, one legend key.
+        reports = reported_models(read_reports(evaluation_files))
 
-    # The tables see the display names, the figures the log's own: one is read by a person, the
-    # other is a directory.
-    tabulated = {dataset_labels.get(dataset, dataset): runs for dataset, runs in grouped.items()}
-    with step(f'Writing {len(TABLES)} comparison tables'):
-        for table in TABLES:
-            path = paths.comparison_table_path(table.name)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(latex_table(tabulated, table))
+    logs = sorted(set(reports['dataset']))
+    with step(f'Drawing {", ".join(logs)}'):
+        drawn = _draw_figures(reports)
 
-    print(
-        f'\nWrote {figures} figures in {", ".join(formats)} and {len(TABLES)} tables in tex '
-        f'to {paths.comparison_table_path(TABLES[0].name).parent}'
-    )
+    with step('Writing the comparison tables'):
+        tables = _write_tables(reports)
+
+    # Opt-in, since this reads the generations rather than the reports and costs a minute or two
+    # per log. One figure per log, so it is drawn here rather than through the catalogue above.
+    if generation_files:
+        with step(f'Embedding the suffixes of {len(generation_files)} run(s)'):
+            embedding = reported_models(embed_suffixes(generation_files))
+        with step('Drawing the generated distributions'):
+            for dataset, rows in embedding.groupby('dataset', sort=False):
+                _save_figure(
+                    figure=distribution_grid(rows),
+                    path=paths.plot_path(str(dataset), 'distribution'),
+                )
+                drawn += 1
+
+    print(f'\nWrote {drawn} figures in pdf and {tables} tables in tex to {paths.PLOTS_DIR}')
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description='Plot and tabulate a set of evaluation reports for a paper.'
     )
-    # The reports are either named one by one or swept out of a directory. Both at once could
-    # only name a report twice.
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument(
+    # Either named file by file or swept out of a directory. Both at once could only name one
+    # file twice.
+    reports = parser.add_mutually_exclusive_group(required=True)
+    reports.add_argument(
         '-e',
         '--evaluations',
         type=existing_file,
         metavar='REPORT',
         nargs='+',
-        help='Paths to the evaluation reports to compare, from `pipelines.evaluate`.',
+        help='Paths to the evaluation reports to compare, from `pipelines.evaluate`. These draw '
+        'the metric figures and the comparison tables.',
     )
-    source.add_argument(
+    reports.add_argument(
         '-E',
         '--evaluations-dir',
         type=existing_directory,
@@ -190,48 +142,39 @@ def main() -> None:
         '`outputs/eval` for all of them or `outputs/eval/bpic17` for one log. Each report says '
         'which model and log it belongs to.',
     )
-    parser.add_argument(
-        '-l',
-        '--labels',
+
+    generations = parser.add_mutually_exclusive_group()
+    generations.add_argument(
+        '-g',
+        '--generations',
+        type=existing_file,
+        metavar='GENERATIONS',
         nargs='+',
-        default=None,
-        metavar='MODEL=DISPLAY',
-        help='How to name a model in legends and tables, as `name=Display` pairs, e.g. '
-        '`cvae-small=CVAE-S`. A model not named here keeps its own name.',
+        help='Paths to the generations of the same runs, from `pipelines.generate`. These draw '
+        'the UMAP figure of what each model generates against the ground truth, which costs a '
+        'minute or two per log. Left out, every other figure is still drawn.',
     )
-    parser.add_argument(
-        '--dataset-labels',
-        nargs='+',
-        default=None,
-        metavar='DATASET=DISPLAY',
-        help='How to name a dataset in the tables, as `name=Display` pairs, e.g. `bpic17=BPIC17`. '
-        "Figures keep the dataset's own name, since it is a directory.",
-    )
-    parser.add_argument(
-        '-f',
-        '--formats',
-        nargs='+',
-        choices=IMAGE_FORMATS,
-        default=['pdf'],
-        help='Which image formats to write each figure in.',
-    )
-    parser.add_argument(
-        '--coverage',
-        type=float,
-        default=0.95,
-        help='The share of prefix pairs the x-axis must cover, which bounds it short of the '
-        'sparse tail of long prefixes. 1.0 draws every length.',
+    generations.add_argument(
+        '-G',
+        '--generations-dir',
+        type=existing_directory,
+        metavar='DIR',
+        help='Path to a directory to draw every generations file under, at any depth, e.g. '
+        '`outputs/generations` for all of them or `outputs/generations/bpic17` for one log.',
     )
     args = parser.parse_args()
 
-    evaluations = args.evaluations or _swept_reports(args.evaluations_dir)
-    run(
-        evaluations,
-        label_map(args.labels),
-        label_map(args.dataset_labels),
-        args.formats,
-        args.coverage,
-    )
+    evaluations = args.evaluations or []
+    if args.evaluations_dir is not None:
+        evaluations = swept(
+            args.evaluations_dir, '.json', 'evaluation reports', 'pipelines.evaluate'
+        )
+
+    generated = args.generations or []
+    if args.generations_dir is not None:
+        generated = swept(args.generations_dir, '.parquet', 'generations', 'pipelines.generate')
+
+    run(evaluations, generated)
 
 
 if __name__ == '__main__':

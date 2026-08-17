@@ -124,21 +124,21 @@ The checkpoint is trimmed to what generation reads, dropping the optimizer, earl
 
 ## Visualization
 
-Once a dataset has been evaluated, the results of one or more runs can be visualized and compared with:
+Once a dataset has been evaluated, the scores of one or more runs can be plotted and tabulated with:
 
 ```bash
 python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
-python -m pipelines.visualize -E <path-to-directory>
+python -m pipelines.visualize -E outputs/eval
+python -m pipelines.visualize -E outputs/eval -G outputs/generations
 ```
 
-- `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. 
-- `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset. Each report says which model and dataset it belongs to, so nothing has to be typed alongside it. Two runs of one model on one dataset are an error, since a figure cannot draw them apart, so keep the directory to the runs being reported. One of `-e` and `-E` is required, and they cannot be combined.
-- `-l`/`--labels` renames a model in legends and tables, as `name=Display` pairs, e.g. `cvae-small=CVAE-S`. A model not named here keeps its own name, and one entry renames it on every dataset it appears in. 
-- `--dataset-labels bpic17=BPIC17` renames a dataset in the tables only, since figures are already split one per dataset directory. 
-- `-f`/`--formats` picks the image format(s) to write (`pdf`, `svg`, `png`; default `pdf`).
-- `--coverage` bounds the x-axis to the share of prefix pairs it must cover, cutting off the sparse tail of long prefixes — `1.0` draws every length.
+- `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared. These draw the per-length metric figures and the comparison tables.
+- `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset. Each report says which model and dataset it belongs to, so nothing has to be typed alongside it. Two runs of one model on one dataset are an error, since a figure cannot draw them apart, so keep the directory to the runs being reported. `-e` and `-E` cannot be combined, and one of them is required.
+- `-g`/`--generations` and `-G`/`--generations-dir` add the distribution figure, drawn from the generated suffixes themselves rather than from the scores they earned. It is opt-in because it reads the generations and costs a minute or two per log; left out, every other figure is still drawn. The two cannot be combined.
 
-The figures and comparison tables are written to `outputs/plots/`.
+The figures are written to `outputs/plots/<dataset>/` as PDF, which is what the paper takes, and the comparison tables to `outputs/plots/` as `tex`. With generations, each dataset also gets `distribution.pdf`, a UMAP of the suffixes each model generates against the ground truth, one panel per model over one shared embedding.
+
+Nothing about how a run is named or drawn is typed on the command line. What a model, a dataset and a metric are called, the colour, marker and line style a model keeps in every figure, and the colour a dataset keeps, are declared in `src/visualization/labels/`, so a model is the same colour in every figure of every log and two runs of the pipeline produce the same page. A model, a dataset or a metric with nothing declared for it stops the run, naming what to add and where. The colours are the subset of the Okabe-Ito palette that stays furthest apart under simulated colour blindness, split so that a dataset takes none of the three the models hold, and every model also carries its own marker and line style, so the figures survive both a colourblind reader and a black-and-white print. The order the two are declared in is the order they are drawn and tabulated in: a model's line and column, and a dataset's rows. Two names sharing a style are one model, which is how the CVAE trained at a smaller size for a smaller log draws that log's CVAE line and fills its CVAE column rather than standing beside it as a second model. Which figures are drawn is the `FIGURES` catalogue in `src/visualization/figures.py`, each entry a group of related metrics against either prefix or suffix length.
 
 ---
 

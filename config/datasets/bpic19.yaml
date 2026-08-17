@@ -42,5 +42,3 @@ data:
 
   log_scaled_features: []
   log_scaled_durations: false
-
-# Same size as `bpic17.yaml`: base.yaml is already sized for the bpic logs.

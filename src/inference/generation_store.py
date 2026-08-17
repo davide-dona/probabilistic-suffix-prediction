@@ -1,8 +1,10 @@
 import json
+from collections.abc import Iterator
 from dataclasses import asdict
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from src.identity import RunIdentity
@@ -11,6 +13,10 @@ from src.inference.generation import DecodedEvents, Generation
 # The schema metadata key the writing run's identity is stored under, so a generations file says
 # what produced it rather than leaving that to be read off the path it happens to sit at.
 _RUN_KEY = b'run'
+
+# Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
+# a case and a length, and the pair is unique within a file.
+type PrefixKey = tuple[str, int]
 
 # One run of activity names, the shape every activity column of the schema is built from.
 _ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
@@ -97,6 +103,62 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
         for generation in generations
     ]
     return pa.Table.from_pylist(mapping=rows, schema=_SCHEMA)
+
+
+def read_suffixes(parquet: pq.ParquetFile) -> Iterator[tuple[list[str], list[str]]]:
+    """Walk a generations file for the pair of suffixes each prefix is summarized by.
+
+    Args:
+        parquet: The generations file, already open.
+    Yields:
+        The true suffix and the first generated suffix of each prefix, in the order the file holds
+        them, as activity names.
+    """
+    for batch in parquet.iter_batches(columns=['true_activities', 'generated_activities']):
+        truths = batch.column('true_activities').to_pylist()
+        samples = pc.list_element(batch.column('generated_activities'), 0).to_pylist()
+        yield from zip(truths, samples, strict=True)
+
+
+def read_prefix_keys(path: Path) -> set[PrefixKey]:
+    """Read which prefixes a generations file answers, without decoding a single suffix.
+
+    Args:
+        path: The generations file, opened and closed here.
+    Returns:
+        The key of every row. Only the two columns that identify a prefix are read, which is cheap
+        even on a file of a quarter of a million rows.
+    """
+    table = pq.read_table(source=path, columns=['case_id', 'prefix_len'])
+    return set(
+        zip(
+            table.column('case_id').to_pylist(),
+            table.column('prefix_len').to_pylist(),
+            strict=True,
+        )
+    )
+
+
+def read_samples(path: Path) -> Iterator[tuple[PrefixKey, list[str], list[list[str]]]]:
+    """Walk a generations file for the prefix, the true suffix and every draw of each row.
+
+    Args:
+        path: The generations file, opened and closed here.
+    Yields:
+        Which prefix each row answers, the suffix that truly followed it and every suffix generated
+        for it, in the order the file holds them, as activity names.
+    """
+    columns = ['case_id', 'prefix_len', 'true_activities', 'generated_activities']
+    with pq.ParquetFile(path) as parquet:
+        for batch in parquet.iter_batches(columns=columns):
+            keys = zip(
+                batch.column('case_id').to_pylist(),
+                batch.column('prefix_len').to_pylist(),
+                strict=True,
+            )
+            truths = batch.column('true_activities').to_pylist()
+            samples = batch.column('generated_activities').to_pylist()
+            yield from zip(keys, truths, samples, strict=True)
 
 
 def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generation]:

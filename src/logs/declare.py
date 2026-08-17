@@ -120,17 +120,17 @@ def _read_constraints(path: Path) -> list[tuple[str, dict[str, Any]]]:
 
     for line in path.read_text().splitlines():
         line = line.strip()
-        
+
         # Skip lines that are not constraints
         if not _CONSTRAINT_LINE.search(line):
             continue
-        
+
         head, activities = line.split('[', 1)
         # Get the template and cardinality from the head of the line
         named = _TEMPLATE_AND_CARDINALITY.search(head)
         if named is None:
             continue
-        
+
         template = DeclareModelTemplate.get_template_from_string(named.group(1))
         if template is None:
             continue
