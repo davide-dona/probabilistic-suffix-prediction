@@ -34,11 +34,7 @@ class ScalarMetrics:
         """
         return cls(
             **{
-                field.name: (
-                    sum(getattr(value, field.name) for value in values) / len(values)
-                    if values
-                    else 0.0
-                )
+                field.name: mean([getattr(value, field.name) for value in values])
                 for field in fields(cls)
             }
         )

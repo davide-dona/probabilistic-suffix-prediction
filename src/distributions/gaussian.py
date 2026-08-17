@@ -29,6 +29,22 @@ class Gaussian:
         """
         return cls(mean=mean, logvar=logvar.clamp(min=LOGVAR_MIN, max=LOGVAR_MAX))
 
+    @classmethod
+    def from_head(cls, parameters: torch.Tensor) -> 'Gaussian':
+        """Build a Gaussian from a head that emits both halves side by side.
+
+        The convention every latent head follows: the first half of its output is the mean, the
+        second the raw log-variance. Written down once here, so a head is read the same way
+        wherever one is added.
+
+        Args:
+            parameters: A head's output, `[batch_size, 2 * dim]`.
+        Returns:
+            The Gaussian those halves describe, its log-variance clamped as `create` clamps it.
+        """
+        mean, logvar = parameters.chunk(chunks=2, dim=-1)  # each [batch_size, dim]
+        return cls.create(mean=mean, logvar=logvar)
+
     def sample(self) -> torch.Tensor:
         """Draw one sample through the reparametrization trick, so the gradient reaches
         `mean` and `logvar`."""

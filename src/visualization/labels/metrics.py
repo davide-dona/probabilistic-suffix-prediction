@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from src.visualization.labels.registry import Registry
+
 
 @dataclass(frozen=True)
 class Metric:
@@ -76,87 +78,72 @@ class Metric:
 
 # What a metric is called, and what gives it a unit and a direction. Every metric a figure or a
 # table names is declared here; one that is not stops the run.
-METRICS: dict[str, Metric] = {
-    'dls_point': Metric(
-        label='DLS (point)',
-        higher_is_better=True,
-    ),
-    'dls_mean': Metric(
-        label='DLS (sample mean)',
-        higher_is_better=True,
-    ),
-    'dls_best': Metric(
-        label='DLS (best of k)',
-        higher_is_better=True,
-    ),
-    'hit_rate_at_1': Metric(
-        label='Hit rate @1',
-        higher_is_better=True,
-    ),
-    'hit_rate_at_5': Metric(
-        label='Hit rate @5',
-        higher_is_better=True,
-    ),
-    'hit_rate_at_10': Metric(
-        label='Hit rate @10',
-        higher_is_better=True,
-    ),
-    'conformance_point': Metric(
-        label='Conformance (point)',
-        higher_is_better=True,
-    ),
-    'conformance_mean': Metric(
-        label='Conformance (sample mean)',
-        higher_is_better=True,
-    ),
-    'energy_distance': Metric(
-        label='Energy distance',
-        higher_is_better=False,
-    ),
-    'sample_diversity': Metric(
-        label='Sample diversity',
-    ),
-    'unique_sample_rate': Metric(
-        label='Unique sample rate',
-    ),
-    'remaining_time_ae_point_days': Metric(
-        label='Remaining time MAE (point)',
-        unit='days',
-        higher_is_better=False,
-    ),
-    'remaining_time_ae_mean_days': Metric(
-        label='Remaining time MAE (sample mean)',
-        unit='days',
-        higher_is_better=False,
-    ),
-    'length_ae_point': Metric(
-        label='Suffix length MAE (point)',
-        unit='events',
-        higher_is_better=False,
-    ),
-    'length_ae_mean': Metric(
-        label='Suffix length MAE (sample mean)',
-        unit='events',
-        higher_is_better=False,
-    ),
-    'suffix_length': Metric(label='True suffix length', unit='events'),
-}
-
-
-def metric(metric_key: str) -> Metric:
-    """How to label one metric.
-
-    Args:
-        metric_key: Its name in the frame, e.g. `dls_point`.
-    Returns:
-        Its declared label, unit and direction.
-    Raises:
-        ValueError: If nothing is declared for it, since a metric drawn under a name built from
-            its key would be labelled one way in a figure and another in the paper's text.
-    """
-    if metric_key not in METRICS:
-        raise ValueError(
-            f'nothing declared for the metric {metric_key!r}. Add it to METRICS in '
-            f'src/visualization/labels/metrics.py. The metrics declared are {", ".join(METRICS)}.'
-        )
-    return METRICS[metric_key]
+METRICS = Registry[Metric](
+    kind='metric',
+    where='METRICS in src/visualization/labels/metrics.py',
+    entries={
+        'dls_point': Metric(
+            label='DLS (point)',
+            higher_is_better=True,
+        ),
+        'dls_mean': Metric(
+            label='DLS (sample mean)',
+            higher_is_better=True,
+        ),
+        'dls_best': Metric(
+            label='DLS (best of k)',
+            higher_is_better=True,
+        ),
+        'hit_rate_at_1': Metric(
+            label='Hit rate @1',
+            higher_is_better=True,
+        ),
+        'hit_rate_at_5': Metric(
+            label='Hit rate @5',
+            higher_is_better=True,
+        ),
+        'hit_rate_at_10': Metric(
+            label='Hit rate @10',
+            higher_is_better=True,
+        ),
+        'conformance_point': Metric(
+            label='Conformance (point)',
+            higher_is_better=True,
+        ),
+        'conformance_mean': Metric(
+            label='Conformance (sample mean)',
+            higher_is_better=True,
+        ),
+        'energy_distance': Metric(
+            label='Energy distance',
+            higher_is_better=False,
+        ),
+        'sample_diversity': Metric(
+            label='Sample diversity',
+        ),
+        'unique_sample_rate': Metric(
+            label='Unique sample rate',
+        ),
+        'remaining_time_ae_point_days': Metric(
+            label='Remaining time MAE (point)',
+            unit='days',
+            higher_is_better=False,
+        ),
+        'remaining_time_ae_mean_days': Metric(
+            label='Remaining time MAE (sample mean)',
+            unit='days',
+            higher_is_better=False,
+        ),
+        'length_ae_point': Metric(
+            label='Suffix length MAE (point)',
+            unit='events',
+            higher_is_better=False,
+        ),
+        'length_ae_mean': Metric(
+            label='Suffix length MAE (sample mean)',
+            unit='events',
+            higher_is_better=False,
+        ),
+        'suffix_length': Metric(label='True suffix length', unit='events'),
+    },
+)

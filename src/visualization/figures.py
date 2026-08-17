@@ -103,9 +103,9 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, metric: str, *, x_bins: int | 
     values = frame[frame['metric'] == metric]
     longest = 1
     # For each model, draw its line over the lengths it reports
-    for model in labels.ordered_models(values['model']):
+    for model in labels.MODELS.ordered(values['model']):
         line = values[values['model'] == model].sort_values('length')
-        model_style = labels.model_style(model)
+        model_style = labels.MODELS[model]
         longest = max(longest, int(line['length'].max()))
         axes.plot(
             line['length'],
@@ -120,7 +120,7 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, metric: str, *, x_bins: int | 
     # The longest length any run reports, so the axis ends where the data does rather than at the
     # padding matplotlib would leave past it.
     axes.set_xlim(left=1, right=longest)
-    if labels.metric(metric).is_score:
+    if labels.METRICS[metric].is_score:
         axes.set_ylim(0, 1)
     else:
         axes.set_ylim(bottom=0)
@@ -157,7 +157,7 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
 
     for axes, metric_key in zip(grid[0], plot.metrics, strict=True):
         _draw_metric(axes, frame, metric_key, x_bins='auto' if num_panels == 1 else PANEL_X_BINS)
-        metric = labels.metric(metric_key)
+        metric = labels.METRICS[metric_key]
         if num_panels == 1:
             axes.set_ylabel(metric.axis_label)
         else:
@@ -166,7 +166,7 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
             if metric.unit is not None:
                 axes.set_ylabel(metric.unit)
 
-    models = labels.ordered_models(frame['model'])
+    models = labels.MODELS.ordered(frame['model'])
     if num_panels == 1:
         grid[0][0].set_xlabel(AXIS_LABELS[plot.axis])
         # One line needs no legend: the caption names it.

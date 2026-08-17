@@ -9,8 +9,12 @@ DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
 PRETRAINED_DIR = ROOT / 'pretrained'
 
-# Where every figure and table of the paper is written, by `pipelines.visualize`.
-PLOTS_DIR = OUTPUTS_DIR / 'plots'
+# Where everything `pipelines.visualize` writes for the paper lands. The figures are split per
+# log and the tables span every log at once, so the two sit in separate directories rather than
+# the tables sitting beside the logs' directories.
+VISUAL_DIR = OUTPUTS_DIR / 'visual'
+FIGURES_DIR = VISUAL_DIR / 'figures'
+TABLES_DIR = VISUAL_DIR / 'tables'
 
 # The layer every config is merged over, dataset- and hardware-agnostic. The only config file
 # named here: the dataset config and the hardware profile are paths a pipeline is given.
@@ -157,7 +161,7 @@ def evaluation_path(run: RunIdentity) -> Path:
     return OUTPUTS_DIR / 'eval' / f'{_run_dir(run)}.json'
 
 
-def plot_path(dataset: str, name: str) -> Path:
+def figure_path(dataset: str, name: str) -> Path:
     """One figure, under the log whose prefixes it breaks down.
 
     Args:
@@ -166,7 +170,7 @@ def plot_path(dataset: str, name: str) -> Path:
     Returns:
         The path to that figure. Always a PDF, which is what the paper takes.
     """
-    return PLOTS_DIR / dataset / f'{name}.pdf'
+    return FIGURES_DIR / dataset / f'{name}.pdf'
 
 
 def comparison_table_path(name: str) -> Path:
@@ -177,4 +181,4 @@ def comparison_table_path(name: str) -> Path:
     Returns:
         The path to that table's LaTeX source.
     """
-    return PLOTS_DIR / f'{name}.tex'
+    return TABLES_DIR / f'{name}.tex'

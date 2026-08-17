@@ -27,6 +27,11 @@ from src.logs.keys import ACTIVITY_KEY, CASE_KEY, TIMESTAMP_KEY
 _CONSTRAINT_LINE = re.compile(r'^(.*)\[(.*)\]\s*(.*)$')
 _TEMPLATE_AND_CARDINALITY = re.compile(r'(^.+?)(\d*$)')
 
+# The header `discover_declare_model` opens a model with and `discovery_settings` reads back.
+# Comment lines, so nothing that parses the constraints has to know about them.
+_COMMENT = '#'
+_SETTINGS_LINE = '# settings: '
+
 # Maximum number of distinct traces cached by the ConformanceChecker.
 # Each prefix generates one trace per sample, and the same trace may be
 # generated for multiple prefixes. Caching previously computed scores avoids
@@ -82,8 +87,15 @@ def discover_declare_model(
             'Rename them in the raw log, or drop them from the preprocessed split.'
         )
 
+    # What the constraints below were mined under, so a reader of the file can tell a model mined
+    # one way from one mined another. Nothing reads it back to check conformance with: see
+    # `discovery_settings`.
+    lines = [
+        f'{_COMMENT} discovered from the train split of {dataset} by pipelines.preprocess',
+        f'{_SETTINGS_LINE}{declare_config.model_dump_json()}',
+    ]
     # Write the activities in the Declare4py format
-    lines = [f'activity {activity}' for activity in model.activities]
+    lines += [f'activity {activity}' for activity in model.activities]
     # Write the constraints in the Declare4py format, one per line
     for constraint, serialized in zip(model.constraints, model.serialized_constraints, strict=True):
         # Declare4Py serializes a binary constraint's two conditions as the one empty field a
@@ -96,6 +108,29 @@ def discover_declare_model(
     path.write_text('\n'.join(lines) + '\n')
 
     return len(model.constraints)
+
+
+def discovery_settings(path: Path) -> DeclareConfig | None:
+    """What a declarative model was discovered under, as its own header records it.
+
+    Discovery and conformance checking each decide, separately, whether a constraint a trace never
+    activates counts as satisfied: discovery because it decides which constraints hold on enough of
+    the log to keep, checking because it decides what a trace is credited for. They are independent
+    settings and need not agree, which is why the file records the one it was mined under rather
+    than the checker reading it as its own.
+
+    Args:
+        path: The model file, from `paths.declare_model_path`.
+    Returns:
+        The settings its header records, or `None` for a model written before the header existed,
+        which says nothing about how it was mined.
+    Raises:
+        pydantic.ValidationError: If the header is there but does not describe a discovery.
+    """
+    for line in path.read_text().splitlines():
+        if line.startswith(_SETTINGS_LINE):
+            return DeclareConfig.model_validate_json(line.removeprefix(_SETTINGS_LINE))
+    return None
 
 
 def _read_constraints(path: Path) -> list[tuple[str, dict[str, Any]]]:
@@ -121,8 +156,9 @@ def _read_constraints(path: Path) -> list[tuple[str, dict[str, Any]]]:
     for line in path.read_text().splitlines():
         line = line.strip()
 
-        # Skip lines that are not constraints
-        if not _CONSTRAINT_LINE.search(line):
+        # Skip the header, which says how the model was mined rather than what it holds, and any
+        # other line that is not a constraint.
+        if line.startswith(_COMMENT) or not _CONSTRAINT_LINE.search(line):
             continue
 
         head, activities = line.split('[', 1)

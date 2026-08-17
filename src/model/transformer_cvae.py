@@ -7,6 +7,7 @@ from src.configs.schema import ModelConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.distributions.gaussian import Gaussian
+from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import Decoder, DecoderOutput, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.latent import PosteriorNetwork, PriorNetwork
@@ -87,10 +88,7 @@ class TransformerCVAE(nn.Module):
         Raises:
             ValueError: If the checkpoint does not carry a config and weights.
         """
-        missing = {'model_config', 'model_state_dict'} - checkpoint.keys()
-        if missing:
-            raise ValueError(f'checkpoint is missing {sorted(missing)}. Train the model again.')
-
+        require_keys(checkpoint, MODEL_KEYS, purpose='rebuilt', remedy='Train the model again.')
         config = ModelConfig.model_validate(checkpoint['model_config'])
 
         model = cls(config=config, codec=codec).to(device=device)

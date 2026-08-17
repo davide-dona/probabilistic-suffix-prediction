@@ -95,7 +95,7 @@ def is_hit(samples: Sequence[tuple[str, ...]], truth: tuple[str, ...], *, k: int
 def score_generation(generation: Generation) -> AccuracyScores:
     """
     Score the suffixes generated for one prefix against the ground truth they continue.
-    
+
     Args:
         generation: The model's answer for one prefix, decoded into the log's own units.
     Returns:

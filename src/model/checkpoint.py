@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 
@@ -5,6 +6,57 @@ import torch
 from torch import nn
 
 from src.identity import RunIdentity
+
+# What rebuilding the model a checkpoint holds reads, and so what `TransformerCVAE.from_checkpoint`
+# refuses to guess at.
+MODEL_KEYS = ('model_config', 'model_state_dict')
+
+# What carrying a run on reads: the weights, and the optimizer, early-stopping and random state
+# that put the run back where it left off. A checkpoint trimmed by `inference_payload` carries the
+# first half of these and none of the second.
+RESUME_KEYS = (
+    'model_state_dict',
+    'experiment_config',
+    'run',
+    'step',
+    'selection_score',
+    'optimizer_state',
+    'early_stopping_state',
+    'rng_state',
+)
+
+# What a checkpoint is worth keeping for once it will only ever be generated from: the two keys
+# `TransformerCVAE.from_checkpoint` reads, the one `pipelines/generate.py` names its output after,
+# and three that say which step of which run this is and how well it scored.
+INFERENCE_KEYS = (
+    'model_config',
+    'model_state_dict',
+    'run',
+    'experiment_config',
+    'step',
+    'selection_score',
+)
+
+
+def require_keys(
+    checkpoint: dict, keys: Iterable[str], *, subject: str = 'checkpoint', purpose: str, remedy: str
+) -> None:
+    """Check that a checkpoint carries everything one use of it reads.
+
+    Args:
+        checkpoint: What `load_checkpoint` read.
+        keys: The keys that use reads, named in the error in the order given.
+        subject: What the error calls the file, e.g. the path it was read from.
+        purpose: What it was about to be used for, e.g. `resumed from`.
+        remedy: What to do instead, one sentence.
+    Raises:
+        ValueError: If any key is missing, naming every one of them.
+    """
+    missing = [key for key in keys if key not in checkpoint]
+    if missing:
+        raise ValueError(
+            f'{subject} is missing {", ".join(missing)}, so it cannot be {purpose}. {remedy}'
+        )
 
 
 def save_checkpoint(
@@ -74,25 +126,8 @@ def load_checkpoint(model_path: str | Path) -> dict:
     return torch.load(f=Path(model_path), map_location='cpu', weights_only=False)
 
 
-# What a checkpoint is worth keeping for once it will only ever be generated from: the two keys
-# `TransformerCVAE.from_checkpoint` reads, the one `pipelines/generate.py` names its output after,
-# and three that say which step of which run this is and how well it scored.
-_INFERENCE_KEYS = (
-    'model_config',
-    'model_state_dict',
-    'run',
-    'experiment_config',
-    'step',
-    'selection_score',
-)
-
-
 def inference_payload(checkpoint: dict) -> dict:
     """Trim a checkpoint to what generating from it needs.
-
-    The optimizer, early-stopping and RNG state exist so `pipelines/train.py -r` can pick a run
-    back up, and a published checkpoint is never resumed from. Dropping them costs nothing a
-    reader uses and saves the larger part of the file, Adam's two moments per parameter above all.
 
     Args:
         checkpoint: What `load_checkpoint` read.
@@ -102,10 +137,11 @@ def inference_payload(checkpoint: dict) -> dict:
         ValueError: If the checkpoint is missing any of them, naming every one, so a file written
             before this format fails here rather than half-way through someone else's generation.
     """
-    missing = [key for key in _INFERENCE_KEYS if key not in checkpoint]
-    if missing:
-        raise ValueError(
-            f'checkpoint is missing {", ".join(missing)}, so it cannot be published. It was '
-            'written by an older version of `save_checkpoint`; retrain, or publish a newer run.'
-        )
-    return {key: checkpoint[key] for key in _INFERENCE_KEYS}
+    require_keys(
+        checkpoint,
+        INFERENCE_KEYS,
+        purpose='published',
+        remedy='It was written by an older version of `save_checkpoint`; retrain, or publish a '
+        'newer run.',
+    )
+    return {key: checkpoint[key] for key in INFERENCE_KEYS}
