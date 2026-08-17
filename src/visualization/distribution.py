@@ -237,7 +237,7 @@ def distribution_grid(frame: pd.DataFrame) -> Figure:
     Returns:
         The finished figure, its panels titled by model.
     """
-    models = labels.ordered_models(frame['model'])
+    models = labels.MODELS.ordered(frame['model'])
     # Every point the figure is drawn from, the ground truth counted once rather than once per
     # panel it is repeated under.
     generated = frame['source'] == Source.GENERATED
@@ -270,7 +270,7 @@ def distribution_grid(frame: pd.DataFrame) -> Figure:
     )
     for axes, model in zip(grid[0], models, strict=True):
         panel = frame[frame['model'] == model]
-        model_style = labels.model_style(model)
+        model_style = labels.MODELS[model]
         _draw_panel(
             axes=axes,
             truth=_points(panel[panel['source'] == Source.TRUTH]),

@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -101,13 +102,21 @@ def _shared_prefixes(dataset: str, files: Iterable[Path]) -> set[PrefixKey]:
     return {ordered[index] for index in chosen}
 
 
-def _read_cloud(
-    file: Path, keys: set[PrefixKey], codes: ActivityCodes
-) -> tuple[list[str], list[str]]:
-    """Read one run's cloud, and the ground truth it answers, out of its generations.
+@dataclass(frozen=True)
+class _Answer:
+    """What one prefix contributes to one model's panel: the suffix that truly followed it, and
+    the draws taken from what that model wrote for it."""
 
-    A prefix the model wrote nothing for is skipped on both sides rather than the truth alone, so
-    the two clouds hold the same points and a difference between them is the model's.
+    truth: str
+    generated: tuple[str, ...]
+
+
+def _read_cloud(file: Path, keys: set[PrefixKey], codes: ActivityCodes) -> dict[PrefixKey, _Answer]:
+    """Read what one run answered, out of its generations.
+
+    Keyed by prefix rather than returned as two lists, so the caller can hold every run to the
+    prefixes all of them answered: a run that wrote nothing for a prefix simply has no entry for
+    it here.
 
     Args:
         file: The generations of one run, from `pipelines.generate`.
@@ -115,20 +124,21 @@ def _read_cloud(
         codes: The log's codes, shared with every other cloud of it so that one activity is one
             character throughout.
     Returns:
-        The encoded true suffixes and the encoded generated ones, in the order the file holds them.
+        What this run answered for each of `keys` it wrote at least one suffix for.
     """
     generator = np.random.default_rng(SEED)
-    truth: list[str] = []
-    generated: list[str] = []
+    answers: dict[PrefixKey, _Answer] = {}
     for key, true_activities, samples in read_samples(file):
         if key not in keys or not samples:
             continue
-        truth.append(codes.encode(true_activities))
         drawn = generator.choice(
             a=len(samples), size=min(SAMPLES_PER_PREFIX, len(samples)), replace=False
         )
-        generated.extend(codes.encode(samples[index]) for index in drawn)
-    return truth, generated
+        answers[key] = _Answer(
+            truth=codes.encode(true_activities),
+            generated=tuple(codes.encode(samples[index]) for index in drawn),
+        )
+    return answers
 
 
 def _embed(clouds: Sequence[Sequence[str]]) -> tuple[np.ndarray, dict[str, int]]:
@@ -197,12 +207,29 @@ def embed_suffixes(files: Sequence[Path]) -> pd.DataFrame:
         clouds = {
             model: _read_cloud(file=file, keys=keys, codes=codes) for model, file in runs.items()
         }
-        # Every run answers the same prefixes of the same split and so carries the same truth; the
-        # first of them answers for all.
-        truth, _ = next(iter(clouds.values()))
-        coordinates, positions = _embed([truth, *(cloud for _, cloud in clouds.values())])
 
-        for model, (_, cloud) in clouds.items():
+        # Narrowed once more, to the prefixes every run actually wrote a suffix for: a run that
+        # wrote nothing for one is the only reason a cloud can come up short of `keys`, and a panel
+        # drawn against a truth cloud holding points its own cloud has no answer for would read as
+        # the model missing a region it was never asked about.
+        answered = sorted(set.intersection(*(set(cloud) for cloud in clouds.values())))
+        if not answered:
+            raise ValueError(
+                f'every prefix of {dataset} is left unanswered by at least one of its runs, so '
+                'their generations cannot be compared. Generate them again.'
+            )
+
+        # Every run answers the same prefixes of the same split and so carries the same truth for
+        # each of them; the first of them answers for all.
+        first = clouds[next(iter(clouds))]
+        truth = [first[key].truth for key in answered]
+        generated = {
+            model: [sequence for key in answered for sequence in cloud[key].generated]
+            for model, cloud in clouds.items()
+        }
+        coordinates, positions = _embed([truth, *generated.values()])
+
+        for model, cloud in generated.items():
             for source, sequences in ((Source.TRUTH, truth), (Source.GENERATED, cloud)):
                 # One row per point rather than per distinct suffix, so the repeats that carry a
                 # cloud's density are what lands on the page.

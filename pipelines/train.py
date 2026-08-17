@@ -18,7 +18,7 @@ from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
-from src.model import TransformerCVAE, load_checkpoint
+from src.model import RESUME_KEYS, TransformerCVAE, load_checkpoint, require_keys
 from src.paths import Split
 from src.training.train import train
 
@@ -35,18 +35,13 @@ def resumed(resume_path: Path) -> tuple[ExperimentConfig, dict]:
         ValueError: If the checkpoint carries no training state, and so can only be generated with.
     """
     checkpoint = load_checkpoint(resume_path)
-    missing = {
-        'experiment_config',
-        'run',
-        'optimizer_state',
-        'early_stopping_state',
-        'rng_state',
-    } - checkpoint.keys()
-    if missing:
-        raise ValueError(
-            f'{resume_path} is missing {sorted(missing)}: it can be generated with, but not '
-            'resumed from. Start a new run instead.'
-        )
+    require_keys(
+        checkpoint,
+        RESUME_KEYS,
+        subject=str(resume_path),
+        purpose='resumed from',
+        remedy='It can be generated with instead; start a new run to train.',
+    )
     return ExperimentConfig.model_validate(checkpoint['experiment_config']), checkpoint
 
 

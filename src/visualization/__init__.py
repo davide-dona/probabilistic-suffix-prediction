@@ -11,17 +11,15 @@ the read half of a format the evaluation pipeline writes.
 """
 
 from src.visualization.distribution import distribution_grid
-from src.visualization.embedding import EMBEDDING_COLUMNS, Source, embed_suffixes
+from src.visualization.embedding import embed_suffixes
 from src.visualization.figures import FIGURES, compose_figure
 from src.visualization.labels import reported_models
 from src.visualization.style import apply_style
 from src.visualization.tables import TABLES, latex_table
 
 __all__ = [
-    'EMBEDDING_COLUMNS',
     'FIGURES',
     'TABLES',
-    'Source',
     'apply_style',
     'compose_figure',
     'distribution_grid',

@@ -105,19 +105,24 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
     return pa.Table.from_pylist(mapping=rows, schema=_SCHEMA)
 
 
-def read_suffixes(parquet: pq.ParquetFile) -> Iterator[tuple[list[str], list[str]]]:
+def read_suffixes(path: Path) -> Iterator[tuple[list[str], list[str]]]:
     """Walk a generations file for the pair of suffixes each prefix is summarized by.
 
+    One of three readers over this file, each reading the columns its caller needs and no more:
+    a walk that decoded every draw would cost this one ten times what it costs, on a file of a
+    quarter of a million rows.
+
     Args:
-        parquet: The generations file, already open.
+        path: The generations file, opened and closed here.
     Yields:
         The true suffix and the first generated suffix of each prefix, in the order the file holds
         them, as activity names.
     """
-    for batch in parquet.iter_batches(columns=['true_activities', 'generated_activities']):
-        truths = batch.column('true_activities').to_pylist()
-        samples = pc.list_element(batch.column('generated_activities'), 0).to_pylist()
-        yield from zip(truths, samples, strict=True)
+    with pq.ParquetFile(path) as parquet:
+        for batch in parquet.iter_batches(columns=['true_activities', 'generated_activities']):
+            truths = batch.column('true_activities').to_pylist()
+            samples = pc.list_element(batch.column('generated_activities'), 0).to_pylist()
+            yield from zip(truths, samples, strict=True)
 
 
 def read_prefix_keys(path: Path) -> set[PrefixKey]:

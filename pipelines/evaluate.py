@@ -15,10 +15,13 @@ from src.evaluation.energy import score_distribution
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
 from src.inference.generation_store import read_generation_block, read_run_identity
-from src.logs.declare import ConformanceChecker
+from src.logs.declare import ConformanceChecker, discovery_settings
 
 # Conformance checker configuration.
 # If True, the checker will consider not satisfying a constraint as a failure.
+# Independent of the `declare.consider_vacuity` a model was discovered under: that one decides
+# which constraints hold on enough of the log to keep, this one decides what a generated trace is
+# credited for. The banner prints both, so a report is never read without knowing which is which.
 CONSIDER_VACUITY = False
 
 
@@ -65,6 +68,8 @@ def _score_in_parallel(
     generations_file: Path,
     *,
     dataset: str,
+    blocks: int,
+    prefixes: int,
     workers: int | None,
 ) -> Iterator[ScoredPrefix]:
     """Score a generations file across a pool of processes, a block at a time.
@@ -80,15 +85,13 @@ def _score_in_parallel(
             the scores it computes cross back.
         dataset: The dataset the prefixes were cut from, naming the declarative model to check
             conformance against.
+        blocks: How many blocks the file holds, one unit of work each.
+        prefixes: How many prefixes it holds in total, for the progress bar.
         workers: How many processes to score with, or `None` for one per available CPU.
     Yields:
         Each prefix's scores, in the order the file holds them. The pool is shut down once they
         have all been drawn.
     """
-    # Open the file once to get its block count and total prefix count
-    with pq.ParquetFile(generations_file) as parquet:
-        blocks, prefixes = parquet.num_row_groups, parquet.metadata.num_rows
-
     with (
         ProcessPoolExecutor(
             max_workers=workers,
@@ -124,13 +127,24 @@ def run(generations_file: Path, workers: int | None) -> None:
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
 
+    # What the model was mined under, beside what it is about to be checked under. The two are
+    # separate decisions, so a run says which it made rather than leaving them to look like one.
+    model_path = paths.declare_model_path(dataset)
+    mined = discovery_settings(model_path)
+    mined_under = (
+        f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
+        if mined is not None
+        else 'settings not recorded, so this model predates the header'
+    )
+
     banner(
         'Scoring generated suffixes',
         {
             'run': run,
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
-            'declarative model': paths.declare_model_path(dataset),
+            'declarative model': f'{model_path} (mined at {mined_under})',
+            'conformance': f'checked with consider_vacuity={CONSIDER_VACUITY}',
             'distribution': 'every generated suffix of the split against every real one',
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
@@ -143,7 +157,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # Measured over the split's suffixes at once rather than a prefix at a time, so it runs here
     # rather than in the pool below.
     with step(f'Measuring the distribution distance over {prefixes:,} prefixes'):
-        distance = score_distribution(generations_file)
+        distance = score_distribution(generations_file, prefixes=prefixes)
 
     # Compute the metrics of the generation, folding each prefix's scores in as the pool hands
     # them back.
@@ -152,7 +166,13 @@ def run(generations_file: Path, workers: int | None) -> None:
         'declarative model first'
     ):
         metrics = EvaluationMetrics.aggregate(
-            _score_in_parallel(generations_file, dataset=dataset, workers=workers),
+            _score_in_parallel(
+                generations_file,
+                dataset=dataset,
+                blocks=blocks,
+                prefixes=prefixes,
+                workers=workers,
+            ),
             energy_distance=distance,
         )
 

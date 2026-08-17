@@ -38,10 +38,7 @@ class PriorNetwork(nn.Module):
         Returns:
             `p(z | prefix)`.
         """
-        parameters = self.net(prefix_summary)  # [batch_size, 2 * latent_dim]
-        # The head emits both halves in one tensor: first the mean, then the log-variance.
-        mean, logvar = parameters.chunk(chunks=2, dim=-1)  # each [batch_size, latent_dim]
-        return Gaussian.create(mean=mean, logvar=logvar)
+        return Gaussian.from_head(self.net(prefix_summary))  # [batch_size, latent_dim] per field
 
 
 class PosteriorNetwork(nn.Module):
@@ -72,7 +69,4 @@ class PosteriorNetwork(nn.Module):
         summaries = torch.cat(
             tensors=(suffix_summary, prefix_summary), dim=-1
         )  # [batch_size, suffix + prefix]
-        parameters = self.head(summaries)  # [batch_size, 2 * latent_dim]
-        # The head emits both halves in one tensor: first the mean, then the log-variance.
-        mean, logvar = parameters.chunk(chunks=2, dim=-1)  # each [batch_size, latent_dim]
-        return Gaussian.create(mean=mean, logvar=logvar)
+        return Gaussian.from_head(self.head(summaries))  # [batch_size, latent_dim] per field

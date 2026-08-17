@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Self
 
 import numpy as np
-import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src.inference.generation_store import read_suffixes
@@ -149,7 +148,7 @@ def energy_distance(suffixes: PooledSuffixes) -> float:
     return 2.0 * between / (generated * truth) - spread_generated - spread_truth
 
 
-def score_distribution(generations_file: Path) -> float:
+def score_distribution(generations_file: Path, *, prefixes: int) -> float:
     """Measure a run's generated suffixes against the real ones over the whole split.
 
     Every prefix contributes one generated suffix and the one that truly followed it, so the two
@@ -162,21 +161,18 @@ def score_distribution(generations_file: Path) -> float:
 
     Args:
         generations_file: The generations to measure, from `python -m pipelines.generate`.
+        prefixes: How many prefixes it holds, for the progress bar. Passed by the caller, which
+            has already read the file's footer, rather than read off it a second time here.
     Returns:
         The energy distance between what the run generated and what the log holds.
     """
     codes = ActivityCodes()
     generated: list[str] = []
     truth: list[str] = []
-    with pq.ParquetFile(generations_file) as parquet:
-        with tqdm(
-            total=parquet.metadata.num_rows,
-            desc='Reading the suffixes of the split',
-            unit='prefix',
-        ) as progress:
-            for true_activities, sample_activities in read_suffixes(parquet):
-                truth.append(codes.encode(true_activities))
-                generated.append(codes.encode(sample_activities))
-                progress.update(1)
+    with tqdm(total=prefixes, desc='Reading the suffixes of the split', unit='prefix') as progress:
+        for true_activities, sample_activities in read_suffixes(generations_file):
+            truth.append(codes.encode(true_activities))
+            generated.append(codes.encode(sample_activities))
+            progress.update(1)
 
     return energy_distance(PooledSuffixes.of(generated=generated, truth=truth))

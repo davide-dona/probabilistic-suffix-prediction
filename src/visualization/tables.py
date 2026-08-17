@@ -38,35 +38,59 @@ POINT_TABLE = Table(
 PROBABILISTIC_TABLE = Table(
     name='comparison-probabilistic',
     rows=(
+        ('dls_mean', 'Mean DLS'),
+        ('conformance_mean', 'Mean conformance'),
+        ('length_ae_mean', 'Mean length MAE'),
+        ('remaining_time_ae_mean_days', 'Mean remaining time MAE')
+    ),
+)
+
+DISTRIBUTION_TABLE = Table(
+    name='comparison-distribution',
+    rows=(
         ('energy_distance', 'Energy distance'),
         ('hit_rate_at_1', 'Hit rate @1'),
         ('hit_rate_at_5', 'Hit rate @5'),
         ('hit_rate_at_10', 'Hit rate @10'),
         ('dls_best', 'Best-of-k DLS'),
-        ('dls_mean', 'Mean DLS'),
-        ('conformance_mean', 'Mean conformance'),
     ),
 )
 
-TABLES = (POINT_TABLE, PROBABILISTIC_TABLE)
+TABLES = (POINT_TABLE, PROBABILISTIC_TABLE, DISTRIBUTION_TABLE)
 
 
 def _cells(metric: str, values: Mapping[str, float], models: Sequence[str]) -> list[str]:
-    """One row of a block: a formatted cell per model, the best of them in bold."""
-    spec = labels.metric(metric)
+    """One row of a block: a formatted cell per model, the best in bold and the second underlined.
+
+    Args:
+        metric: Which metric the row reports, naming what counts as better.
+        values: What each model scored on it, for the models that were scored at all.
+        models: The columns to fill, in the order the table writes them.
+    Returns:
+        One cell per model, `MISSING` where it was never scored.
+    """
+    spec = labels.METRICS[metric]
     formatted = {model: spec.format(value) for model, value in values.items()}
 
-    best: set[str] = set()
+    # Ranked as the cells are printed rather than as the values behind them: two models whose
+    # cells read the same are marked the same, and the reader can see why. A metric with no
+    # better direction, and a row holding a single model, rank nothing and mark nothing.
+    ranked: list[str] = []
     if spec.higher_is_better is not None and len(formatted) > 1:
-        winner = (max if spec.higher_is_better else min)(formatted.values(), key=float)
-        best = {model for model, cell in formatted.items() if cell == winner}
+        ranked = sorted(set(formatted.values()), key=float, reverse=spec.higher_is_better)
 
-    return [
-        MISSING
-        if model not in formatted
-        else (f'\\textbf{{{formatted[model]}}}' if model in best else formatted[model])
-        for model in models
-    ]
+    # `None` where there is no such place to take: every model tied at the best leaves no second.
+    best = ranked[0] if ranked else None
+    second = ranked[1] if len(ranked) > 1 else None
+
+    def marked(cell: str) -> str:
+        if cell == best:
+            return f'\\textbf{{{cell}}}'
+        if cell == second:
+            return f'\\underline{{{cell}}}'
+        return cell
+
+    return [MISSING if model not in formatted else marked(formatted[model]) for model in models]
 
 
 def _escape_latex(text: str) -> str:
@@ -84,17 +108,18 @@ def latex_table(frame: pd.DataFrame, table: Table) -> str:
             table compares runs over their whole split.
         table: Which table to render.
     Returns:
-        The tabular alone, with one column per model, the best value of each row in bold and a
-        rule between metrics. Needs the `booktabs`, `multirow` and `tabularx` packages, and
-        belongs inside the paper's own float, which is where its caption and label are written.
+        The tabular alone, with one column per model, the best value of each row in bold, the
+        second best underlined and a rule between metrics. Needs the `booktabs`, `multirow` and
+        `tabularx` packages, and belongs inside the paper's own float, which is where its caption
+        and label are written.
     """
     overall = frame[frame['axis'] == Axis.OVERALL]
     # One column per model and one row per log, in the order they are declared, so two tables of
     # the same runs read the same way.
-    models = labels.ordered_models(overall['model'])
-    datasets = labels.ordered_datasets(overall['dataset'])
+    models = labels.MODELS.ordered(overall['model'])
+    datasets = labels.DATASETS.ordered(overall['dataset'])
     header_row = '  Metric & Dataset & ' + ' & '.join(
-        _escape_latex(labels.model_style(model).label) for model in models
+        _escape_latex(labels.MODELS[model].label) for model in models
     )
 
     lines = ['\\toprule', header_row + ' \\\\', '\\midrule']
@@ -103,13 +128,13 @@ def latex_table(frame: pd.DataFrame, table: Table) -> str:
             lines.append('\\midrule')
         # `=` rather than `*`: the Metric column is a fixed-width `X` column, and `multirow` only
         # wraps its label to that width, instead of overflowing past it, when told to match it.
-        cell = labels.metric(metric).table_header(header)
+        cell = labels.METRICS[metric].table_header(header)
         lines.append(f'  \\multirow{{{len(datasets)}}}{{=}}{{{cell}}}')
         scored = overall[overall['metric'] == metric]
         for dataset in datasets:
             values = scored[scored['dataset'] == dataset].set_index('model')['value']
             cells = _cells(metric, values.to_dict(), models)
-            label = _escape_latex(labels.dataset_label(dataset))
+            label = _escape_latex(labels.DATASETS[dataset])
             lines.append('   & ' + ' & '.join([label, *cells]) + ' \\\\')
     lines.append('\\bottomrule')
 

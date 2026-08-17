@@ -27,7 +27,7 @@ def _save_figure(figure: Figure, path: Path) -> None:
     Args:
         figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
             all open.
-        path: Where to write it, from `paths.plot_path`.
+        path: Where to write it, from `paths.figure_path`.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path)
@@ -40,21 +40,21 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     Args:
         frame: Every report read, from `read_reports`.
     Returns:
-        How many figures were written, under `outputs/plots/<dataset>/`.
+        How many figures were written, under `outputs/visual/figures/<dataset>/`.
     """
     written = 0
     for dataset, rows in frame.groupby('dataset', sort=False):
         for plot in FIGURES:
             _save_figure(
                 figure=compose_figure(rows[rows['axis'] == plot.axis], plot),
-                path=paths.plot_path(str(dataset), plot.name),
+                path=paths.figure_path(str(dataset), plot.name),
             )
             written += 1
     return written
 
 
 def _write_tables(frame: pd.DataFrame) -> int:
-    """Write every comparison table, over every log at once, under `outputs/plots/`.
+    """Write every comparison table, over every log at once, under `outputs/visual/tables/`.
 
     Args:
         frame: Every report read, from `read_reports`.
@@ -69,7 +69,7 @@ def _write_tables(frame: pd.DataFrame) -> int:
 
 
 def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> None:
-    """Draw a set of evaluation reports and tabulate them, under `outputs/plots/`.
+    """Draw a set of evaluation reports and tabulate them, under `outputs/visual/`.
 
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw
@@ -86,7 +86,8 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
         {
             'reports': f'{len(evaluation_files)} file(s)',
             'generations': f'{len(generation_files)} file(s)' if generation_files else 'none',
-            'output': paths.PLOTS_DIR,
+            'figures': paths.FIGURES_DIR,
+            'tables': paths.TABLES_DIR,
         },
     )
 
@@ -110,11 +111,14 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
             for dataset, rows in embedding.groupby('dataset', sort=False):
                 _save_figure(
                     figure=distribution_grid(rows),
-                    path=paths.plot_path(str(dataset), 'distribution'),
+                    path=paths.figure_path(str(dataset), 'distribution'),
                 )
                 drawn += 1
 
-    print(f'\nWrote {drawn} figures in pdf and {tables} tables in tex to {paths.PLOTS_DIR}')
+    print(
+        f'\nWrote {drawn} figures in pdf to {paths.FIGURES_DIR} '
+        f'and {tables} tables in tex to {paths.TABLES_DIR}'
+    )
 
 
 def main() -> None:
