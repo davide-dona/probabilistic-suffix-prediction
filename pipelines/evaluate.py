@@ -10,7 +10,8 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src import paths
-from src.cli import banner, duration, existing_file
+from src.cli import banner, duration, existing_file, step
+from src.evaluation.energy import score_distribution
 from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
 from src.inference.generation_store import read_generation_block, read_run_identity
@@ -130,18 +131,30 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': paths.declare_model_path(dataset),
+            'distribution': 'every generated suffix of the split against every real one',
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': paths.evaluation_path(run),
         },
     )
 
+    started = time.perf_counter()
+
+    # Measured over the split's suffixes at once rather than a prefix at a time, so it runs here
+    # rather than in the pool below.
+    with step(f'Measuring the distribution distance over {prefixes:,} prefixes'):
+        distance = score_distribution(generations_file)
+
     # Compute the metrics of the generation, folding each prefix's scores in as the pool hands
     # them back.
-    started = time.perf_counter()
-    metrics = EvaluationMetrics.aggregate(
-        _score_in_parallel(generations_file, dataset=dataset, workers=workers)
-    )
+    with step(
+        f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
+        'declarative model first'
+    ):
+        metrics = EvaluationMetrics.aggregate(
+            _score_in_parallel(generations_file, dataset=dataset, workers=workers),
+            energy_distance=distance,
+        )
 
     # The report is named after the run the generations carry, so it sits under `outputs/eval/`
     # exactly where they sit under `outputs/generations/`.

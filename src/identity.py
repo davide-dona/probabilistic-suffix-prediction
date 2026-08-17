@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import TypeAdapter
 
@@ -54,3 +56,31 @@ class RunIdentity:
 
 # Built once, since a `TypeAdapter` compiles the schema it validates against.
 _RUN_ADAPTER = TypeAdapter(RunIdentity)
+
+
+def group_by_model(runs: Iterable[tuple[RunIdentity, Path]]) -> dict[str, dict[str, Path]]:
+    """Group a set of run artifacts by the log they belong to, one run of each model per log.
+
+    What a figure or a table is built from is a set of files nobody necessarily typed one by one,
+    since a directory can be swept for them, and a log holding two runs of one model would draw one
+    line, panel or column over another without saying so.
+
+    Args:
+        runs: Which run wrote each file, in the order they were named. How that was read is the
+            caller's: a report says so in its JSON, a generations file in its Parquet footer.
+    Returns:
+        The file of each model, keyed by the log's own name, both in the order they were given.
+    Raises:
+        ValueError: If one log is given two runs of the same model.
+    """
+    grouped: dict[str, dict[str, Path]] = {}
+    for run, file in runs:
+        models = grouped.setdefault(run.dataset, {})
+        already = models.get(run.model)
+        if already is not None:
+            raise ValueError(
+                f'{run.dataset} is given two runs of {run.model}:\n  {already}\n  {file}\n'
+                'Name only the run you want, or move the stale one out of the swept directory.'
+            )
+        models[run.model] = file
+    return grouped

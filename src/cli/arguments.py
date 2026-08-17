@@ -1,5 +1,4 @@
 import argparse
-from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -37,28 +36,26 @@ def existing_directory(value: str) -> Path:
     return path
 
 
-def label_map(pairs: Sequence[str] | None) -> dict[str, str]:
-    """Read the `name=Display` pairs a flag renames something through.
+def swept(directory: Path, suffix: str, kind: str, pipeline: str) -> list[Path]:
+    """Find every artifact of one kind under a directory.
 
     Args:
-        pairs: What the flag was given, or `None` for no renaming at all.
+        directory: The directory to sweep.
+        suffix: The extension the artifact is written with, e.g. `.json`.
+        kind: What the artifact is called in the error, e.g. `evaluation reports`.
+        pipeline: The pipeline that writes it, named in the error.
     Returns:
-        The display name of everything named, keyed by its own name.
+        The artifacts under it, in path order.
     Raises:
-        ValueError: If a pair is not `name=Display`, or if one name is given two displays,
-            which a plain dict would resolve silently.
+        FileNotFoundError: If it holds none at all.
     """
-    labels: dict[str, str] = {}
-    for pair in pairs or ():
-        name, separator, display = pair.partition('=')
-        if not separator or not name or not display:
-            raise ValueError(f'expected a label as `name=Display`, got {pair!r}.')
-        if name in labels:
-            raise ValueError(
-                f'{name!r} is labelled twice, as {labels[name]!r} and {display!r}. Name it once.'
-            )
-        labels[name] = display
-    return labels
+    found = sorted(directory.rglob(f'*{suffix}'))
+    if not found:
+        raise FileNotFoundError(
+            f'no {kind} under {directory}. Run `python -m {pipeline}` first, or sweep the right '
+            'directory.'
+        )
+    return found
 
 
 def add_config_argument(container: argparse._ActionsContainer, *, required: bool) -> None:

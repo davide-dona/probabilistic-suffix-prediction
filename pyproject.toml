@@ -14,9 +14,11 @@ dependencies = [
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
     "rapidfuzz>=3.14.5",
+    "scipy>=1.18.0",
     "tensorboard>=2.21.0",
     "torch>=2.13.0",
     "tqdm>=4.69.1",
+    "umap-learn>=0.5.12",
 ]
 
 [dependency-groups]

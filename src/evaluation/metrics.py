@@ -81,6 +81,10 @@ class EvaluationMetrics:
     cases: int
     samples_per_prefix: int
 
+    # How far the split's generated suffixes sit from its real ones.
+    # Defined as a single number for the whole split, not per prefix
+    energy_distance: float
+
     scores: PairScores
     # In increasing order of prefix length
     by_prefix_length: list[ByLengthMetrics]
@@ -88,12 +92,15 @@ class EvaluationMetrics:
     by_suffix_length: list[ByLengthMetrics]
 
     @classmethod
-    def aggregate(cls, scored: Iterable[ScoredPrefix]) -> Self:
+    def aggregate(cls, scored: Iterable[ScoredPrefix], *, energy_distance: float) -> Self:
         """Fold every prefix's scores into the averages one evaluation reports.
 
         Args:
             scored: The scores of each prefix, in any order and read in a single pass, so they can
                 be streamed in as they are computed rather than held all at once.
+            energy_distance: The split's distribution distance, from `score_distribution`. Measured
+                over the suffixes of the whole split at once, so it is carried through rather than
+                folded out of `scored`.
         Returns:
             The averages over every prefix, the same averages broken down by cut point and by
             ground-truth suffix length, and the population they were taken over. Every prefix
@@ -119,6 +126,7 @@ class EvaluationMetrics:
             pairs=len(every_prefix),
             cases=len(cases),
             samples_per_prefix=samples_per_prefix,
+            energy_distance=energy_distance,
             scores=PairScores.mean(every_prefix),
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),

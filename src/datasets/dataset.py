@@ -27,11 +27,19 @@ class Events(NamedTuple):
     )  # float32 0/1, 0.0 where the log had no value [..., seq_len, num_numeric]
     length: torch.Tensor  # int64, the real, unpadded length of the run, [...], 1D
 
+    def _channels(self) -> dict[str, torch.Tensor]:
+        """Every per-event field, keyed by name, without `length`, which counts the events rather
+        than holding one value per event."""
+        return {name: getattr(self, name) for name in self._fields if name != 'length'}
+
     def cut(self, index: slice | torch.Tensor) -> Events:
         """Slice every per-event field by index, updating `length`."""
-        # Every field but `length`, which is recounted from what the slice kept.
-        channels = [channel[index] for channel in self[:-1]]
-        return Events(*channels, length=torch.tensor(data=len(channels[0]), dtype=torch.long))
+        # `length` is recounted from what the slice kept, so it is not sliced with the rest.
+        channels = {name: channel[index] for name, channel in self._channels().items()}
+        return self._replace(
+            **channels,
+            length=torch.tensor(data=len(channels['activities']), dtype=torch.long),
+        )
 
     def padded(self, to: int) -> Events:
         """Pad every per-event field to `to` positions, leaving `length` unchanged.
@@ -43,10 +51,10 @@ class Events(NamedTuple):
         Returns:
             The same events at the front of `to` positions, `length` unchanged.
         """
-        # Every field but `length`, which counts real events and so survives the padding.
-        return Events(
-            *(
-                torch.cat(
+        # `length` counts real events and so survives the padding untouched.
+        return self._replace(
+            **{
+                name: torch.cat(
                     tensors=(
                         channel,
                         torch.zeros(
@@ -54,9 +62,8 @@ class Events(NamedTuple):
                         ),
                     )
                 )
-                for channel in self[:-1]
-            ),
-            length=self.length,
+                for name, channel in self._channels().items()
+            }
         )
 
     def pad_mask(self) -> torch.Tensor:

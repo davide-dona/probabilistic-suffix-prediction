@@ -1,0 +1,84 @@
+from collections.abc import Hashable, Sequence
+from dataclasses import dataclass, field
+
+import numpy as np
+from rapidfuzz import process
+from rapidfuzz.distance import OSA
+
+# Start of the Unicode private use area, where the activity codes are drawn from.
+_FIRST_CODE = 0xE000
+
+
+@dataclass(slots=True)
+class ActivityCodes:
+    """Map each activity name to a character. A suffix becomes a string, rather than a sequence of
+    objects, making it cheaper to hold and cheaper to measure against another.
+
+    One instance per set of suffixes that will be compared against each other: the codes are what
+    make two suffixes comparable, so a log's ground truth and every cloud drawn over it must be
+    encoded by the same one.
+    """
+
+    _codes: dict[str, str] = field(default_factory=dict)
+
+    def encode(self, activities: Sequence[str]) -> str:
+        """Encode one suffix, giving each activity not seen before the next code point.
+
+        Args:
+            activities: The suffix's activity names, in order.
+        Returns:
+            One character per activity. The empty string for an empty suffix, which a model does
+            generate and which sits at distance 1.0 from every suffix holding an event.
+        """
+        return ''.join(
+            self._codes.setdefault(activity, chr(_FIRST_CODE + len(self._codes)))
+            for activity in activities
+        )
+
+
+def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable]) -> float:
+    """Damerau-Levenshtein similarity, the edit distance normalized into `[0, 1]`.
+
+    Args:
+        predicted: The generated sequence.
+        true: The ground-truth sequence.
+    Returns:
+        1.0 for identical sequences (two empty ones included), down to 0.0 for sequences
+        sharing nothing.
+    """
+    return OSA.normalized_similarity(predicted, true)
+
+
+def distances(
+    queries: Sequence[Sequence[Hashable]],
+    choices: Sequence[Sequence[Hashable]],
+    *,
+    workers: int = 1,
+    dtype: type[np.floating] = np.float32,
+) -> np.ndarray:
+    """Measure every sequence of one set against every sequence of another.
+
+    Args:
+        queries: The sequences to measure, one row each. Either encoded suffixes, where a sequence
+            is a string, or raw activity names, where it is a list of them.
+        choices: The sequences to measure them against, one column each.
+        workers: How many threads to spread the pairs over, or -1 for one per core. Left at 1 by a
+            caller that is already inside a process pool, where a thread per core per process would
+            oversubscribe the machine.
+        dtype: What to accumulate in. The default halves a matrix that can run to hundreds of
+            megabytes; a caller measuring a handful of sequences has no such matrix and may ask for
+            `np.float64` instead.
+    Returns:
+        `[len(queries), len(choices)]`, holding `1 - sequence_similarity` for each pair: 0.0 for
+        two identical sequences, up to 1.0 for two sharing nothing.
+    """
+    similarities = process.cdist(
+        queries=queries,
+        choices=choices,
+        scorer=OSA.normalized_similarity,
+        dtype=dtype,
+        workers=workers,
+    )
+    # In place: the matrix is already the largest thing here, and a second copy of it is what a
+    # blocked walk exists to avoid.
+    return np.subtract(1.0, similarities, out=similarities)
