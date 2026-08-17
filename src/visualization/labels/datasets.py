@@ -7,8 +7,8 @@ DATASETS = Registry[str](
     kind='dataset',
     where='DATASETS in src/visualization/labels/datasets.py',
     entries={
-        'bpic17': 'BPIC17',
-        'bpic19': 'BPIC19',
         'sepsis': 'Sepsis',
+        'bpic19': 'BPIC19',
+        'bpic17': 'BPIC17',
     },
 )

@@ -100,14 +100,3 @@ def legend_above(figure: Figure, handles: Sequence[Artist], keys: Sequence[str])
     # The pad the layout leaves between the legend and the row of titles below it. Set here rather
     # than at `subplots`, since it is the legend that needs the room.
     figure.get_layout_engine().set(h_pad=LEGEND_PAD)
-
-
-def figure_size(width: float) -> tuple[float, float]:
-    """The size of a figure of a given width, in inches, at the shared aspect.
-
-    Args:
-        width: How wide, usually `COLUMN_WIDTH` or `PAGE_WIDTH`.
-    Returns:
-        The width and height to pass as `figsize`.
-    """
-    return (width, width * ASPECT)
