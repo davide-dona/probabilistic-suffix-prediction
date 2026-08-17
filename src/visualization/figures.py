@@ -43,7 +43,18 @@ class Plot:
 
 # Every figure of the catalogue, each a group of metrics against one length breakdown, drawn one
 # panel per metric and one line per model. A new figure is an entry here and nothing else.
+#
+# A figure is worth a page only where it shows what a table cell cannot: a shape over length. Which
+# breakdown carries that shape is the group's own question, so most groups are drawn against one of
+# the two rather than both. The two axes are not independent: every prefix of a case is scored, so a
+# long prefix leaves a short suffix, and a curve rising with prefix length is partly a curve over
+# how much is left to predict. `Axis.SUFFIX` is what a group is drawn against where it is about how
+# far a model can generate, and `Axis.PREFIX` where it is about how much a model is told first.
 FIGURES = (
+    # Both breakdowns, alone among the groups: the accuracy of a suffix is what the paper is about,
+    # and the two axes are the two readings of it. The three panels are the point estimate, the
+    # mean of the samples and the closest of them, so the gap between the last two is what drawing
+    # more than one suffix buys.
     Plot(
         group='dls',
         axis=Axis.PREFIX,
@@ -54,44 +65,25 @@ FIGURES = (
         axis=Axis.SUFFIX,
         metrics=('dls_point', 'dls_mean', 'dls_best'),
     ),
-    Plot(
-        group='conformance',
-        axis=Axis.PREFIX,
-        metrics=('conformance_point', 'conformance_mean'),
-    ),
+    # Against the suffix: whether a model stays inside the process as it generates further is a
+    # question about how much it has generated, not about how much it was given.
     Plot(
         group='conformance',
         axis=Axis.SUFFIX,
         metrics=('conformance_point', 'conformance_mean'),
     ),
+    # Against the prefix: how early in a case its remaining time can be trusted. Against the suffix
+    # it would mostly redraw its own axis, an error in days growing with the days left to predict.
     Plot(
         group='remaining-time',
         axis=Axis.PREFIX,
         metrics=('remaining_time_ae_point_days', 'remaining_time_ae_mean_days'),
     ),
-    Plot(
-        group='remaining-time',
-        axis=Axis.SUFFIX,
-        metrics=('remaining_time_ae_point_days', 'remaining_time_ae_mean_days'),
-    ),
-    Plot(
-        group='suffix-length',
-        axis=Axis.PREFIX,
-        metrics=('length_ae_point', 'length_ae_mean'),
-    ),
-    Plot(
-        group='suffix-length',
-        axis=Axis.SUFFIX,
-        metrics=('length_ae_point', 'length_ae_mean'),
-    ),
+    # Against the prefix: how much of a case has to be seen before the spread of `p(z | prefix)`
+    # closes in.
     Plot(
         group='diversity',
         axis=Axis.PREFIX,
-        metrics=('sample_diversity', 'unique_sample_rate'),
-    ),
-    Plot(
-        group='diversity',
-        axis=Axis.SUFFIX,
         metrics=('sample_diversity', 'unique_sample_rate'),
     ),
 )
