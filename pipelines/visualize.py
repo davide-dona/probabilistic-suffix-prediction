@@ -45,7 +45,7 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     written = 0
     for plot in FIGURES:
         _save_figure(
-            figure=compose_figure(frame[frame['axis'] == plot.axis], plot),
+            figure=compose_figure(frame[frame['axis'].isin(plot.breakdowns)], plot),
             path=paths.combined_figure_path(plot.name),
         )
         written += 1

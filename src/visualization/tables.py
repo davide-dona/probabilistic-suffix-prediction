@@ -1,83 +1,33 @@
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 
 import pandas as pd
 
-from src.evaluation.report import Axis
 from src.visualization import labels
+from src.visualization.catalogue import MetricEntry, Table
 
 # What a cell reads where a model was never scored on a dataset.
 MISSING = '-'
 
 
-@dataclass(frozen=True)
-class Table:
-    """One comparison table: what its file is called and which metrics it puts in rows.
-
-    A row carries its own header, since a table holding a single estimator throughout makes the
-    qualifier a metric's label needs elsewhere redundant.
-    """
-
-    name: str
-    rows: tuple[tuple[str, str], ...]  # `(metric, header)`, one block each, in the order written
-
-
-# The two tables answer two questions, and each of them holds a single estimator so that the
-# emphasis compares models rather than a model against itself. A point estimate beats the mean of
-# ten stochastic draws almost by construction, so the two must never share a row.
-POINT_TABLE = Table(
-    name='comparison-point',
-    rows=(
-        ('dls_point', 'Suffix DLS'),
-        ('conformance_point', 'Suffix conformance'),
-        ('length_ae_point', 'Suffix length MAE'),
-        ('remaining_time_ae_point_days', 'Remaining time MAE'),
-    ),
-)
-
-PROBABILISTIC_TABLE = Table(
-    name='comparison-probabilistic',
-    rows=(
-        ('dls_mean', 'Mean DLS'),
-        ('conformance_mean', 'Mean conformance'),
-        ('length_ae_mean', 'Mean length MAE'),
-        ('remaining_time_ae_mean_days', 'Mean remaining time MAE')
-    ),
-)
-
-DISTRIBUTION_TABLE = Table(
-    name='comparison-distribution',
-    rows=(
-        ('energy_distance', 'Energy distance'),
-        ('hit_rate_at_1', 'Hit rate @1'),
-        ('hit_rate_at_5', 'Hit rate @5'),
-        ('hit_rate_at_10', 'Hit rate @10'),
-        ('dls_best', 'Best-of-k DLS'),
-    ),
-)
-
-TABLES = (POINT_TABLE, PROBABILISTIC_TABLE, DISTRIBUTION_TABLE)
-
-
-def _cells(metric: str, values: Mapping[str, float], models: Sequence[str]) -> list[str]:
+def _cells(entry: MetricEntry, values: Mapping[str, float], models: Sequence[str]) -> list[str]:
     """One row of a block: a formatted cell per model, the best in bold and the second underlined.
 
     Args:
-        metric: Which metric the row reports, naming what counts as better.
+        entry: Which metric the row reports, naming what counts as better.
         values: What each model scored on it, for the models that were scored at all.
         models: The columns to fill, in the order the table writes them.
     Returns:
         One cell per model, `MISSING` where it was never scored.
     """
-    spec = labels.METRICS[metric]
-    formatted = {model: spec.format(value) for model, value in values.items()}
+    formatted = {model: entry.format(value) for model, value in values.items()}
+    higher_is_better = entry.metric.higher_is_better
 
     # Ranked as the cells are printed rather than as the values behind them: two models whose
     # cells read the same are marked the same, and the reader can see why. A metric with no
     # better direction, and a row holding a single model, rank nothing and mark nothing.
     ranked: list[str] = []
-    if spec.higher_is_better is not None and len(formatted) > 1:
-        ranked = sorted(set(formatted.values()), key=float, reverse=spec.higher_is_better)
+    if higher_is_better is not None and len(formatted) > 1:
+        ranked = sorted(set(formatted.values()), key=float, reverse=higher_is_better)
 
     # `None` where there is no such place to take: every model tied at the best leaves no second.
     best = ranked[0] if ranked else None
@@ -113,7 +63,7 @@ def latex_table(frame: pd.DataFrame, table: Table) -> str:
         `tabularx` packages, and belongs inside the paper's own float, which is where its caption
         and label are written.
     """
-    overall = frame[frame['axis'] == Axis.OVERALL]
+    overall = frame[frame['axis'] == table.axis]
     # One column per model and one row per log, in the order they are declared, so two tables of
     # the same runs read the same way.
     models = labels.MODELS.ordered(overall['model'])
@@ -123,17 +73,16 @@ def latex_table(frame: pd.DataFrame, table: Table) -> str:
     )
 
     lines = ['\\toprule', header_row + ' \\\\', '\\midrule']
-    for index, (metric, header) in enumerate(table.rows):
+    for index, entry in enumerate(table.metrics):
         if index > 0:
             lines.append('\\midrule')
         # `=` rather than `*`: the Metric column is a fixed-width `X` column, and `multirow` only
         # wraps its label to that width, instead of overflowing past it, when told to match it.
-        cell = labels.METRICS[metric].table_header(header)
-        lines.append(f'  \\multirow{{{len(datasets)}}}{{=}}{{{cell}}}')
-        scored = overall[overall['metric'] == metric]
+        lines.append(f'  \\multirow{{{len(datasets)}}}{{=}}{{{entry.table_header}}}')
+        scored = overall[overall['metric'] == entry.key]
         for dataset in datasets:
             values = scored[scored['dataset'] == dataset].set_index('model')['value']
-            cells = _cells(metric, values.to_dict(), models)
+            cells = _cells(entry, values.to_dict(), models)
             label = _escape_latex(labels.DATASETS[dataset])
             lines.append('   & ' + ' & '.join([label, *cells]) + ' \\\\')
     lines.append('\\bottomrule')

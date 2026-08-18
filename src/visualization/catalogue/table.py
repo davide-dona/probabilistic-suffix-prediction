@@ -1,0 +1,57 @@
+from dataclasses import dataclass
+
+from src.evaluation.report import Axis
+from src.evaluation.scores import METRICS
+from src.visualization.catalogue.entry import MetricEntry
+
+
+@dataclass(frozen=True)
+class Table:
+    """One comparison table: what its file is called, which breakdown it summarizes (always the
+    overall one, a table comparing runs over their whole split), and the metrics it puts in rows,
+    each under the name its single estimator lets it be short about."""
+
+    name: str
+    axis: Axis
+    metrics: tuple[MetricEntry, ...]
+
+
+# Each table answers one question, and each holds a single estimator so that the emphasis compares
+# models rather than a model against itself. A point estimate beats the mean of ten stochastic
+# draws almost by construction, so the two must never share a row.
+TABLES = (
+    # Point prediction results
+    Table(
+        name='comparison-point',
+        axis=Axis.OVERALL,
+        metrics=(
+            MetricEntry(METRICS['dls_point'], 'Suffix DLS'),
+            MetricEntry(METRICS['conformance_point'], 'Suffix conformance'),
+            MetricEntry(METRICS['length_ae_point'], 'Suffix length MAE'),
+            MetricEntry(METRICS['remaining_time_ae_point_days'], 'Remaining time MAE'),
+        ),
+    ),
+    # Probabilistic generation results
+    Table(
+        name='comparison-probabilistic',
+        axis=Axis.OVERALL,
+        metrics=(
+            MetricEntry(METRICS['dls_mean'], 'Mean DLS'),
+            MetricEntry(METRICS['conformance_mean'], 'Mean conformance'),
+            MetricEntry(METRICS['length_ae_mean'], 'Mean length MAE'),
+            MetricEntry(METRICS['remaining_time_ae_mean_days'], 'Mean remaining time MAE'),
+        ),
+    ),
+    # Comparison of distributions
+    Table(
+        name='comparison-distribution',
+        axis=Axis.OVERALL,
+        metrics=(
+            MetricEntry(METRICS['energy_distance'], 'Energy distance'),
+            MetricEntry(METRICS['hit_rate_at_1'], 'Hit rate @1'),
+            MetricEntry(METRICS['hit_rate_at_5'], 'Hit rate @5'),
+            MetricEntry(METRICS['hit_rate_at_10'], 'Hit rate @10'),
+            MetricEntry(METRICS['dls_best'], 'Best-of-k DLS'),
+        ),
+    ),
+)
