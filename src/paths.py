@@ -173,6 +173,18 @@ def figure_path(dataset: str, name: str) -> Path:
     return FIGURES_DIR / dataset / f'{name}.pdf'
 
 
+def combined_figure_path(name: str) -> Path:
+    """One figure covering every log at once, above the per-log directories it spans.
+
+    Args:
+        name: What the figure shows, from `Plot.name`.
+    Returns:
+        The path to that figure, beside the directories of the logs it draws rather than inside
+        any one of them, since it belongs to none of them.
+    """
+    return FIGURES_DIR / f'{name}.pdf'
+
+
 def comparison_table_path(name: str) -> Path:
     """One results table comparing every visualized run.
 

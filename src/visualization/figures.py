@@ -18,7 +18,6 @@ from src.visualization.style import (
     PAGE_WIDTH,
     PANEL_X_BINS,
     TITLE_WIDTH,
-    figure_size,
     legend_above,
 )
 
@@ -28,8 +27,8 @@ AXIS_LABELS = {Axis.PREFIX: 'Prefix length', Axis.SUFFIX: 'Suffix length'}
 
 @dataclass(frozen=True)
 class Plot:
-    """One figure of the catalogue. The group is what the figure is about,
-    the axis is which breakdown it shows, and the metrics are the panels it draws."""
+    """One figure of the catalogue, covering every log at once. The group is what the figure is
+    about, the axis is which breakdown it shows, and the metrics are what it draws."""
 
     group: str  # What the figure is about, and the first half of the file it is written to
     axis: Axis  # Which breakdown, `Axis.PREFIX` or `Axis.SUFFIX`
@@ -42,7 +41,8 @@ class Plot:
 
 
 # Every figure of the catalogue, each a group of metrics against one length breakdown, drawn one
-# panel per metric and one line per model. A new figure is an entry here and nothing else.
+# column per log and one row per metric, a line per model within a panel. A new figure is an
+# entry here and nothing else.
 FIGURES = (
     Plot(
         group='dls',
@@ -56,11 +56,6 @@ FIGURES = (
     ),
     Plot(
         group='conformance',
-        axis=Axis.PREFIX,
-        metrics=('conformance_point', 'conformance_mean'),
-    ),
-    Plot(
-        group='conformance',
         axis=Axis.SUFFIX,
         metrics=('conformance_point', 'conformance_mean'),
     ),
@@ -70,28 +65,8 @@ FIGURES = (
         metrics=('remaining_time_ae_point_days', 'remaining_time_ae_mean_days'),
     ),
     Plot(
-        group='remaining-time',
-        axis=Axis.SUFFIX,
-        metrics=('remaining_time_ae_point_days', 'remaining_time_ae_mean_days'),
-    ),
-    Plot(
-        group='suffix-length',
-        axis=Axis.PREFIX,
-        metrics=('length_ae_point', 'length_ae_mean'),
-    ),
-    Plot(
-        group='suffix-length',
-        axis=Axis.SUFFIX,
-        metrics=('length_ae_point', 'length_ae_mean'),
-    ),
-    Plot(
         group='diversity',
         axis=Axis.PREFIX,
-        metrics=('sample_diversity', 'unique_sample_rate'),
-    ),
-    Plot(
-        group='diversity',
-        axis=Axis.SUFFIX,
         metrics=('sample_diversity', 'unique_sample_rate'),
     ),
 )
@@ -127,55 +102,53 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, metric: str, *, x_bins: int | 
 
 
 def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
-    """Compose one figure of the catalogue, with one panel per metric and one line per model.
+    """Compose one figure of the catalogue, covering every log at once, untitled since a paper
+    captions its figures. A column per log and a row per metric.
 
     Args:
-        frame: The rows of one log, from `read_reports`.
+        frame: Every report's rows the figure is drawn from, from `read_reports`.
         plot: Which figure to draw.
     Returns:
-        The finished figure, untitled since a paper captions its figures: one panel per metric at
-        page width, or a single column figure where the group holds one metric alone.
+        The finished figure.
     """
-    # Compute the number of panels first
-    num_panels = len(plot.metrics)
-
-    # A row of panels is as tall as one panel drawn at the shared aspect, plus the room the legend
-    # and the titles take above them.
-    size = (
-        figure_size(COLUMN_WIDTH)
-        if num_panels == 1
-        else (PAGE_WIDTH, PAGE_WIDTH / num_panels * ASPECT + LEGEND_HEIGHT)
-    )
+    datasets = labels.DATASETS.ordered(frame['dataset'])
+    # Page width once there are enough logs to fill it, and a column of panels of the usual width
+    # below that, so drawing one or two logs across gives a figure of the size the same panels have
+    # everywhere else rather than one panel blown up to the width of the page.
+    width = min(PAGE_WIDTH, len(datasets) * COLUMN_WIDTH)
     figure, grid = plt.subplots(
-        nrows=1,
-        ncols=num_panels,
-        figsize=size,
-        sharex=True,
+        nrows=len(plot.metrics),
+        ncols=len(datasets),
+        figsize=(width, len(plot.metrics) * width / len(datasets) * ASPECT + LEGEND_HEIGHT),
+        # By column, since a column is one log and its panels run over that log's own lengths. Not
+        # by row: two logs are two processes, and a shared scale would draw the one whose cases run
+        # for weeks over the one whose cases run for hours. A metric already in [0, 1] is on the
+        # whole interval in every panel either way, which is what makes those rows comparable.
+        sharex='col',
         squeeze=False,
         constrained_layout=True,
     )
-
-    for axes, metric_key in zip(grid[0], plot.metrics, strict=True):
-        _draw_metric(axes, frame, metric_key, x_bins='auto' if num_panels == 1 else PANEL_X_BINS)
+    for row, metric_key in zip(grid, plot.metrics, strict=True):
+        for axes, dataset in zip(row, datasets, strict=True):
+            _draw_metric(axes, frame[frame['dataset'] == dataset], metric_key, x_bins=PANEL_X_BINS)
+        # The metric names the row it is drawn along, its unit included, the way it names the
+        # y-axis of a single-panel figure.
         metric = labels.METRICS[metric_key]
-        if num_panels == 1:
-            axes.set_ylabel(metric.axis_label)
-        else:
-            axes.set_title(textwrap.fill(metric.title, width=TITLE_WIDTH))
-            # The unit alone, the panel's title already naming what it measures.
-            if metric.unit is not None:
-                axes.set_ylabel(metric.unit)
+        # Wrapped to the width a panel title is: a row is only as tall as one panel, and a metric
+        # whose name and unit run past that would otherwise be set taller than what it labels.
+        row[0].set_ylabel(textwrap.fill(metric.axis_label, width=TITLE_WIDTH))
+        if metric.is_score:
+            # A row of a metric already in [0, 1] is drawn over that whole interval in every panel,
+            # so the ticks are the metric's and not each log's: printing them once says the same
+            # thing in the width of one panel less.
+            for axes in row[1:]:
+                axes.tick_params(labelleft=False)
 
-    models = labels.MODELS.ordered(frame['model'])
-    if num_panels == 1:
-        grid[0][0].set_xlabel(AXIS_LABELS[plot.axis])
-        # One line needs no legend: the caption names it.
-        if len(models) > 1:
-            grid[0][0].legend(loc='best')
-        return figure
+    # The logs title the top row alone: the column below a title is one log throughout.
+    for axes, dataset in zip(grid[0], datasets, strict=True):
+        axes.set_title(labels.DATASETS[dataset])
 
     figure.supxlabel(AXIS_LABELS[plot.axis])
-    # Above the panels, since the bottom of the figure is where the shared x-axis label sits.
-    if len(models) > 1:
+    if len(labels.MODELS.ordered(frame['model'])) > 1:
         legend_above(figure, *grid[0][0].get_legend_handles_labels())
     return figure
