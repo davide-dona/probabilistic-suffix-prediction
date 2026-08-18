@@ -11,18 +11,11 @@ from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, duration, existing_file, step
-from src.evaluation.energy import score_distribution
-from src.evaluation.metrics import EvaluationMetrics, ScoredPrefix, score_prefixes
 from src.evaluation.report import EvaluationReport
+from src.evaluation.scores import DistributionScores, PooledSuffixes
+from src.evaluation.summary import EvaluationSummary, PrefixSummary
 from src.inference.generation_store import read_generation_block, read_run_identity
 from src.logs.declare import ConformanceChecker, discovery_settings
-
-# Conformance checker configuration.
-# If True, the checker will consider not satisfying a constraint as a failure.
-# Independent of the `declare.consider_vacuity` a model was discovered under: that one decides
-# which constraints hold on enough of the log to keep, this one decides what a generated trace is
-# credited for. The banner prints both, so a report is never read without knowing which is which.
-CONSIDER_VACUITY = False
 
 
 @dataclass(frozen=True)
@@ -48,11 +41,11 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
     global _worker
     _worker = _Worker(
         parquet=pq.ParquetFile(generations_file),
-        checker=ConformanceChecker(dataset, consider_vacuity=CONSIDER_VACUITY),
+        checker=ConformanceChecker(dataset),
     )
 
 
-def _score_block(block: int) -> list[ScoredPrefix]:
+def _score_block(block: int) -> list[PrefixSummary]:
     """Score every prefix of one block of the generations file, in the order they were written.
 
     Args:
@@ -60,8 +53,10 @@ def _score_block(block: int) -> list[ScoredPrefix]:
     Returns:
         One entry per prefix of the block, in the order it was written.
     """
-    generations = read_generation_block(parquet=_worker.parquet, block=block)
-    return score_prefixes(generations=generations, checker=_worker.checker)
+    return [
+        PrefixSummary.of(generation, checker=_worker.checker)
+        for generation in read_generation_block(parquet=_worker.parquet, block=block)
+    ]
 
 
 def _score_in_parallel(
@@ -71,7 +66,7 @@ def _score_in_parallel(
     blocks: int,
     prefixes: int,
     workers: int | None,
-) -> Iterator[ScoredPrefix]:
+) -> Iterator[PrefixSummary]:
     """Score a generations file across a pool of processes, a block at a time.
 
     A prefix's score depends on nothing but the prefix, and the conformance checks that dominate
@@ -127,8 +122,8 @@ def run(generations_file: Path, workers: int | None) -> None:
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
 
-    # What the model was mined under, beside what it is about to be checked under. The two are
-    # separate decisions, so a run says which it made rather than leaving them to look like one.
+    # What the model being checked against was mined under, so a report is never read without
+    # knowing which constraints it holds.
     model_path = paths.declare_model_path(dataset)
     mined = discovery_settings(model_path)
     mined_under = (
@@ -144,7 +139,6 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'conformance': f'checked with consider_vacuity={CONSIDER_VACUITY}',
             'distribution': 'every generated suffix of the split against every real one',
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
@@ -157,15 +151,15 @@ def run(generations_file: Path, workers: int | None) -> None:
     # Measured over the split's suffixes at once rather than a prefix at a time, so it runs here
     # rather than in the pool below.
     with step(f'Measuring the distribution distance over {prefixes:,} prefixes'):
-        distance = score_distribution(generations_file, prefixes=prefixes)
+        suffixes = PooledSuffixes.read(generations_file, prefixes=prefixes)
+        distribution = DistributionScores.of(suffixes)
 
-    # Compute the metrics of the generation, folding each prefix's scores in as the pool hands
-    # them back.
+    # Summarize the generation, folding each prefix's scores in as the pool hands them back.
     with step(
         f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
         'declarative model first'
     ):
-        metrics = EvaluationMetrics.aggregate(
+        summary = EvaluationSummary.of(
             _score_in_parallel(
                 generations_file,
                 dataset=dataset,
@@ -173,16 +167,16 @@ def run(generations_file: Path, workers: int | None) -> None:
                 prefixes=prefixes,
                 workers=workers,
             ),
-            energy_distance=distance,
+            distribution=distribution,
         )
 
     # The report is named after the run the generations carry, so it sits under `outputs/eval/`
     # exactly where they sit under `outputs/generations/`.
-    report = EvaluationReport(run=run, metrics=metrics)
+    report = EvaluationReport(run=run, summary=summary)
     path = report.write(paths.evaluation_path(run))
     print(
-        f'Scored {metrics.pairs:,} prefixes over {metrics.cases:,} cases in '
-        f'{duration(time.perf_counter() - started)}. Wrote evaluation report to {path}'
+        f'Scored {summary.prefixes:,} prefixes in {duration(time.perf_counter() - started)}. '
+        f'Wrote evaluation report to {path}'
     )
 
 

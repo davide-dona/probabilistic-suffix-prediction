@@ -1,4 +1,4 @@
-from src.visualization.labels.registry import Registry
+from src.registry import Registry
 
 # What a log is called, as against `data.name` in its config, which is what its run directory is
 # called. A log with nothing declared for it stops the run. Also the order logs are tabulated in,

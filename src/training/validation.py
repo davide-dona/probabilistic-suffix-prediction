@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.evaluation.accuracy import AccuracyScores, score_generation
+from src.evaluation.scores import AccuracyScores
 from src.inference.generate import generate_batch
 from src.model import TransformerCVAE
 from src.training.loss import Loss, compute_loss
@@ -58,8 +58,8 @@ def validate_generation(
     """
     Generate suffixes from the prefixes in `loader` and compare them to the ground truth.
 
-    Scored through `score_generation`, the same function the final report is built from, over the
-    same population: every prefix counts here and in `pipelines/evaluate.py` alike, so a training
+    Scored through `AccuracyScores.of`, the same way the final report is built, over the same
+    population: every prefix counts here and in `pipelines/evaluate.py` alike, so a training
     curve and a final report differ only in which split and how much of it they read.
 
     Args:
@@ -79,7 +79,7 @@ def validate_generation(
     model.eval()
 
     scores = [
-        score_generation(generation)
+        AccuracyScores.of(generation)
         for batch in loader
         for generation in generate_batch(
             model=model,

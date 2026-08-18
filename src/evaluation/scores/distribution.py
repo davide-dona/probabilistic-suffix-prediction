@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -8,11 +10,39 @@ import numpy as np
 from tqdm import tqdm
 
 from src.inference.generation_store import read_suffixes
+from src.scalar_metrics import ScalarMetrics, Unit, metric
 from src.suffixes import ActivityCodes, distances
 
 # How many rows of the distance matrix are held at once.
 # Bounds the memory use, making it computable for large logs.
-BLOCK = 512
+BLOCK_ROWS = 512
+
+
+@dataclass(frozen=True, slots=True)
+class DistributionScores(ScalarMetrics):
+    """How far the suffixes a run generated over a split sit from the ones the log really holds.
+
+    The one family measured over the split as a whole rather than a prefix at a time, so it has no
+    value at any one length and is never averaged over prefixes.
+    """
+
+    energy_distance: float = metric(unit=Unit.SCORE, higher_is_better=False)
+
+    @classmethod
+    def of(cls, suffixes: PooledSuffixes) -> Self:
+        """Measure a run's generated suffixes against the real ones over the whole split.
+
+        The term measuring the truth against itself depends on the log alone rather than on the
+        model, and is recomputed for each run rather than cached, since a cache would be another
+        artifact to invalidate for a few minutes of the largest log.
+
+        Args:
+            suffixes: The suffixes the run wrote and the ones that truly followed the same
+                prefixes, pooled together, from `PooledSuffixes.read`.
+        Returns:
+            The split's scores: how far what the run generated sits from what the log holds.
+        """
+        return cls(energy_distance=energy_distance(suffixes))
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +55,35 @@ class PooledSuffixes:
 
     sequences: list[str]
     counts: np.ndarray  # [num_distinct, 2]: column 0 counts generated suffixes, column 1 true ones
+
+    @classmethod
+    def read(cls, generations_file: Path, *, prefixes: int) -> Self:
+        """Read a run's generated suffixes and the real ones from the file it wrote them to.
+
+        Every prefix contributes one generated suffix and the one that truly followed it, so the
+        two sets answer the same questions and are the same size. Nothing is subsampled: the
+        distance measured over these is the exact value over the split, and reproducible without
+        a seed.
+
+        Args:
+            generations_file: The generations to read, from `python -m pipelines.generate`.
+            prefixes: How many prefixes it holds, for the progress bar. Passed by the caller, which
+                has already read the file's footer, rather than read off it a second time here.
+        Returns:
+            Both sets, encoded through one set of codes so they are comparable, and pooled.
+        """
+        codes = ActivityCodes()
+        generated: list[str] = []
+        truth: list[str] = []
+        with tqdm(
+            total=prefixes, desc='Reading the suffixes of the split', unit='prefix'
+        ) as progress:
+            for true_activities, sample_activities in read_suffixes(generations_file):
+                truth.append(codes.encode(true_activities))
+                generated.append(codes.encode(sample_activities))
+                progress.update(1)
+
+        return cls.of(generated=generated, truth=truth)
 
     @classmethod
     def of(cls, generated: Iterable[str], truth: Iterable[str]) -> Self:
@@ -65,8 +124,8 @@ def _pair_sums(suffixes: PooledSuffixes) -> tuple[float, float, float]:
     # What the walk actually visits, for the bar to count down: the pairs of the upper triangle,
     # block-diagonal squares whole.
     total_pairs = sum(
-        min(BLOCK, num_distinct - start) * (num_distinct - start)
-        for start in range(0, num_distinct, BLOCK)
+        min(BLOCK_ROWS, num_distinct - start) * (num_distinct - start)
+        for start in range(0, num_distinct, BLOCK_ROWS)
     )
     with tqdm(
         total=total_pairs,
@@ -74,8 +133,8 @@ def _pair_sums(suffixes: PooledSuffixes) -> tuple[float, float, float]:
         unit='pair',
         unit_scale=True,
     ) as progress:
-        for start in range(0, num_distinct, BLOCK):
-            stop = min(start + BLOCK, num_distinct)
+        for start in range(0, num_distinct, BLOCK_ROWS):
+            stop = min(start + BLOCK_ROWS, num_distinct)
             # [block, num_distinct - start]
             block_distances = distances(
                 queries=suffixes.sequences[start:stop],
@@ -146,33 +205,3 @@ def energy_distance(suffixes: PooledSuffixes) -> float:
     spread_truth = within_truth / (truth * (truth - 1.0)) if truth >= 2 else 0.0
 
     return 2.0 * between / (generated * truth) - spread_generated - spread_truth
-
-
-def score_distribution(generations_file: Path, *, prefixes: int) -> float:
-    """Measure a run's generated suffixes against the real ones over the whole split.
-
-    Every prefix contributes one generated suffix and the one that truly followed it, so the two
-    sets answer the same questions and are the same size. Nothing is subsampled: the distance is
-    the exact value over the split, and reproducible without a seed.
-
-    The term measuring the truth against itself depends on the log alone rather than on the model,
-    and is recomputed for each run rather than cached, since a cache would be another artifact to
-    invalidate for a few minutes of the largest log.
-
-    Args:
-        generations_file: The generations to measure, from `python -m pipelines.generate`.
-        prefixes: How many prefixes it holds, for the progress bar. Passed by the caller, which
-            has already read the file's footer, rather than read off it a second time here.
-    Returns:
-        The energy distance between what the run generated and what the log holds.
-    """
-    codes = ActivityCodes()
-    generated: list[str] = []
-    truth: list[str] = []
-    with tqdm(total=prefixes, desc='Reading the suffixes of the split', unit='prefix') as progress:
-        for true_activities, sample_activities in read_suffixes(generations_file):
-            truth.append(codes.encode(true_activities))
-            generated.append(codes.encode(sample_activities))
-            progress.update(1)
-
-    return energy_distance(PooledSuffixes.of(generated=generated, truth=truth))

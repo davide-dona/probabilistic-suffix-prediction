@@ -4,8 +4,8 @@ import torch
 import torch.nn.functional as F
 
 from src.datasets.dataset import SplitTrace
-from src.metrics import ScalarMetrics
 from src.model import TransformerCVAEOutput
+from src.scalar_metrics import ScalarMetrics
 from src.training.kl import free_bits_kl, gaussian_kl
 
 
