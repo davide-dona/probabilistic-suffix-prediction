@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.visualization.labels.registry import Registry
+from src.registry import Registry
 
 
 @dataclass(frozen=True)
@@ -18,20 +18,15 @@ class ModelStyle:
     marker: str
     linestyle: str
 
-
-# What a model is called and how it is drawn in the figures.
-# A model trained under a name not listed here stops the run.
-CVAE = ModelStyle(label='CVAE', color='#0072B2', marker='*', linestyle='-')
-U_ED_LSTM = ModelStyle(label='U-ED-LSTM', color='#E69F00', marker='s', linestyle='--')
-SUTRAN = ModelStyle(label='SuTraN', color='#009E73', marker='D', linestyle=':')
+# How a model is called and its stlye
 MODELS = Registry[ModelStyle](
     kind='model',
     where='MODELS in src/visualization/labels/models.py',
     entries={
-        'cvae': CVAE,
-        'cvae-small': CVAE,
-        'u-ed-lstm': U_ED_LSTM,
-        'sutran': SUTRAN,
+        'cvae': ModelStyle(label='CVAE', color='#0072B2', marker='*', linestyle='-'),
+        'cvae-small': ModelStyle(label='CVAE', color='#0072B2', marker='*', linestyle='-'),
+        'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E69F00', marker='s', linestyle='--'),
+        'sutran': ModelStyle(label='SuTraN', color='#009E73', marker='D', linestyle=':')
     },
 )
 

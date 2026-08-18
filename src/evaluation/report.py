@@ -8,7 +8,7 @@ from typing import Self
 import pandas as pd
 from pydantic import TypeAdapter, ValidationError
 
-from src.evaluation.metrics import EvaluationMetrics, PairScores
+from src.evaluation.summary import EvaluationSummary, LengthSummary
 from src.identity import RunIdentity, group_by_model
 
 
@@ -17,7 +17,7 @@ class EvaluationReport:
     """Everything one evaluation produced, under the identity of the run it scored."""
 
     run: RunIdentity
-    metrics: EvaluationMetrics
+    summary: EvaluationSummary
 
     @classmethod
     def read(cls, path: str | Path) -> Self:
@@ -65,47 +65,53 @@ class Axis(StrEnum):
 
 # What every figure and every table reads. One row is one metric of one run, so a metric added to
 # the scores reaches the figures without a change here.
-REPORT_COLUMNS = ('dataset', 'model', 'axis', 'length', 'pairs', 'metric', 'value')
+REPORT_COLUMNS = ('dataset', 'model', 'axis', 'length', 'prefixes', 'metric', 'value')
 
 
-def _flatten(scores: PairScores) -> dict[str, float]:
-    """Every metric one set of scores holds, keyed by its own name.
+def _flatten(summary: EvaluationSummary | LengthSummary) -> dict[str, float]:
+    """Every per-prefix metric one summary holds, keyed by its own name.
 
     Args:
-        scores: An evaluation's means, or the means of the prefixes sharing one length.
+        summary: An evaluation's means, or the means of the prefixes sharing one length.
     Returns:
-        Both families in one namespace, since a metric's name is unique across them and a figure
-        asks for a metric rather than for a family.
+        Both per-prefix families in one namespace, since a metric's name is unique across them and
+        a figure asks for a metric rather than for a family.
     """
-    return asdict(scores.accuracy) | asdict(scores.conformance)
+    return asdict(summary.accuracy) | asdict(summary.conformance)
 
 
 def _rows(report: EvaluationReport) -> list[dict[str, object]]:
     """Lay one report out as one row per metric per breakdown."""
-    run, metrics = report.run, report.metrics
+    run, summary = report.run, report.summary
     identity = {'dataset': run.dataset, 'model': run.model}
 
-    # The energy distance is measured over the split as a whole, so it joins the overall means
-    # rather than having a value at any one length.
-    overall = _flatten(metrics.scores) | {'energy_distance': metrics.energy_distance}
+    # The distribution is measured over the split as a whole, so it joins the overall means rather
+    # than having a value at any one length.
+    overall = _flatten(summary) | asdict(summary.distribution)
     rows: list[dict[str, object]] = [
         identity
-        | {'axis': Axis.OVERALL, 'length': None, 'pairs': metrics.pairs, 'metric': m, 'value': v}
+        | {
+            'axis': Axis.OVERALL,
+            'length': None,
+            'prefixes': summary.prefixes,
+            'metric': m,
+            'value': v,
+        }
         for m, v in overall.items()
     ]
-    breakdowns = ((Axis.PREFIX, metrics.by_prefix_length), (Axis.SUFFIX, metrics.by_suffix_length))
+    breakdowns = ((Axis.PREFIX, summary.by_prefix_length), (Axis.SUFFIX, summary.by_suffix_length))
     rows.extend(
         identity
         | {
             'axis': axis,
             'length': entry.length,
-            'pairs': entry.pairs_count,
+            'prefixes': entry.prefixes,
             'metric': metric,
             'value': value,
         }
         for axis, breakdown in breakdowns
         for entry in breakdown
-        for metric, value in _flatten(entry.scores).items()
+        for metric, value in _flatten(entry).items()
     )
     return rows
 
@@ -117,8 +123,8 @@ def read_reports(files: Sequence[Path]) -> pd.DataFrame:
         files: The reports to compare, from `pipelines.evaluate`. Each says which run wrote it, so
             they may come from any number of logs and models.
     Returns:
-        One row per metric per breakdown, under `REPORT_COLUMNS`. `length` and `pairs` are nullable
-        integers, `length` being null on the `Axis.OVERALL` rows.
+        One row per metric per breakdown, under `REPORT_COLUMNS`. `length` and `prefixes` are
+        nullable integers, `length` being null on the `Axis.OVERALL` rows.
     Raises:
         ValueError: If a file is not an evaluation report, or if one log is given two runs of the
             same model, which would draw two lines under one name.
@@ -137,4 +143,4 @@ def read_reports(files: Sequence[Path]) -> pd.DataFrame:
 
     rows = [row for _, report in reports for row in _rows(report)]
     frame = pd.DataFrame(rows, columns=list(REPORT_COLUMNS))
-    return frame.astype({'length': 'Int64', 'pairs': 'Int64', 'value': 'float64'})
+    return frame.astype({'length': 'Int64', 'prefixes': 'Int64', 'value': 'float64'})

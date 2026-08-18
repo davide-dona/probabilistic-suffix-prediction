@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.visualization.labels.registry import Registry
+from src.registry import Registry
 
 
 @dataclass(frozen=True)

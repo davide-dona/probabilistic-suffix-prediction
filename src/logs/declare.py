@@ -32,6 +32,12 @@ _TEMPLATE_AND_CARDINALITY = re.compile(r'(^.+?)(\d*$)')
 _COMMENT = '#'
 _SETTINGS_LINE = '# settings: '
 
+# What a constraint a trace never activates counts as when scoring. False makes it count as
+# violated, so the rate only credits constraints the trace actually exercises. Independent of the
+# `declare.consider_vacuity` a model was discovered under: that one decides which constraints hold
+# on enough of the log to keep, this one decides what a generated trace is credited for.
+_CONSIDER_VACUITY = False
+
 # Maximum number of distinct traces cached by the ConformanceChecker.
 # Each prefix generates one trace per sample, and the same trace may be
 # generated for multiple prefixes. Caching previously computed scores avoids
@@ -195,11 +201,11 @@ class _CompilingConditionParser(DeclareModelConditionParserUtility):
     replaces repeated parsing with a dictionary lookup.
     """
 
-    @cache
+    @cache  # noqa: B019 -- one parser per checker, and one checker per scoring process
     def parse_data_cond(self, condition: str) -> CodeType:
         return super().parse_data_cond(condition)
 
-    @cache
+    @cache  # noqa: B019 -- one parser per checker, and one checker per scoring process
     def parse_time_cond(self, condition: str) -> CodeType:
         return super().parse_time_cond(condition)
 
@@ -226,14 +232,11 @@ class ConformanceChecker:
     pool builds one per worker.
     """
 
-    def __init__(self, dataset: str, *, consider_vacuity: bool) -> None:
+    def __init__(self, dataset: str) -> None:
         """
         Args:
             dataset: The dataset whose model to check against, read from where preprocessing
                 wrote it.
-            consider_vacuity: Whether a constraint a trace never activates counts as satisfied.
-                False makes it count as violated instead, so the rate only credits constraints
-                the trace actually exercises.
         """
         # The checkers only ever read `event[ACTIVITY_KEY]` and the trace's length, so a trace is
         # a list of one-key dicts: no event log, and nothing read off disk per check. Every trace
@@ -246,23 +249,14 @@ class ConformanceChecker:
             concept_name=ACTIVITY_KEY,
         )
         self._trace_holder.declare_parser_utility = _CompilingConditionParser()
-        self._constraints = self._prepare(
-            constraints=_read_constraints(paths.declare_model_path(dataset)),
-            consider_vacuity=consider_vacuity,
-        )
+        self._constraints = self._prepare(_read_constraints(paths.declare_model_path(dataset)))
 
-    def _prepare(
-        self,
-        *,
-        constraints: list[tuple[str, dict[str, Any]]],
-        consider_vacuity: bool,
-    ) -> list[_PreparedConstraint]:
+    def _prepare(self, constraints: list[tuple[str, dict[str, Any]]]) -> list[_PreparedConstraint]:
         """Resolve a model's constraints into what each check needs.
 
         Args:
             constraints: The model's constraints beside the line each was read from, from
                 `_read_constraints`.
-            consider_vacuity: Whether a constraint a trace never activates counts as satisfied.
         Returns:
             One entry per constraint whose conditions compile. A constraint whose conditions do
             not is reported and dropped, so it counts towards neither side of the rate.
@@ -272,7 +266,7 @@ class ConformanceChecker:
         for line, constraint in constraints:
             template = constraint['template']
             rules: dict[str, Any] = {
-                'vacuous_satisfaction': consider_vacuity,
+                'vacuous_satisfaction': _CONSIDER_VACUITY,
                 'activation': constraint['condition'][0],
                 # The time condition is always at the last position.
                 'time': constraint['condition'][-1],
