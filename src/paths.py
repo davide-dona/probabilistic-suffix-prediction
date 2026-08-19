@@ -161,26 +161,13 @@ def evaluation_path(run: RunIdentity) -> Path:
     return OUTPUTS_DIR / 'eval' / f'{_run_dir(run)}.json'
 
 
-def figure_path(dataset: str, name: str) -> Path:
-    """One figure, under the log whose prefixes it breaks down.
-
-    Args:
-        dataset: The log the figure describes.
-        name: What the figure shows, e.g. a metric's name.
-    Returns:
-        The path to that figure. Always a PDF, which is what the paper takes.
-    """
-    return FIGURES_DIR / dataset / f'{name}.pdf'
-
-
 def combined_figure_path(name: str) -> Path:
-    """One figure covering every log at once, above the per-log directories it spans.
+    """One figure covering every log at once.
 
     Args:
         name: What the figure shows, from `Plot.name`.
     Returns:
-        The path to that figure, beside the directories of the logs it draws rather than inside
-        any one of them, since it belongs to none of them.
+        The path to that figure.
     """
     return FIGURES_DIR / f'{name}.pdf'
 

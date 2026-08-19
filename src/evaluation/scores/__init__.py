@@ -1,11 +1,10 @@
 from src.evaluation.scores.accuracy import AccuracyScores
 from src.evaluation.scores.conformance import ConformanceScores
-from src.evaluation.scores.distribution import DistributionScores, PooledSuffixes
 from src.registry import Registry
 from src.scalar_metrics import Metric
 
 # The families a report carries, in the order it lays them out.
-FAMILIES = (AccuracyScores, ConformanceScores, DistributionScores)
+FAMILIES = (AccuracyScores, ConformanceScores)
 
 
 def _declared() -> dict[str, Metric]:
@@ -44,6 +43,4 @@ __all__ = [
     'METRICS',
     'AccuracyScores',
     'ConformanceScores',
-    'DistributionScores',
-    'PooledSuffixes',
 ]

@@ -47,7 +47,7 @@ TABLES = (
         name='comparison-distribution',
         axis=Axis.OVERALL,
         metrics=(
-            MetricEntry(METRICS['energy_distance'], 'Energy distance'),
+            MetricEntry(METRICS['energy_score'], 'Energy score'),
             MetricEntry(METRICS['hit_rate_at_1'], 'Hit rate @1'),
             MetricEntry(METRICS['hit_rate_at_5'], 'Hit rate @5'),
             MetricEntry(METRICS['hit_rate_at_10'], 'Hit rate @10'),

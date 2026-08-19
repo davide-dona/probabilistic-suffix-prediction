@@ -2,7 +2,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Self
 
-from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
+from src.evaluation.scores import AccuracyScores, ConformanceScores
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
 
@@ -81,9 +81,7 @@ class EvaluationSummary:
     """Everything one evaluation measured over one run's generated suffixes.
 
     Accuracy asks how close a generated suffix is to the one that actually happened, conformance
-    whether it is a trace the process allows at all, and both are means over every prefix. The
-    distribution is measured over the split's suffixes at once rather than a prefix at a time,
-    which is why it sits beside those means rather than inside them and carries no breakdown.
+    whether it is a trace the process allows at all, and both are means over every prefix.
 
     The two breakdowns cut the per-prefix families either at the prefix or at the ground-truth
     suffix. They are not independent of each other: every cut point of a case is scored, so a long
@@ -97,22 +95,18 @@ class EvaluationSummary:
     prefixes: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
-    distribution: DistributionScores
     # In increasing order of prefix length
     by_prefix_length: list[LengthSummary]
     # In increasing order of ground-truth suffix length
     by_suffix_length: list[LengthSummary]
 
     @classmethod
-    def of(cls, prefixes: Iterable[PrefixSummary], *, distribution: DistributionScores) -> Self:
+    def of(cls, prefixes: Iterable[PrefixSummary]) -> Self:
         """Fold every prefix's scores into the averages one evaluation reports.
 
         Args:
             prefixes: The summary of each prefix, in any order and read in a single pass, so they
                 can be streamed in from the pool as they are scored rather than read twice.
-            distribution: The split's distribution scores, from `DistributionScores.of`. Measured
-                over the suffixes of the whole split at once, so it is carried through rather than
-                folded out of `prefixes`.
         Returns:
             The averages over every prefix, the same averages broken down by cut point and by
             ground-truth suffix length, and how many prefixes they were taken over. Every prefix
@@ -133,7 +127,6 @@ class EvaluationSummary:
             prefixes=len(every_prefix),
             accuracy=AccuracyScores.mean([prefix.accuracy for prefix in every_prefix]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
-            distribution=distribution,
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
         )
