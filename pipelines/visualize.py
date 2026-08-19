@@ -27,7 +27,7 @@ def _save_figure(figure: Figure, path: Path) -> None:
     Args:
         figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
             all open.
-        path: Where to write it, from `paths.figure_path`.
+        path: Where to write it, from `paths.combined_figure_path`.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path)
@@ -102,17 +102,17 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
         tables = _write_tables(reports)
 
     # Opt-in, since this reads the generations rather than the reports and costs a minute or two
-    # per log. One figure per log, so it is drawn here rather than through the catalogue above.
+    # per log. Drawn from its own frame rather than through the catalogue above, since it reads
+    # embeddings rather than report rows.
     if generation_files:
         with step(f'Embedding the suffixes of {len(generation_files)} run(s)'):
             embedding = reported_models(embed_suffixes(generation_files))
         with step('Drawing the generated distributions'):
-            for dataset, rows in embedding.groupby('dataset', sort=False):
-                _save_figure(
-                    figure=distribution_grid(rows),
-                    path=paths.figure_path(str(dataset), 'distribution'),
-                )
-                drawn += 1
+            _save_figure(
+                figure=distribution_grid(embedding),
+                path=paths.combined_figure_path('distribution'),
+            )
+            drawn += 1
 
     print(
         f'\nWrote {drawn} figures in pdf to {paths.FIGURES_DIR} '

@@ -228,18 +228,31 @@ def _draw_panel(
         spine.set_visible(True)
 
 
-def distribution_grid(frame: pd.DataFrame) -> Figure:
-    """A page-wide row of what every model of one log generates, against the ground truth.
+@dataclass(frozen=True)
+class _Row:
+    """One dataset's row of the grid: its own panels, embedding limits, smoothing and aspect.
+
+    A log fits its own embedding, so none of the four is shared with another row; a panel's column
+    aligns it with the same model in every other row, never with another row's scale.
+    """
+
+    frame: pd.DataFrame
+    limits: Limits
+    smoothing: float
+    aspect: float
+
+
+def _dataset_row(frame: pd.DataFrame) -> _Row:
+    """Lay out one dataset's own panels: its embedding limits, its smoothing and its aspect.
 
     Args:
-        frame: The embedded suffixes of one log, from `embed_suffixes`. Every model of it shares
-            one embedding, so the panels are read against each other as well as against the truth.
+        frame: The embedded suffixes of one log, from `embed_suffixes`.
     Returns:
-        The finished figure, its panels titled by model.
+        What every panel of this dataset's row is drawn against.
     """
     models = labels.MODELS.ordered(frame['model'])
-    # Every point the figure is drawn from, the ground truth counted once rather than once per
-    # panel it is repeated under.
+    # Every point the row is drawn from, the ground truth counted once rather than once per panel
+    # it is repeated under.
     generated = frame['source'] == Source.GENERATED
     truth = (frame['source'] == Source.TRUTH) & (frame['model'] == models[0])
     pooled = _points(frame[generated | truth])
@@ -247,39 +260,72 @@ def distribution_grid(frame: pd.DataFrame) -> Figure:
     limits = _limits(pooled)
     # `gaussian_kde` sizes its kernel by the covariance of the cloud it is handed, so a tight cloud
     # would be smoothed less than a broad one and their outlines would not be on the same footing.
-    # One width taken from every point of the figure at once, Scott's rule in two dimensions times
-    # the spread it is a share of, is what lets the panels be read against each other the way the
-    # shared embedding lets their positions be.
+    # One width taken from every point of the row at once, Scott's rule in two dimensions times
+    # the spread it is a share of, is what lets the row's panels be read against each other the
+    # way the shared embedding lets their positions be.
     smoothing = len(pooled) ** (-1.0 / 6.0) * _spread(pooled)
 
     # A panel is drawn to one scale on both axes, so the row is as tall, against how wide it is,
-    # as the embedding it holds. Sizing the figure to that is what keeps the equal scale from
-    # paying for itself in empty bands above and below the clouds.
+    # as the embedding it holds, whatever aspect the other rows come out at.
     (left, right), (bottom, top) = limits
     aspect = min(max((top - bottom) / (right - left), MIN_PANEL_ASPECT), MAX_PANEL_ASPECT)
+    return _Row(frame=frame, limits=limits, smoothing=smoothing, aspect=aspect)
+
+
+def distribution_grid(frame: pd.DataFrame) -> Figure:
+    """Every log's row of what its models generate, against its own ground truth, in one figure.
+
+    Args:
+        frame: The embedded suffixes of every log, from `embed_suffixes`. Each log fits its own
+            embedding, so a row shares its axes among its own models alone; a column aligns two
+            panels by model, never by scale, since two logs are two processes with no scale in
+            common.
+    Returns:
+        The finished figure, its columns titled by model and its rows named by dataset.
+    """
+    datasets = labels.DATASETS.ordered(frame['dataset'])
+    models = labels.MODELS.ordered(frame['model'])
+    rows = {dataset: _dataset_row(frame[frame['dataset'] == dataset]) for dataset in datasets}
+
+    # Sizing the figure to the aspect each row's own embedding gave it is what keeps the equal
+    # scale of every panel from paying for itself in empty bands above and below its clouds.
     panel_width = PAGE_WIDTH / len(models)
+    heights = [rows[dataset].aspect for dataset in datasets]
 
     figure, grid = plt.subplots(
-        nrows=1,
+        nrows=len(datasets),
         ncols=len(models),
-        figsize=(PAGE_WIDTH, panel_width * aspect + HEADER_HEIGHT),
-        sharex=True,
-        sharey=True,
+        figsize=(PAGE_WIDTH, panel_width * sum(heights) + HEADER_HEIGHT),
         squeeze=False,
         constrained_layout=True,
+        gridspec_kw={'height_ratios': heights},
     )
+    for panel_row, dataset in zip(grid, datasets, strict=True):
+        row = rows[dataset]
+        present = set(row.frame['model'])
+        for axes, model in zip(panel_row, models, strict=True):
+            if model not in present:
+                # Not every log need share every model; an empty panel says so rather than being
+                # dropped and shifting the ones after it out of their column.
+                axes.set_axis_off()
+                continue
+            panel = row.frame[row.frame['model'] == model]
+            model_style = labels.MODELS[model]
+            _draw_panel(
+                axes=axes,
+                truth=_points(panel[panel['source'] == Source.TRUTH]),
+                generated=_points(panel[panel['source'] == Source.GENERATED]),
+                color=model_style.color,
+                limits=row.limits,
+                smoothing=row.smoothing,
+            )
+        # Named on the leftmost panel alone, the way a metric names the row it is drawn along.
+        panel_row[0].set_ylabel(labels.DATASETS[dataset])
+
+    # The models title the top row alone: the column below a title is one model throughout, in
+    # its own colour so a title names the cloud it belongs to as well as the run.
     for axes, model in zip(grid[0], models, strict=True):
-        panel = frame[frame['model'] == model]
         model_style = labels.MODELS[model]
-        _draw_panel(
-            axes=axes,
-            truth=_points(panel[panel['source'] == Source.TRUTH]),
-            generated=_points(panel[panel['source'] == Source.GENERATED]),
-            color=model_style.color,
-            limits=limits,
-            smoothing=smoothing,
-        )
-        # In the model's own colour, so a title names the cloud it belongs to as well as the run.
         axes.set_title(model_style.label, color=model_style.color)
 
     # Two keys carrying the line styles alone, since what tells the two clouds apart in a panel is

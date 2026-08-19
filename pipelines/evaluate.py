@@ -12,7 +12,6 @@ from tqdm import tqdm
 from src import paths
 from src.cli import banner, duration, existing_file, step
 from src.evaluation.report import EvaluationReport
-from src.evaluation.scores import DistributionScores, PooledSuffixes
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
 from src.inference.generation_store import read_generation_block, read_run_identity
 from src.logs.declare import ConformanceChecker, discovery_settings
@@ -139,7 +138,6 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'distribution': 'every generated suffix of the split against every real one',
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': paths.evaluation_path(run),
@@ -147,12 +145,6 @@ def run(generations_file: Path, workers: int | None) -> None:
     )
 
     started = time.perf_counter()
-
-    # Measured over the split's suffixes at once rather than a prefix at a time, so it runs here
-    # rather than in the pool below.
-    with step(f'Measuring the distribution distance over {prefixes:,} prefixes'):
-        suffixes = PooledSuffixes.read(generations_file, prefixes=prefixes)
-        distribution = DistributionScores.of(suffixes)
 
     # Summarize the generation, folding each prefix's scores in as the pool hands them back.
     with step(
@@ -166,8 +158,7 @@ def run(generations_file: Path, workers: int | None) -> None:
                 blocks=blocks,
                 prefixes=prefixes,
                 workers=workers,
-            ),
-            distribution=distribution,
+            )
         )
 
     # The report is named after the run the generations carry, so it sits under `outputs/eval/`

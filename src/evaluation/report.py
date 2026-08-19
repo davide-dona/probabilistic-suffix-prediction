@@ -85,9 +85,7 @@ def _rows(report: EvaluationReport) -> list[dict[str, object]]:
     run, summary = report.run, report.summary
     identity = {'dataset': run.dataset, 'model': run.model}
 
-    # The distribution is measured over the split as a whole, so it joins the overall means rather
-    # than having a value at any one length.
-    overall = _flatten(summary) | asdict(summary.distribution)
+    overall = _flatten(summary)
     rows: list[dict[str, object]] = [
         identity
         | {
