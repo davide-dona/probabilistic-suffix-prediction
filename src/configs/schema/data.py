@@ -32,6 +32,15 @@ class DataConfig(StrictModel):
         'preprocessing time. The cutoff is what sequence tensors are padded to',
     )
 
+    max_case_duration_percentile: float = Field(
+        ...,
+        gt=0.0,
+        le=100.0,
+        description='Cases running longer than this percentile of case duration are dropped at '
+        'preprocessing time, before the log is split. A handful of broken timestamps otherwise '
+        'set the statistics every duration channel is standardized against',
+    )
+
     string_features: list[str] = Field(
         ...,
         description='Columns read as strings rather than by whatever dtype pandas infers, for '
