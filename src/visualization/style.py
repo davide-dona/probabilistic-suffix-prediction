@@ -5,10 +5,12 @@ import matplotlib as mpl
 from matplotlib.artist import Artist
 from matplotlib.figure import Figure
 
-# Text widths of a two-column paper, in inches. A figure drawn at its final width
-# needs no scaling in LaTeX, keeping its font size and line widths correct.
-COLUMN_WIDTH = 3.4
-PAGE_WIDTH = 7.0
+# Text widths of the paper, in inches, matching \documentclass[conference]{IEEEtran} on
+# letterpaper: \textwidth 43pc and \columnsep 1pc, neither of which the conference option changes.
+# A figure drawn at its final width needs no scaling in LaTeX, keeping its font size and line
+# widths correct.
+COLUMN_WIDTH = 3.487  # (43pc - 1pc) / 2 = 252pt
+PAGE_WIDTH = 7.140  # 43pc = 516pt
 # Height as a share of width, the golden ratio.
 ASPECT = 0.618
 
@@ -26,10 +28,16 @@ PANEL_X_BINS = 5
 # The most markers to draw on one line. Beyond this they merge into the line and stop saying which
 # series they belong to.
 MAX_MARKERS = 12
+# How far past a metric's declared upper bound a panel's y-axis is drawn, as a share of the bound's
+# own range. Without it a line approaching the bound reads as clipped against the axis border.
+Y_HEADROOM = 0.05
 
 # The style every figure shares. Set once, before any figure is drawn, by `apply_style()`.
 _PAPER_RC = {
+    # The paper sets the body in Times (`\usepackage{times}`); the first of these that resolves
+    # on the machine drawing the figure is what it is set in too.
     'font.family': 'serif',
+    'font.serif': ['Times New Roman', 'Nimbus Roman', 'Times', 'STIX Two Text', 'DejaVu Serif'],
     'font.size': 8,
     'axes.labelsize': 8,
     'axes.titlesize': 8,

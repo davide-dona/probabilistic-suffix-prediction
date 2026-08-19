@@ -23,10 +23,10 @@ MODELS = Registry[ModelStyle](
     kind='model',
     where='MODELS in src/visualization/labels/models.py',
     entries={
-        'cvae': ModelStyle(label='CVAE', color='#0072B2', marker='*', linestyle='-'),
-        'cvae-small': ModelStyle(label='CVAE', color='#0072B2', marker='*', linestyle='-'),
-        'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E69F00', marker='s', linestyle='--'),
-        'sutran': ModelStyle(label='SuTraN', color='#009E73', marker='D', linestyle=':')
+        'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
+        'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
+        'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
+        'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':')
     },
 )
 
