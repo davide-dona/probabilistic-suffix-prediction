@@ -99,6 +99,13 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         parameters = sum(parameter.numel() for parameter in model.parameters())
         print(f'  {parameters:,} parameters', flush=True)
 
+    # A loader without persistent workers forks its whole pool every time it is iterated, and the
+    # two validation loaders are iterated once per validation check. Forking a process that torch
+    # and CUDA have already put threads in is what Python warns about, so the pools are forked
+    # once each and kept, at the cost of holding every worker for the length of the run.
+    workers = config.dataloader.num_workers
+    persistent_workers = workers > 0
+
     # Build the datasets and loaders
     with step('Reading and encoding the train split'):
         train_dataset = TraceDataset(codec=codec, split=Split.TRAIN)
@@ -107,7 +114,8 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         batch_size=config.dataloader.batch_size,
         shuffle=True,
         generator=generator,
-        num_workers=config.dataloader.num_workers,
+        num_workers=workers,
+        persistent_workers=persistent_workers,
     )
 
     with step('Reading and encoding the validation split'):
@@ -120,7 +128,8 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         ),
         batch_size=config.dataloader.batch_size,
         shuffle=False,
-        num_workers=config.dataloader.num_workers,
+        num_workers=workers,
+        persistent_workers=persistent_workers,
     )
     generation_loader = DataLoader(
         dataset=fixed_subset(
@@ -130,7 +139,8 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
         ),
         shuffle=False,
-        num_workers=config.dataloader.num_workers,
+        num_workers=workers,
+        persistent_workers=persistent_workers,
     )
 
     print(

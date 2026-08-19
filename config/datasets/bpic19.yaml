@@ -15,6 +15,9 @@ data:
 
   # Remove cases outside the 98.5 percentile of case length
   max_seq_len_percentile: 98.5
+  # Remove cases outside the 99.9 percentile of case duration: a case running far past the
+  # scale of its own process is a broken timestamp, and it sets the duration statistics.
+  max_case_duration_percentile: 99.9
   # Set of raw features that need to be casted to string type
   string_features:
     - case:GR-Based Inv. Verif.

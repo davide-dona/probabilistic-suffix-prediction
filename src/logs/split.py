@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from src.logs.filters import drop_long_cases
 from src.logs.keys import MIN_PREFIX_KEY
 
 
@@ -12,7 +11,6 @@ def out_of_time_split(
     timestamp_key: str,
     val_frac: float,
     test_frac: float,
-    max_seq_len: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Split a log by time, withholding the prefixes that would leak across the boundary.
 
@@ -24,19 +22,17 @@ def out_of_time_split(
     the case being dropped, which is what `MIN_PREFIX_KEY` records.
 
     Args:
-        log: Event log, one row per event, sorted by case start and then by timestamp, carrying
-            `MIN_PREFIX_KEY` at its full range.
+        log: Event log, one row per event, already filtered down to the cases the model is
+            trained on, sorted by case start and then by timestamp, carrying `MIN_PREFIX_KEY` at
+            its full range.
         case_key: Column identifying the case each event belongs to.
         timestamp_key: Column holding the (already parsed) event timestamp.
         val_frac: Fraction of all cases assigned to the validation set, taken from the training
             cases as the latest-starting ones.
         test_frac: Fraction of all cases the separation time is placed at.
-        max_seq_len: The longest case to keep, in events. Applied here rather than by the caller
-            because the validation cases are carved out of what survives it.
     Returns:
         `(train, val, test)` DataFrames, each a row-subset of `log` with `MIN_PREFIX_KEY`
-        narrowed on the crossing cases. Every case left is short enough already, so a further
-        `drop_long_cases` would find nothing.
+        narrowed on the crossing cases.
     """
     # Compute each case's start and stop timestamps
     edges = log.groupby(case_key)[timestamp_key].agg(['min', 'max'])
@@ -62,11 +58,6 @@ def out_of_time_split(
         separation_ts=separation_ts,
         crossing=crossing,
     )
-
-    # Before the validation carve-out, so the cases it reads are the ones that survive: dropping
-    # afterwards would leave validation holding a share of a set it was not taken from.
-    train = drop_long_cases(train, case_key=case_key, max_seq_len=max_seq_len)
-    test = drop_long_cases(test, case_key=case_key, max_seq_len=max_seq_len)
 
     # Validation is the tail of the training block by case start, so it stands out of time to
     # training the same way the test block stands out of time to both.
