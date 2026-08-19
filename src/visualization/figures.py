@@ -19,6 +19,7 @@ from src.visualization.style import (
     PAGE_WIDTH,
     PANEL_X_BINS,
     TITLE_WIDTH,
+    Y_HEADROOM,
     legend_above,
 )
 
@@ -58,6 +59,9 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins:
     axes.xaxis.set_major_locator(MaxNLocator(nbins=x_bins, integer=True))
     # Either end the metric leaves open is left to the data, matplotlib scaling it as it would.
     bottom, top = entry.bounds
+    if top is not None:
+        # Headroom past the bound itself, so a line approaching it does not read as clipped.
+        top += Y_HEADROOM * (top - (bottom if bottom is not None else 0.0))
     axes.set_ylim(bottom=bottom, top=top)
     return longest
 
