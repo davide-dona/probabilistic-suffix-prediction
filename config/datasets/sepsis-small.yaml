@@ -48,9 +48,11 @@ data:
     - CRP
     - LacticAcid
     - Leucocytes
-    # Calendar position of the event
-    - day_in_week
-    - seconds_in_day
+    # Calendar position of the event, cyclically encoded
+    - day_sin
+    - day_cos
+    - seconds_sin
+    - seconds_cos
 
   log_scaled_features: []
   log_scaled_durations: false
