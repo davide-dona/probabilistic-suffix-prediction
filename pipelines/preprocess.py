@@ -19,12 +19,14 @@ from src.logs.io import read_original_log, write_log
 from src.logs.keys import (
     CASE_ELAPSED_KEY,
     CASE_KEY,
-    DAY_IN_WEEK_KEY,
+    DAY_COS_KEY,
+    DAY_SIN_KEY,
     EVENT_DELTA_KEY,
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
-    SECONDS_IN_DAY_KEY,
+    SECONDS_COS_KEY,
+    SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
 )
 from src.logs.split import out_of_time_split
@@ -104,7 +106,7 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
             to fill in again. The numeric ones keep their gaps: a missing number is carried by
             the present flag instead.
     Returns:
-        A copy of `log` with the two timestamp proxies, the remaining time and the two calendar
+        A copy of `log` with the two timestamp proxies, the remaining time and the four calendar
         columns added, and its categorical feature columns filled.
     """
     log = add_event_delta(
@@ -128,8 +130,10 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     log = add_calendar(
         log,
         timestamp_key=TIMESTAMP_KEY,
-        day_key=DAY_IN_WEEK_KEY,
-        seconds_key=SECONDS_IN_DAY_KEY,
+        day_sin_key=DAY_SIN_KEY,
+        day_cos_key=DAY_COS_KEY,
+        seconds_sin_key=SECONDS_SIN_KEY,
+        seconds_cos_key=SECONDS_COS_KEY,
     )
     # Filling leaves these columns as strings, so the same test in `DatasetCodec.fit`
     # sorts them into the same channels it would have before.

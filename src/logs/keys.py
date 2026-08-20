@@ -12,9 +12,13 @@ CASE_ELAPSED_KEY = 'ts_start'
 # Minutes until the end of the case. Predicted by the decoder
 REMAINING_TIME_KEY = 'rtime'
 # The calendar position of the event, offered to the encoders through `data.event_features`
-# rather than as channels of their own.
-DAY_IN_WEEK_KEY = 'day_in_week'  # 0 (Monday) .. 6 (Sunday)
-SECONDS_IN_DAY_KEY = 'seconds_in_day'  # 0 .. 86399
+# rather than as channels of their own. Cyclical: sin/cos of the day of the week and of the
+# second of the day, so the encoders read the wrap-around (Sunday to Monday, midnight to
+# midnight) rather than a raw count that treats it as a jump.
+DAY_SIN_KEY = 'day_sin'
+DAY_COS_KEY = 'day_cos'
+SECONDS_SIN_KEY = 'seconds_sin'
+SECONDS_COS_KEY = 'seconds_cos'
 # The lower bound of the cut points a case may be split at.
 # Normally 1; a case crossing the train/test separation have its cut points narrowed to
 # the first one after the separation, making the split leak-proof.
