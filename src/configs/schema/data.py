@@ -49,9 +49,11 @@ class DataConfig(StrictModel):
 
     event_features: list[str] = Field(
         ...,
-        description='Extra per-event columns the encoders read beside activity, resource and '
-        'timestamps. A numeric one becomes a value and a present flag, anything else a '
-        'vocabulary. Changing this list requires re-preprocessing the dataset',
+        description='Every per-event column the encoders read beside the activity and the '
+        'resource. Names either a raw column of the log or one preprocessing derives from the '
+        'timestamp (`ts_prev`, `ts_start`, `day_sin`, `day_cos`, `seconds_sin`, `seconds_cos`; '
+        'see `src/logs/keys.py`). A numeric one becomes a value and a present flag, anything '
+        'else a vocabulary. Changing this list requires re-preprocessing the dataset',
     )
 
     log_scaled_features: list[str] = Field(
@@ -61,11 +63,12 @@ class DataConfig(StrictModel):
         'every numeric column raw',
     )
 
-    log_scaled_durations: bool = Field(
+    log_scaled_remaining_time: bool = Field(
         ...,
-        description='Whether the two timestamp proxies (`Events.ts_prev`, `Events.ts_start`) and '
-        'remaining time take a log1p before being standardized. Off matches the baselines, which '
-        'standardize durations raw',
+        description="Whether the decoder's target takes a log1p before being standardized. Off "
+        'matches the baselines, which standardize durations raw. The duration columns the '
+        'encoders read are `event_features` like any other, so `log_scaled_features` is what '
+        'scales those',
     )
 
     @model_validator(mode='after')

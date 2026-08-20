@@ -48,6 +48,9 @@ data:
     - CRP
     - LacticAcid
     - Leucocytes
+    # Minutes since the previous event and since the case began, derived from the timestamp
+    - ts_prev
+    - ts_start
     # Calendar position of the event, cyclically encoded
     - day_sin
     - day_cos
@@ -55,7 +58,7 @@ data:
     - seconds_cos
 
   log_scaled_features: []
-  log_scaled_durations: false
+  log_scaled_remaining_time: false
 
 # Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
 model:
