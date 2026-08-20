@@ -12,9 +12,11 @@ from src.training.kl import free_bits_kl, gaussian_kl
 if TYPE_CHECKING:
     from torch.utils.tensorboard import SummaryWriter
 
-# Nats above which a latent dimension counts as used where no free-bits floor is set. A dimension
-# below the floor gets no KL gradient at all, so wherever one is set the floor is what use means.
-ACTIVE_KL_NATS = 0.01
+# Variance of a dimension's displacement above which it counts as used. Burda et al.'s
+# active-units threshold, read off the displacement rather than off the posterior mean itself:
+# this model's prior is conditioned on the prefix, so under a total collapse the posterior mean
+# still moves from prefix to prefix and the usual criterion would call every dimension used.
+ACTIVE_USAGE_VARIANCE = 0.01
 
 
 @dataclass(frozen=True)
@@ -30,32 +32,56 @@ class Loss(ScalarMetrics):
 
 
 @dataclass(frozen=True, slots=True)
-class LatentKL:
-    """One pass's KL, dimension by dimension: what tells a collapsed latent apart from a few dead
-    dimensions among used ones.
+class LatentUsage:
+    """How much of z one pass used, dimension by dimension.
 
-    The sum alone cannot: 16 dimensions parked on a 0.3-nat floor and three dimensions carrying
-    everything while thirteen do nothing add up to much the same number.
+    Two quantities, because neither alone is enough. The KL says how far the posterior stands from
+    the prior, but a dimension can stand off it on variance alone, with the two means on top of
+    each other, and carry nothing about the suffix; free bits makes exactly that shape, since below
+    the floor nothing pulls a dimension either way. The displacement, how far the posterior's mean
+    sits from the prior's in prior standard deviations, is what the decoder can read instead, and
+    its variance across traces is what is left of it once a shift that never changes is discounted.
 
-    Summed over the traces of the pass, like `Loss`, so batches are accumulated with `+` and
-    divided once by the traces they covered. It is logged rather than reported, so, like `Loss`,
-    it declares no unit; unlike `Loss` it holds a vector, which `ScalarMetrics` is float-only for.
+    Every field is `[latent_dim]` and summed over the traces of the pass, like `Loss`, so batches
+    are accumulated with `+` and divided once by the traces they covered. After that division
+    `displacement` and `displacement_squares` are the mean and the mean square, which is how
+    `variance` reads them. It is logged rather than reported, so, like `Loss`, it declares no unit;
+    unlike `Loss` it holds vectors, which `ScalarMetrics` is float-only for.
     """
 
-    # [latent_dim]. A 0-d zero is an empty total: it broadcasts against the first vector added to
-    # it, so an accumulator needs to know nothing of the latent's width, and torch adds a 0-d CPU
-    # tensor to a tensor on any device.
-    per_dimension: torch.Tensor = torch.zeros(())
+    # A 0-d zero is an empty total: it broadcasts against the first vector added to it, so an
+    # accumulator needs to know nothing of the latent's width, and torch adds a 0-d CPU tensor to
+    # a tensor on any device.
+    kl_per_dimension: torch.Tensor = torch.zeros(())
+    displacement: torch.Tensor = torch.zeros(())
+    displacement_squares: torch.Tensor = torch.zeros(())
 
-    def __add__(self, other: 'LatentKL') -> 'LatentKL':
-        return LatentKL(per_dimension=self.per_dimension + other.per_dimension)
+    @property
+    def variance(self) -> torch.Tensor:
+        """`[latent_dim]`, how much each dimension's displacement varies from trace to trace.
 
-    def __truediv__(self, divisor: float) -> 'LatentKL':
-        return LatentKL(per_dimension=self.per_dimension / divisor)
+        Only meaningful once the pass has been divided by the traces it covered, since it reads
+        the two displacement fields as a mean and a mean square.
+        """
+        return self.displacement_squares - self.displacement**2
+
+    def __add__(self, other: 'LatentUsage') -> 'LatentUsage':
+        return LatentUsage(
+            kl_per_dimension=self.kl_per_dimension + other.kl_per_dimension,
+            displacement=self.displacement + other.displacement,
+            displacement_squares=self.displacement_squares + other.displacement_squares,
+        )
+
+    def __truediv__(self, divisor: float) -> 'LatentUsage':
+        return LatentUsage(
+            kl_per_dimension=self.kl_per_dimension / divisor,
+            displacement=self.displacement / divisor,
+            displacement_squares=self.displacement_squares / divisor,
+        )
 
     def log(self, writer: 'SummaryWriter', step: int, *, prefix: str, free_bits: float) -> None:
         """
-        Write one curve per latent dimension, and how many of them the pass used.
+        Write what the pass put into z, and how many dimensions carried any of it.
 
         Read of a pass already divided by the traces it covered, since `free_bits` floors a
         per-trace KL and a total would stand above any floor.
@@ -64,17 +90,19 @@ class LatentKL:
             writer: The TensorBoard writer to log to.
             step: The step these metrics belong to.
             prefix: Namespace to log under, e.g. `val`, matching the one `Loss` is logged under.
-            free_bits: The floor the pass was trained under, which a dimension has to stand above
-                to be carrying anything the KL term ever asked for.
+            free_bits: The floor the pass was trained under. What sits below it was never charged
+                for, so only what stands above it is KL the model paid to keep.
         """
-        threshold = max(free_bits, ACTIVE_KL_NATS)
-        per_dimension = self.per_dimension.tolist()
-        # Zero-padded, so TensorBoard's own sort lists the dimensions in order under one heading.
-        for index, value in enumerate(per_dimension):
-            writer.add_scalar(f'{prefix}/kl_per_dimension/{index:02d}', value, step)
+        variance = self.variance
+        writer.add_scalar(
+            f'{prefix}/kl_above_floor',
+            (self.kl_per_dimension - free_bits).clamp(min=0.0).sum().item(),
+            step,
+        )
+        writer.add_scalar(f'{prefix}/latent_usage', variance.sum().item(), step)
         writer.add_scalar(
             f'{prefix}/active_dimensions',
-            sum(value > threshold for value in per_dimension),
+            (variance > ACTIVE_USAGE_VARIANCE).sum().item(),
             step,
         )
 
@@ -86,7 +114,7 @@ def compute_loss(
     pad_activity_index: int,
     kl_weight: float,
     free_bits: float,
-) -> tuple[torch.Tensor, Loss, LatentKL]:
+) -> tuple[torch.Tensor, Loss, LatentUsage]:
     """Score a forward pass's predictions against the batch it was run on.
     Args:
         output: The model's prediction for `batch`, from `model(batch)`.
@@ -95,8 +123,8 @@ def compute_loss(
         kl_weight: The weight the KL term is given at this step (see `training/kl.py`).
         free_bits: Nats per latent dimension the KL is not penalized below (see `free_bits_kl`).
     Returns:
-        The per-trace loss to backpropagate, the metrics to log, and the same KL broken down by
-        latent dimension, the last two summed over the batch.
+        The per-trace loss to backpropagate, the metrics to log, and what the pass put into z
+        broken down by latent dimension, the last two summed over the batch.
     """
     batch_size = batch.suffix.activities.size(0)
 
@@ -118,6 +146,13 @@ def compute_loss(
     penalized_kl_loss = free_bits_kl(kl_per_dim, free_bits=free_bits)
     total_loss = reconstruction_loss + kl_weight * penalized_kl_loss
 
+    # How far the posterior's mean stands from the prior's, in prior standard deviations. Read
+    # only by the diagnostic, so it is built off the graph.
+    with torch.no_grad():
+        displacement = (output.posterior.mean - output.prior.mean) / torch.exp(
+            0.5 * output.prior.logvar
+        )  # [batch_size, latent_dim]
+
     metrics = Loss(
         loss=total_loss.item(),
         reconstruction_loss=reconstruction_loss.item(),
@@ -126,5 +161,9 @@ def compute_loss(
         activity_loss=activity_loss.item(),
         remaining_time_loss=remaining_time_loss.item(),
     )
-    latent_kl = LatentKL(per_dimension=kl_per_dim.sum(dim=0).detach())  # [latent_dim]
-    return total_loss / batch_size, metrics, latent_kl
+    latent_usage = LatentUsage(
+        kl_per_dimension=kl_per_dim.sum(dim=0).detach(),  # [latent_dim]
+        displacement=displacement.sum(dim=0),  # [latent_dim]
+        displacement_squares=displacement.pow(2).sum(dim=0),  # [latent_dim]
+    )
+    return total_loss / batch_size, metrics, latent_usage

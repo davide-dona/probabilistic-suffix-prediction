@@ -165,7 +165,7 @@ def train(
                 # Run a forward pass
                 output = model(batch)
 
-                # Compute the loss and propagate gradients. The per-dimension KL is read at
+                # Compute the loss and propagate gradients. What z was used for is read at
                 # the validation cadence alone, so the training pass drops it.
                 loss, metrics, _ = compute_loss(
                     output,
@@ -193,7 +193,7 @@ def train(
 
                     # Score the model on the validation set and the generation set, and log
                     # the results.
-                    val_metrics, val_latent_kl = validate(
+                    val_metrics, val_latent_usage = validate(
                         model,
                         val_loader,
                         kl_weight=kl_weight,
@@ -201,7 +201,9 @@ def train(
                         device=device,
                     )
                     val_metrics.log(writer, step, prefix='val')
-                    val_latent_kl.log(writer, step, prefix='val', free_bits=loss_config.free_bits)
+                    val_latent_usage.log(
+                        writer, step, prefix='val', free_bits=loss_config.free_bits
+                    )
 
                     gen_metrics = validate_generation(
                         model,

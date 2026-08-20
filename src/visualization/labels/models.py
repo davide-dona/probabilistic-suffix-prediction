@@ -31,8 +31,27 @@ MODELS = Registry[ModelStyle](
         # either: `_reported` folds names that do into one, which would draw a log's `cvae-z8`
         # and `cvae-small-z4` over each other after `group_by_model` had passed them as two.
         'cvae-z8': ModelStyle(label='CVAE (z=8)', color='#1F77B4', marker='^', linestyle='--'),
+        # One width on two logs, so these share a style the way `cvae` and `cvae-small` do: a log
+        # given either draws that log's z=4 line and fills its z=4 column.
+        'cvae-z4': ModelStyle(label='CVAE (z=4)', color='#8C564B', marker='v', linestyle='--'),
         'cvae-small-z4': ModelStyle(
             label='CVAE (z=4)', color='#8C564B', marker='v', linestyle='--'
+        ),
+        # The arms of #60's KL price sweep, all at z=4: `w02` and `w01` are
+        # `kl_annealing_full_weight`, `nfb` the same weight with the free-bits floor removed. Each
+        # carries its own style rather than sharing `cvae-z4`'s, since what the sweep is about is
+        # telling them apart; they come out again once #60 closes.
+        'cvae-z4-w02': ModelStyle(
+            label='CVAE (z=4, KL 0.2)', color='#D62728', marker='o', linestyle='--'
+        ),
+        'cvae-z4-w01': ModelStyle(
+            label='CVAE (z=4, KL 0.1)', color='#9467BD', marker='P', linestyle='--'
+        ),
+        'cvae-z4-w02-nfb': ModelStyle(
+            label='CVAE (z=4, KL 0.2, no free bits)',
+            color='#17BECF',
+            marker='X',
+            linestyle=':',
         ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),

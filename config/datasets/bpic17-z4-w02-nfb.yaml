@@ -1,0 +1,65 @@
+data:
+  name: bpic17
+
+  # Keys of the raw event log to be mapped to the standard keys used in the framework.
+  case_key: "case:concept:name"
+  activity_key: "concept:name"
+  resource_key: "org:resource"
+  timestamp_key: "time:timestamp"
+
+  # Split the dataset into train, validation, and test sets.
+  # Splits are applied on the case level, with an out-of-time split
+  train_split: 0.65
+  val_split: 0.15
+  test_split: 0.2
+
+  # Remove cases outside the 98.5 percentile of case length
+  max_seq_len_percentile: 98.5
+  # Remove cases outside the 99.9 percentile of case duration: a case running far past the
+  # scale of its own process is a broken timestamp, and it sets the duration statistics.
+  max_case_duration_percentile: 99.9
+  # Set of raw features that need to be casted to string type
+  string_features: []
+
+  event_features:
+    # Case-level: share the same value for every row in a case
+    - case:LoanGoal
+    - case:ApplicationType
+    - case:RequestedAmount
+    # Event-level: vary per row in a case
+    - Action
+    - EventOrigin
+    - lifecycle:transition
+    - FirstWithdrawalAmount
+    - NumberOfTerms
+    - Accepted
+    - MonthlyCost
+    - Selected
+    - CreditScore
+    - OfferedAmount
+    # Minutes since the previous event and since the case began, derived from the timestamp
+    - ts_prev
+    - ts_start
+    # Calendar position of the event, cyclically encoded
+    - day_sin
+    - day_cos
+    - seconds_sin
+    - seconds_cos
+
+  log_scaled_features: []
+  log_scaled_remaining_time: false
+
+# bpic17-z4-w02.yaml with the free-bits floor removed: the control for whether the floor still
+# does anything once the latent is four dimensions wide.
+# It is expected to be inactive at this width, since the smallest dimension of the z=4 run settled
+# at 0.63 nats against a 0.3 floor, but it did bind early, two of the four sitting on it at step
+# 50, so this is confirmed rather than assumed.
+model:
+  name: cvae-z4-w02-nfb
+
+  latent:
+    latent_dim: 4
+
+loss:
+  kl_annealing_full_weight: 0.2
+  free_bits: 0.0
