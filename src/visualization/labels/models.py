@@ -26,11 +26,13 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'cvae-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
-        ),
-        'cvae-small-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
+        # A narrowed latent is its own series rather than a second name for the CVAE above, since
+        # the width is what the run is about. The two never share a `ModelStyle` with each other
+        # either: `_reported` folds names that do into one, which would draw a log's `cvae-z8`
+        # and `cvae-small-z4` over each other after `group_by_model` had passed them as two.
+        'cvae-z8': ModelStyle(label='CVAE (z=8)', color='#1F77B4', marker='^', linestyle='--'),
+        'cvae-small-z4': ModelStyle(
+            label='CVAE (z=4)', color='#8C564B', marker='v', linestyle='--'
         ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),

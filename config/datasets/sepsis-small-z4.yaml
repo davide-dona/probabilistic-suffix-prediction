@@ -59,3 +59,35 @@ data:
 
   log_scaled_features: []
   log_scaled_remaining_time: false
+
+# Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
+# Its latent is halved again, from the 8 dimensions this model normally runs at, against the
+# collapse this run is testing for: 8 dimensions is 2.4 nats at the 0.3-nat free-bits floor,
+# 4 is 1.2, so whatever z does carry has half as many places to hide.
+model:
+  name: cvae-small-z4
+
+  d_model: 64
+
+  embeddings:
+    resource_dim: 16  
+    feature_dim: 4
+
+  prefix_encoder:
+    num_layers: 1
+    feedforward_dim: 256  # keep the 4x d_model ratio
+
+  suffix_encoder:
+    num_layers: 1
+    feedforward_dim: 256
+
+  prior:
+    hidden_dims: [64]
+
+  latent:
+    latent_dim: 4
+
+  decoder:
+    num_layers: 1
+    feedforward_dim: 256
+    head_hidden_dim: 64

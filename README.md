@@ -154,4 +154,4 @@ Fields can be overridden between files. Three layers are deep-merged in order, e
 
 1. `config/base.yaml` — default config, independent of any dataset or hardware.
 2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/mps.yaml`. Owns everything that varies with the machine a run executes on.
-3. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.
+3. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis-small.yaml`. Owns the raw log and any dataset-specific overrides, such as `sepsis-small.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.

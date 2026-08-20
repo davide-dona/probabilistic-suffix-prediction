@@ -1,10 +1,10 @@
 data:
-  name: sepsis
+  name: bpic17
 
   # Keys of the raw event log to be mapped to the standard keys used in the framework.
-  case_key: "Case ID"
-  activity_key: Activity
-  resource_key: Resource
+  case_key: "case:concept:name"
+  activity_key: "concept:name"
+  resource_key: "org:resource"
   timestamp_key: "time:timestamp"
 
   # Split the dataset into train, validation, and test sets.
@@ -22,32 +22,21 @@ data:
   string_features: []
 
   event_features:
+    # Case-level: share the same value for every row in a case
+    - case:LoanGoal
+    - case:ApplicationType
+    - case:RequestedAmount
     # Event-level: vary per row in a case
-    - DiagnosticArtAstrup
-    - DiagnosticBlood
-    - DiagnosticECG
-    - DiagnosticIC
-    - DiagnosticLacticAcid
-    - DiagnosticLiquor
-    - DiagnosticSputum
-    - DiagnosticUrinaryCulture
-    - DiagnosticUrinarySediment
-    - DiagnosticXthorax
-    - DisfuncOrg
-    - Hypotensie
-    - Hypoxie
-    - InfectionSuspected
-    - Infusion
-    - Oligurie
-    - SIRSCritHeartRate
-    - SIRSCritLeucos
-    - SIRSCritTachypnea
-    - SIRSCritTemperature
-    - SIRSCriteria2OrMore
-    - Age
-    - CRP
-    - LacticAcid
-    - Leucocytes
+    - Action
+    - EventOrigin
+    - lifecycle:transition
+    - FirstWithdrawalAmount
+    - NumberOfTerms
+    - Accepted
+    - MonthlyCost
+    - Selected
+    - CreditScore
+    - OfferedAmount
     # Minutes since the previous event and since the case began, derived from the timestamp
     - ts_prev
     - ts_start
@@ -60,31 +49,12 @@ data:
   log_scaled_features: []
   log_scaled_remaining_time: false
 
-# Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
+# Halves the latent, against the collapse this run is testing for.
+# At the 0.3-nat free-bits floor, 16 dimensions is 4.8 nats the model can carry without ever being
+# pushed to make any of it mean something; 8 dimensions is 2.4, so whatever z does carry has half
+# as many places to hide.
 model:
-  name: cvae-small
-
-  d_model: 64
-
-  embeddings:
-    resource_dim: 16  
-    feature_dim: 4
-
-  prefix_encoder:
-    num_layers: 1
-    feedforward_dim: 256  # keep the 4x d_model ratio
-
-  suffix_encoder:
-    num_layers: 1
-    feedforward_dim: 256
-
-  prior:
-    hidden_dims: [64]
+  name: cvae-z8
 
   latent:
     latent_dim: 8
-
-  decoder:
-    num_layers: 1
-    feedforward_dim: 256
-    head_hidden_dim: 64
