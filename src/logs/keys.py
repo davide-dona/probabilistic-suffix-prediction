@@ -5,16 +5,16 @@ ACTIVITY_KEY = 'concept:name'
 RESOURCE_KEY = 'org:resource'
 TIMESTAMP_KEY = 'time:timestamp'
 # Attributes added by pipelines/preprocess.py.
-# Minutes since the previous event of the same case. Read by the encoders; never predicted
+# Minutes since the previous event of the same case, offered to the encoders through
+# `data.event_features` rather than as a channel of its own
 EVENT_DELTA_KEY = 'ts_prev'
-# Minutes since the first event of the same case. Read by the encoders; never predicted
+# Minutes since the first event of the same case, offered to the encoders the same way
 CASE_ELAPSED_KEY = 'ts_start'
 # Minutes until the end of the case. Predicted by the decoder
 REMAINING_TIME_KEY = 'rtime'
-# The calendar position of the event, offered to the encoders through `data.event_features`
-# rather than as channels of their own. Cyclical: sin/cos of the day of the week and of the
-# second of the day, so the encoders read the wrap-around (Sunday to Monday, midnight to
-# midnight) rather than a raw count that treats it as a jump.
+# The calendar position of the event, offered to the encoders the same way. Cyclical: sin/cos of
+# the day of the week and of the second of the day, so the encoders read the wrap-around (Sunday
+# to Monday, midnight to midnight) rather than a raw count that treats it as a jump.
 DAY_SIN_KEY = 'day_sin'
 DAY_COS_KEY = 'day_cos'
 SECONDS_SIN_KEY = 'seconds_sin'

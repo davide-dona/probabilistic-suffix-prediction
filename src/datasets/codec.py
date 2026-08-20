@@ -13,9 +13,7 @@ from src import paths
 from src.configs.schema import DataConfig, StrictModel
 from src.logs.keys import (
     ACTIVITY_KEY,
-    CASE_ELAPSED_KEY,
     EOT_TOKEN,
-    EVENT_DELTA_KEY,
     PAD_TOKEN,
     REMAINING_TIME_KEY,
     RESOURCE_KEY,
@@ -251,15 +249,13 @@ class DatasetCodec(StrictModel):
 
     activity: CategoricalColumn
     resource: CategoricalColumn
-    # The two timestamp proxies both baselines read, `Events.ts_prev` and `Events.ts_start`.
-    # Whether they and `remaining_time` take a log1p before the standardization is
-    # `data.log_scaled_durations`: off in every config here, which is what both baselines do,
-    # and available for a run that wants the tail of a duration compressed instead.
-    ts_prev: NumericColumn
-    ts_start: NumericColumn
+    # The decoder's target rather than a channel the encoders read. Whether it takes a log1p
+    # before the standardization is `data.log_scaled_remaining_time`: off in every config here,
+    # which is what both baselines do, and available for a run that wants the tail of a duration
+    # compressed instead.
     remaining_time: NumericColumn
 
-    # The columns the config names beside the five above, sorted by dtype into the two kinds.
+    # The columns `data.event_features` names, sorted by dtype into the two kinds.
     categorical_features: tuple[CategoricalColumn, ...]
     numeric_features: tuple[NumericColumn, ...]
 
@@ -292,7 +288,6 @@ class DatasetCodec(StrictModel):
         Returns:
             The codec to write beside the splits.
         """
-        log_durations = data_config.log_scaled_durations
         categorical_features, numeric_features = _fit_event_features(
             train=train,
             columns=data_config.event_features,
@@ -305,9 +300,9 @@ class DatasetCodec(StrictModel):
             resource=CategoricalColumn.fit(
                 train, column=RESOURCE_KEY, special_tokens=RESOURCE_TOKENS
             ),
-            ts_prev=NumericColumn.fit(train, column=EVENT_DELTA_KEY, log=log_durations),
-            ts_start=NumericColumn.fit(train, column=CASE_ELAPSED_KEY, log=log_durations),
-            remaining_time=NumericColumn.fit(train, column=REMAINING_TIME_KEY, log=log_durations),
+            remaining_time=NumericColumn.fit(
+                train, column=REMAINING_TIME_KEY, log=data_config.log_scaled_remaining_time
+            ),
             categorical_features=categorical_features,
             numeric_features=numeric_features,
             dataset=data_config.name,

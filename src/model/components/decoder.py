@@ -384,11 +384,10 @@ class Decoder(nn.Module):
     def _blank_events(self, activities: torch.Tensor) -> Events:
         """Wrap decoder input activities as the events `EventEmbeddings` reads.
 
-        The decoder has no head to write a resource, a timestamp proxy or a feature, so it may not
-        read ground truth for them either: teacher forcing would otherwise hand it values
-        `generate` has none of to feed, and the two would read different things. Only the
-        activities carry real content; every other channel is blanked to the same PAD row or
-        0.0 scalar `generate` starts from.
+        The decoder has no head to write a resource or a feature, so it may not read ground truth
+        for one either: teacher forcing would otherwise hand it values `generate` has none of to
+        feed, and the two would read different things. Only the activities carry real content;
+        every other channel is blanked to the same PAD row or 0.0 scalar `generate` starts from.
 
         Args:
             activities: Vocabulary indices to read as the activity channel, `[batch_size, seq_len]`.
@@ -405,8 +404,6 @@ class Decoder(nn.Module):
                 dtype=torch.long,
                 device=device,
             ),
-            ts_prev=torch.zeros(size=(batch_size, seq_len), device=device),
-            ts_start=torch.zeros(size=(batch_size, seq_len), device=device),
             categorical_attributes=torch.zeros(
                 size=(batch_size, seq_len, self.embeddings.num_categorical),
                 dtype=torch.long,

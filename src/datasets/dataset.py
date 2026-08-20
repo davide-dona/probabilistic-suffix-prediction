@@ -18,8 +18,6 @@ class Events(NamedTuple):
 
     activities: torch.Tensor  # int64, [..., seq_len]
     resources: torch.Tensor  # int64, [..., seq_len]
-    ts_prev: torch.Tensor  # float32, standardized time since the previous event, [..., seq_len]
-    ts_start: torch.Tensor  # float32, standardized time since the case began, [..., seq_len]
     categorical_attributes: torch.Tensor  # int64, [..., seq_len, num_categorical]
     numeric_attributes: torch.Tensor  # float32, standardized, [..., seq_len, num_numeric]
     numeric_attributes_present: (
@@ -272,8 +270,6 @@ def _encode_events(codec: DatasetCodec, log: pd.DataFrame) -> Events:
         # own block for some dtypes, which torch would wrap rather than copy.
         activities=torch.tensor(data=codec.activity.encode(log), dtype=torch.long),
         resources=torch.tensor(data=codec.resource.encode(log), dtype=torch.long),
-        ts_prev=torch.from_numpy(codec.ts_prev.encode(log)),
-        ts_start=torch.from_numpy(codec.ts_start.encode(log)),
         categorical_attributes=_encode_categorical_attributes(codec, log),
         numeric_attributes=numeric_attributes,
         numeric_attributes_present=numeric_attributes_present,
