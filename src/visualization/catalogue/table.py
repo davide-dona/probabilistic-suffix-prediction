@@ -25,9 +25,9 @@ TABLES = (
         name='comparison-point',
         axis=Axis.OVERALL,
         metrics=(
-            MetricEntry(METRICS['dls_point'], 'Suffix DLS'),
-            MetricEntry(METRICS['conformance_point'], 'Suffix conformance'),
-            MetricEntry(METRICS['length_ae_point'], 'Suffix length MAE'),
+            MetricEntry(METRICS['dls_point'], 'DLS'),
+            MetricEntry(METRICS['conformance_point'], 'Conformance'),
+            MetricEntry(METRICS['length_ae_point'], 'Length MAE'),
             MetricEntry(METRICS['remaining_time_ae_point_days'], 'Remaining time MAE'),
         ),
     ),
@@ -36,10 +36,10 @@ TABLES = (
         name='comparison-probabilistic',
         axis=Axis.OVERALL,
         metrics=(
-            MetricEntry(METRICS['dls_mean'], 'Mean DLS'),
-            MetricEntry(METRICS['conformance_mean'], 'Mean conformance'),
-            MetricEntry(METRICS['length_ae_mean'], 'Mean length MAE'),
-            MetricEntry(METRICS['remaining_time_ae_mean_days'], 'Mean remaining time MAE'),
+            MetricEntry(METRICS['dls_mean'], 'DLS'),
+            MetricEntry(METRICS['conformance_mean'], 'Conformance'),
+            MetricEntry(METRICS['length_ae_mean'], 'Length MAE'),
+            MetricEntry(METRICS['remaining_time_ae_mean_days'], 'Remaining time MAE'),
         ),
     ),
     # Comparison of distributions
