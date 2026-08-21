@@ -64,6 +64,25 @@ Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkp
 
 A resumed run also keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
 
+#### Training several datasets at once
+
+Testing an experiment usually means training it on every dataset. Copy the configs to train into
+`config/queue/` and hand the whole folder to the machine's GPUs:
+
+```bash
+cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml config/queue/
+scripts/train_queue.sh -w config/hardware/cuda-a6000.yaml   # -g 0,1 by default
+```
+
+One run per GPU at a time, and a GPU that finishes picks up the next config rather than waiting on
+the run beside it. Each run is launched with `CUDA_VISIBLE_DEVICES` masking in its own card, so the
+one profile is used for both rather than a second one naming `cuda:1`.
+
+Each run's output goes to `outputs/queue/<config>-<timestamp>.log`, since two of them share a
+terminal; the console gets a line per run and a summary at the end. A config that trained
+successfully is deleted from the queue, and one whose run failed is renamed `<config>.yaml.failed`
+and kept, to be re-queued by dropping the suffix once the log has been read.
+
 > [!NOTE]
 > **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published model into `pretrained/` with:
 > ```bash
