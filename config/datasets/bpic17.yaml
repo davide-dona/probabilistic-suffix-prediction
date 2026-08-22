@@ -46,5 +46,13 @@ data:
     - seconds_sin
     - seconds_cos
 
-  log_scaled_features: []
-  log_scaled_remaining_time: false
+  # Right-skewed numeric columns: durations and monetary amounts dominated by a few large
+  # values, log1p'd before standardization so the bulk of the distribution is not squashed.
+  log_scaled_features:
+    - case:RequestedAmount
+    - FirstWithdrawalAmount
+    - MonthlyCost
+    - OfferedAmount
+    - ts_prev
+    - ts_start
+  log_scaled_remaining_time: true

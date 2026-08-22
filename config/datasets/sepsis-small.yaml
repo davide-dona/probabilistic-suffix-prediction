@@ -57,8 +57,12 @@ data:
     - seconds_sin
     - seconds_cos
 
-  log_scaled_features: []
-  log_scaled_remaining_time: false
+  # Right-skewed numeric columns: durations dominated by a few large values, log1p'd before
+  # standardization so the bulk of the distribution is not squashed.
+  log_scaled_features:
+    - ts_prev
+    - ts_start
+  log_scaled_remaining_time: true
 
 # Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
 model:
