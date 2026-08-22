@@ -78,8 +78,8 @@ def load_generation_config(
     changes, since a run trained on one machine is routinely generated from on another.
 
     The profile carries training-only values too - `training.max_steps`, `optimizer.lr`,
-    `loss.kl_annealing_period_steps` - and merging brings them along. Nothing generation reads
-    touches them and the merged config is never written back out, so they go no further than here.
+    `dataloader.batch_size` - and merging brings them along. Nothing generation reads touches
+    them and the merged config is never written back out, so they go no further than here.
 
     Args:
         experiment_config: The run's config as the checkpoint stores it, from

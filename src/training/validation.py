@@ -5,7 +5,7 @@ from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import AccuracyScores
 from src.inference.generate import generate_batch
 from src.model import TransformerCVAE
-from src.training.loss import Loss, compute_loss
+from src.training.loss import LatentUsage, Loss, compute_loss
 
 
 @torch.no_grad()
@@ -13,37 +13,33 @@ def validate(
     model: TransformerCVAE,
     loader: DataLoader,
     *,
-    kl_weight: float,
-    free_bits: float,
     device: torch.device,
-) -> Loss:
+) -> tuple[Loss, LatentUsage]:
     """
     Run one pass over `loader` without learning from it.
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
         loader: The dataloader to iterate over. Its batches are `SplitTrace`s.
-        kl_weight: The weight this step's KL term is given.
-        free_bits: Nats per latent dimension the KL is not penalized below.
         device: The device to run the computations on.
     Returns:
-        The metrics of the pass, averaged over the traces of the split.
+        The metrics of the pass and how it spread itself over the modes, both averaged over the
+        traces of the split.
     """
     model.eval()
 
     totals = Loss()
+    latent_totals = LatentUsage()
     for batch in loader:
         batch = batch.to(device)
         output = model(batch)
-        _, metrics = compute_loss(
-            output,
-            batch,
-            pad_activity_index=model.pad_activity_index,
-            kl_weight=kl_weight,
-            free_bits=free_bits,
+        _, metrics, latent_usage = compute_loss(
+            output, batch, pad_activity_index=model.pad_activity_index
         )
         totals += metrics
+        latent_totals += latent_usage
 
-    return totals / len(loader.dataset)
+    traces = len(loader.dataset)
+    return totals / traces, latent_totals / traces
 
 
 @torch.no_grad()

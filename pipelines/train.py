@@ -160,7 +160,6 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         resume=checkpoint,
         generation_samples=config.inference.num_samples,
         codec=codec,
-        loss_config=config.loss,
         optimizer_config=config.optimizer,
         training=config.training,
         early_stopping_config=config.early_stopping,

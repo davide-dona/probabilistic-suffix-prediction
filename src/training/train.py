@@ -6,7 +6,6 @@ from torch.utils.tensorboard import SummaryWriter
 from src import paths
 from src.configs.schema import (
     EarlyStoppingConfig,
-    LossConfig,
     OptimizerConfig,
     TrainingConfig,
 )
@@ -14,12 +13,11 @@ from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.model import TransformerCVAE, save_checkpoint
 from src.training.early_stopping import EarlyStopper
-from src.training.kl import cyclical_linear_weight
 from src.training.loss import Loss, compute_loss
 from src.training.validation import validate, validate_generation
 
-# The device's own stream, which dropout and the latent sampling draw from, lives behind a
-# namespace of its own; `cpu` has none beside the global one.
+# The device's own stream, which dropout draws from, lives behind a namespace of its own; `cpu`
+# has none beside the global one.
 # Both halves take the device the run is on: on a multi-GPU machine `torch.cuda`'s zero-argument
 # form would capture the current device's stream rather than the pinned one, so a run on `cuda:1`
 # would checkpoint and restore `cuda:0`. `torch.mps` has one device and so takes no argument.
@@ -79,7 +77,6 @@ def train(
     experiment_config: dict,
     generator: torch.Generator,
     resume: dict | None,
-    loss_config: LossConfig,
     optimizer_config: OptimizerConfig,
     training: TrainingConfig,
     early_stopping_config: EarlyStoppingConfig,
@@ -113,7 +110,6 @@ def train(
         resume: A checkpoint to carry on from, read by `load_checkpoint`, or `None` to start
             from step zero. Its step, weights, optimizer state, early-stopping state and random
             streams are all restored.
-        loss_config: The KL annealing schedule.
         optimizer_config: The optimizer hyperparameters.
         training: Step budget, validation cadence, gradient clipping and device.
         early_stopping_config: When to give up.
@@ -154,24 +150,13 @@ def train(
             for batch in train_loader:
                 model.train()
                 batch = batch.to(device)
-                # Get the current KL weight for this step
-                kl_weight = cyclical_linear_weight(
-                    step,
-                    period_steps=loss_config.kl_annealing_period_steps,
-                    ratio=loss_config.kl_annealing_ratio,
-                    start=loss_config.kl_annealing_start_weight,
-                    stop=loss_config.kl_annealing_full_weight,
-                )
                 # Run a forward pass
                 output = model(batch)
 
-                # Compute the loss and propagate gradients
-                loss, metrics = compute_loss(
-                    output,
-                    batch,
-                    pad_activity_index=model.pad_activity_index,
-                    kl_weight=kl_weight,
-                    free_bits=loss_config.free_bits,
+                # Compute the loss and propagate gradients. How the pass spread itself over the
+                # modes is read at the validation cadence alone, so the training pass drops it.
+                loss, metrics, _ = compute_loss(
+                    output, batch, pad_activity_index=model.pad_activity_index
                 )
                 optimizer.zero_grad()
                 loss.backward()
@@ -192,14 +177,9 @@ def train(
 
                     # Score the model on the validation set and the generation set, and log
                     # the results.
-                    val_metrics = validate(
-                        model,
-                        val_loader,
-                        kl_weight=kl_weight,
-                        free_bits=loss_config.free_bits,
-                        device=device,
-                    )
+                    val_metrics, val_latent_usage = validate(model, val_loader, device=device)
                     val_metrics.log(writer, step, prefix='val')
+                    val_latent_usage.log(writer, step, prefix='val')
 
                     gen_metrics = validate_generation(
                         model,
@@ -210,18 +190,22 @@ def train(
                     )
                     gen_metrics.log(writer, step, prefix='gen')
 
-                    writer.add_scalar('kl_weight', kl_weight, step)
-
                     # The one line of live feedback: enough to see a run is alive and heading down
                     print(
                         f'Step {step:>{len(str(training.max_steps))}}/{training.max_steps}  '
-                        f'kl {kl_weight:.2f}  train {train_metrics.loss:.4f}  '
+                        f'train {train_metrics.loss:.4f}  '
                         f'val {val_metrics.loss:.4f}  '
                         f'gen_dls {gen_metrics.dls_mean:.4f} mean / '
                         f'{gen_metrics.dls_point:.4f} point  '
                         f'energy {gen_metrics.energy_score:.4f}',
                         flush=True,
                     )
+                    # The model is used by generating from it, so it is selected on what a
+                    # generation is worth. The exact likelihood is logged beside this and is the
+                    # better-founded number, but the two disagree: a likelihood is paid for how
+                    # well the prior is calibrated, where a generation reads only the order the
+                    # prior puts the modes in, and a run's best checkpoint by one is not its best
+                    # by the other.
                     selection_score = gen_metrics.energy_score
 
                     # Read before `update` folds this score into it, since afterwards it can

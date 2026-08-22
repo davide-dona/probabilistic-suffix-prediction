@@ -12,33 +12,6 @@ class DataLoaderConfig(StrictModel):
     num_workers: int = Field(..., ge=0)
 
 
-class LossConfig(StrictModel):
-    """KL weighting: the annealing schedule and the free-bits floor.
-
-    Both are measured in optimizer steps, not epochs, so they mean the same thing on every
-    dataset. The cycle is a length rather than a count fitted into `training.max_steps`, so a
-    run that stops early has still seen whole cycles.
-    """
-
-    kl_annealing_period_steps: int = Field(..., gt=0, description='Optimizer steps in one cycle')
-    kl_annealing_ratio: float = Field(
-        ..., gt=0.0, lt=1.0, description='Fraction of each cycle spent ramping up'
-    )
-    kl_annealing_start_weight: float = Field(
-        ..., ge=0.0, description='Weight each cycle ramps up from'
-    )
-    kl_annealing_full_weight: float = Field(
-        ..., ge=0.0, description='Weight each cycle ramps up to, and holds at'
-    )
-
-    free_bits: float = Field(
-        ...,
-        ge=0.0,
-        description='Nats per latent dimension the KL is not penalized below. 0.0 leaves it '
-        'unfloored',
-    )
-
-
 class OptimizerConfig(StrictModel):
     lr: float = Field(..., gt=0.0)
     weight_decay: float = Field(..., ge=0.0)

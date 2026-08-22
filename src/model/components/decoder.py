@@ -61,10 +61,12 @@ class DecoderOutput:
 
     The remaining time is a Gaussian rather than a point, so its loss is a log-likelihood in
     nats, the same units as the activity cross-entropy it is added to.
+
+    One row per trace per mode, the modes split back out of the rows they were run as.
     """
 
-    activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    remaining_time_distr: Gaussian  # [batch_size], mean and log-variance
+    activity_logits: torch.Tensor  # [batch_size, num_modes, seq_len, num_activities]
+    remaining_time_distr: Gaussian  # [batch_size, num_modes], mean and log-variance
 
 
 @dataclass(frozen=True)
@@ -72,13 +74,12 @@ class GeneratedSuffix:
     """A batch of freely generated suffixes, kept as the raw predictions: EOT and everything
     after it included, with `lengths` saying where each suffix actually ended.
 
-    The leading axes are whatever the caller generated over: `[batch_size, ...]` from
-    `Decoder.generate`, `[batch_size, num_samples, ...]` from `TransformerCVAE.generate`.
+    One row per prefix per mode generated for it, in the order the modes were given.
     """
 
-    activities: torch.Tensor  # [..., steps]
-    lengths: torch.Tensor  # [...], events emitted before EOT, or `steps` if EOT never came
-    remaining_time: torch.Tensor  # [...], standardized like the targets
+    activities: torch.Tensor  # [batch_size, num_modes, steps]
+    lengths: torch.Tensor  # [batch_size, num_modes], events before EOT, or `steps` without one
+    remaining_time: torch.Tensor  # [batch_size, num_modes], standardized like the targets
 
 
 class DecoderLayer(nn.Module):
@@ -162,7 +163,7 @@ class DecoderLayer(nn.Module):
         concatenation would.
 
         Args:
-            prefix_encoded: The encoded prefix events, with the latent token already
+            prefix_encoded: The encoded prefix events, with the mode token already
                 prepended, `[batch_size, prefix_seq_len, d_model]`.
             max_steps: The suffix cache's capacity.
         Returns:
@@ -180,11 +181,11 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    """Transformer decoder that predicts a suffix of events, given the prefix and a latent z.
+    """Transformer decoder that predicts a suffix of events, given the prefix and a latent mode.
 
     Applies self-attention over the suffix positions read so far, cross-attention over
-    the encoded prefix. The latent z is projected into an extra cross-attention token
-    prepended to the prefix, so every position reads it with a content-dependent weight
+    the encoded prefix. The mode is looked up in a codebook and prepended to the prefix as an
+    extra cross-attention token, so every position reads it with a content-dependent weight
     rather than a fixed additive bias."""
 
     def __init__(
@@ -210,9 +211,10 @@ class Decoder(nn.Module):
         self.pad_resource_index = pad_resource_index
         self.eot_activity_index = eot_activity_index
 
-        # Brings the latent up to the width of the cross-attention token it becomes.
-        self.latent_projection = nn.Linear(
-            in_features=latent_config.latent_dim, out_features=d_model
+        # One vector per mode, at the width of the cross-attention token it becomes. It lives
+        # here, beside the two output heads, because the decoder is the only thing that reads it.
+        self.mode_embeddings = nn.Embedding(
+            num_embeddings=latent_config.num_modes, embedding_dim=d_model
         )
         self.layers = nn.ModuleList(
             DecoderLayer(config, d_model=d_model) for _ in range(config.num_layers)
@@ -236,27 +238,36 @@ class Decoder(nn.Module):
     def forward(
         self,
         suffix_activities: torch.Tensor,
-        z: torch.Tensor,
+        modes: torch.Tensor,
         prefix_encoded: torch.Tensor,
         prefix_pad_mask: torch.Tensor,
     ) -> DecoderOutput:
-        """Predict an event for every position of a suffix at once.
+        """Predict an event for every position of a suffix, under every mode at once.
 
         Args:
             suffix_activities: The ground-truth suffix activities, `[batch_size, seq_len]`. Read
                 one step behind, so the decoder sees the truth up to each position rather than
                 its own predictions.
-            z: The sampled latent, `[batch_size, latent_dim]`.
+            modes: The modes to write each trace under, `[batch_size, num_modes]`.
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
         Returns:
-            The per-position predictions.
+            The per-position predictions, `[batch_size, num_modes, ...]`.
         """
+        batch_size, num_modes = modes.shape
+
+        # Blanked once per trace, then repeated: what a mode is scored against has to be the same
+        # for all of them, or the score reads the blanking rather than the mode.
         decoder_input = self._teacher_forced_input(suffix_activities)
         if self.training and self.activity_dropout > 0.0:
             decoder_input = self._drop_activities(decoder_input)
-        prefix_encoded, prefix_pad_mask = self._append_latent_token(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
+        decoder_input = decoder_input.repeat_interleave(repeats=num_modes, dim=0)
+
+        flat_modes, prefix_encoded, prefix_pad_mask = self._per_mode(
+            modes=modes, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
+        )
+        prefix_encoded, prefix_pad_mask = self._append_mode_token(
+            modes=flat_modes, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
         )
         hidden, _ = self._run_layers(
             activities=decoder_input,
@@ -264,31 +275,62 @@ class Decoder(nn.Module):
             prefix_pad_mask=prefix_pad_mask,
             start_position=0,
             caches=None,
-        )  # [batch_size, seq_len, d_model]
-        features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
+        )  # [batch_size * num_modes, seq_len, d_model]
+        features = self.shared_layer(hidden)
+        remaining_time = self._remaining_time_distr(features[:, 0])
         return DecoderOutput(
-            activity_logits=self.activity_head(features),
-            remaining_time_distr=self._remaining_time_distr(features[:, 0]),
+            activity_logits=self.activity_head(features).unflatten(
+                dim=0, sizes=(batch_size, num_modes)
+            ),  # [batch_size, num_modes, seq_len, num_activities]
+            remaining_time_distr=Gaussian(
+                mean=remaining_time.mean.view(batch_size, num_modes),
+                logvar=remaining_time.logvar.view(batch_size, num_modes),
+            ),
         )
 
-    def _append_latent_token(
-        self, z: torch.Tensor, prefix_encoded: torch.Tensor, prefix_pad_mask: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Prepend the projected latent to the prefix as an extra cross-attention token.
+    def _per_mode(
+        self, modes: torch.Tensor, prefix_encoded: torch.Tensor, prefix_pad_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Lay one row out per trace per mode, the prefix repeated across a trace's modes.
+
+        Mode-fastest, so that row `(i, k)` is trace `i` under the `k`-th of its modes and an
+        `unflatten` splits the two axes back apart. Everything a trace's rows share is repeated
+        here rather than recomputed, which is what leaves the mode as the only thing that differs
+        between them.
 
         Args:
-            z: The sampled latent, `[batch_size, latent_dim]`.
+            modes: The modes to write each trace under, `[batch_size, num_modes]`.
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
         Returns:
-            `prefix_encoded` and `prefix_pad_mask`, each one position longer, with the latent
+            The modes flattened, and the prefix and its mask repeated, all
+            `[batch_size * num_modes, ...]`.
+        """
+        num_modes = modes.size(dim=1)
+        return (
+            modes.flatten(),
+            prefix_encoded.repeat_interleave(repeats=num_modes, dim=0),
+            prefix_pad_mask.repeat_interleave(repeats=num_modes, dim=0),
+        )
+
+    def _append_mode_token(
+        self, modes: torch.Tensor, prefix_encoded: torch.Tensor, prefix_pad_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Prepend the mode's codebook vector to the prefix as an extra cross-attention token.
+
+        Args:
+            modes: The mode each row is written under, `[batch_size]`.
+            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
+            prefix_pad_mask: True where a prefix position holds padding.
+        Returns:
+            `prefix_encoded` and `prefix_pad_mask`, each one position longer, with the mode
             token first.
         """
-        latent_token = self.latent_projection(z).unsqueeze(dim=1)  # [batch_size, 1, d_model]
+        mode_token = self.mode_embeddings(modes).unsqueeze(dim=1)  # [batch_size, 1, d_model]
         prefix_encoded = torch.cat(
-            tensors=(latent_token, prefix_encoded), dim=1
+            tensors=(mode_token, prefix_encoded), dim=1
         )  # [batch_size, 1 + prefix_seq_len, d_model]
-        # The latent token is never padding, so add a column of False to match the new width.
+        # The mode token is never padding, so add a column of False to match the new width.
         latent_column = prefix_pad_mask.new_zeros(size=(prefix_pad_mask.size(dim=0), 1))
         prefix_pad_mask = torch.cat(
             tensors=(latent_column, prefix_pad_mask), dim=1
@@ -318,8 +360,10 @@ class Decoder(nn.Module):
     def _drop_activities(self, activities: torch.Tensor) -> torch.Tensor:
         """Blank a random `activity_dropout` fraction of the teacher-forced activities to PAD.
 
-        A decoder that cannot count on the previous ground-truth token has to look to z for
-        what comes next, which keeps information flowing through the latent.
+        A decoder that cannot count on the previous ground-truth token has to look to the mode
+        for what comes next, which keeps information flowing through the latent. Called before
+        the modes are laid out, so every mode of a trace is scored against the same blanking and
+        a mode's score reads the mode rather than which activities were hidden from it.
         """
         dropped = (torch.rand_like(activities, dtype=torch.float32) < self.activity_dropout) & (
             activities != self.sos_activity_index
@@ -344,7 +388,7 @@ class Decoder(nn.Module):
         Args:
             activities: The decoder input activities to read, `[batch_size, seq_len]`.
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`,
-                with the latent token already prepended.
+                with the mode token already prepended.
             prefix_pad_mask: True where a prefix position holds padding.
             start_position: Where in the suffix `activities` starts, for the positional encoding.
             caches: One per layer, from a previous call, or None to read from the beginning.
@@ -424,7 +468,7 @@ class Decoder(nn.Module):
 
     def generate(
         self,
-        z: torch.Tensor,
+        modes: torch.Tensor,
         prefix_encoded: torch.Tensor,
         prefix_pad_mask: torch.Tensor,
         max_steps: int,
@@ -434,19 +478,24 @@ class Decoder(nn.Module):
         Every step is one cached call to `_run_layers`, the same pass teacher forcing runs, so
         writing n events costs n passes over one position. The activity head is read greedily
         and the remaining time is its head's mean: two generations of one prefix differ only
-        in the z each was given.
+        in the mode each was given.
 
         Args:
-            z: The sampled latent, `[batch_size, latent_dim]`.
+            modes: The modes to write each trace under, `[batch_size, num_modes]`.
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
             max_steps: Hard cap on the suffix length, for generations that never emit EOT.
         Returns:
-            The generated suffixes, the length of each, and the remaining time of each.
+            The generated suffixes, the length of each, and the remaining time of each, all
+            `[batch_size, num_modes, ...]`.
         """
-        batch_size = z.size(dim=0)
-        prefix_encoded, prefix_pad_mask = self._append_latent_token(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
+        traces, num_modes = modes.shape
+        flat_modes, prefix_encoded, prefix_pad_mask = self._per_mode(
+            modes=modes, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
+        )
+        batch_size = flat_modes.size(dim=0)
+        prefix_encoded, prefix_pad_mask = self._append_mode_token(
+            modes=flat_modes, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
         )
 
         # What the decoder reads at each step: SOS first, exactly how `_teacher_forced_input`
@@ -455,17 +504,17 @@ class Decoder(nn.Module):
             size=(batch_size, 1),
             fill_value=self.sos_activity_index,
             dtype=torch.long,
-            device=z.device,
+            device=flat_modes.device,
         )
 
         generated_activities = torch.zeros(
-            size=(batch_size, max_steps), dtype=torch.long, device=z.device
+            size=(batch_size, max_steps), dtype=torch.long, device=flat_modes.device
         )
         # A row that never emits EOT ran to the cap, so that is the length it keeps.
         lengths = torch.full(
-            size=(batch_size,), fill_value=max_steps, dtype=torch.long, device=z.device
+            size=(batch_size,), fill_value=max_steps, dtype=torch.long, device=flat_modes.device
         )
-        finished = torch.zeros(size=(batch_size,), dtype=torch.bool, device=z.device)
+        finished = torch.zeros(size=(batch_size,), dtype=torch.bool, device=flat_modes.device)
 
         steps_taken = max_steps
         # Seeded before the loop rather than left None for its first iteration: every layer's
@@ -503,7 +552,7 @@ class Decoder(nn.Module):
                 break
 
         return GeneratedSuffix(
-            activities=generated_activities[:, :steps_taken],  # [batch_size, steps]
-            lengths=lengths,
-            remaining_time=remaining_time,
+            activities=generated_activities[:, :steps_taken].view(traces, num_modes, -1),
+            lengths=lengths.view(traces, num_modes),
+            remaining_time=remaining_time.view(traces, num_modes),
         )

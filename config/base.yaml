@@ -12,7 +12,7 @@ declare:
 # Model architecture
 model:
   # Names every run this architecture produces, and the series it is drawn as.
-  name: cvae-filtered
+  name: cvae-cat
 
   # The size of the embedding space
   d_model: 128
@@ -31,20 +31,16 @@ model:
     feedforward_dim: 512  # 4x d_model ratio
     dropout: 0.1
 
-  # Encodes the ground-truth suffix for the posterior, training only; shallower on purpose.
-  suffix_encoder:
-    num_layers: 2 
-    num_heads: 4
-    feedforward_dim: 512
-    dropout: 0.1
-
-  # MLP mapping the prefix summary to p(z|prefix), sampled from at inference.
+  # MLP mapping the prefix summary to p(k|prefix), the mode a suffix is written under.
   prior:
     hidden_dims: [128]  # (empty for a linear prior)
     dropout: 0.1
 
   latent:
-    latent_dim: 16  # z only carries what the prefix leaves undetermined
+    # Ways one prefix may carry on. Every training step writes the suffix under all of them, so
+    # this is the factor the decoder's work is multiplied by. A generation draws from
+    # p(k|prefix) with replacement, so it is unrelated to inference.num_samples.
+    num_modes: 16
 
   # Causal self-attention over the suffix, cross-attention over the encoded prefix.
   decoder:
@@ -52,19 +48,11 @@ model:
     num_heads: 4
     feedforward_dim: 512
     dropout: 0.1
-    activity_dropout: 0.3  # teacher-forced activities blanked in training, so the decoder must lean on z
+    activity_dropout: 0.3  # teacher-forced activities blanked in training, so the decoder must lean on the mode
     head_hidden_dim: 128
 
-# All the hyperparameters below are defined in steps, not epochs, 
+# All the hyperparameters below are defined in steps, not epochs,
 # so that they are independent of the dataset size and batch size.
-loss:
-  # KL annealing: for each period, the KL term is ramped up from 0 to full weight over a fraction of the period,
-  # then kept at full weight until the end of the period. This helps prevent posterior collapse early in training.
-  kl_annealing_ratio: 0.3   # fraction of the period spent ramping up from 0 to full weight
-  kl_annealing_start_weight: 0.0
-  kl_annealing_full_weight: 0.5  # below 1 keeps deviating from the prior cheaper than losing reconstruction
-  free_bits: 0.3  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
-
 # lr is set per hardware profile, in config/hardware/, since it scales with batch_size.
 optimizer:
   weight_decay: 0.0
@@ -79,7 +67,7 @@ training:
 
 early_stopping:
   patience: 30   # number of validation checks with no improvement after which training will be stopped
-  min_delta_perc: 0.005  # z is sampled, so the score is noisy; this is the margin that counts as progress
+  min_delta_perc: 0.005  # the mode is sampled, so the score is noisy; this is the margin that counts as progress
 
 
 inference:

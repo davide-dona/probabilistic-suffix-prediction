@@ -3,17 +3,16 @@ training:
   device: mps
   # A ceiling, not the expected end of a run: 120 validations, so early stopping's
   # 30-validation patience governs. See base.yaml's early_stopping section.
-  max_steps: 96000
-  val_every_n_steps: 800
-
-loss:
-  kl_annealing_period_steps: 10000
+  max_steps: 768000
+  val_every_n_steps: 6400
 
 optimizer:
-  lr: 0.0003
+  lr: 0.0001
 
 dataloader:
-  batch_size: 256
+  # A step decodes batch_size * model.latent.num_modes rows, so the row count is what GPU memory
+  # is spent on and the batch is set from it: 32 x 16 is 512 rows.
+  batch_size: 32
   num_workers: 0  # 0, not 4: macOS spawn overhead measured 2.1x slower end to end
 
 inference:

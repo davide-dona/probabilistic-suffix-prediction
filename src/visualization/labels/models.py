@@ -16,7 +16,9 @@ class ModelStyle:
     label: str
     color: str
     marker: str
-    linestyle: str
+    # A named style where one is free, and a dash pattern where they are all taken: there are
+    # more models than the four names, and two models drawn alike are one model here.
+    linestyle: str | tuple[int, tuple[int, ...]]
 
 
 # How a model is called and its stlye
@@ -31,6 +33,26 @@ MODELS = Registry[ModelStyle](
         ),
         'cvae-small-filtered': ModelStyle(
             label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
+        ),
+        'cvae-cat': ModelStyle(
+            label='CVAE (categorical)', color='#1F6FB2', marker='^', linestyle=(0, (5, 1))
+        ),
+        'cvae-small-cat': ModelStyle(
+            label='CVAE (categorical)', color='#1F6FB2', marker='^', linestyle=(0, (5, 1))
+        ),
+        # The num_modes sweep. Each K is its own series, since what the sweep is about is how they
+        # differ; the shade darkens with K so the ordering reads off the page.
+        'cvae-cat-k4': ModelStyle(
+            label='CVAE (categorical, K=4)', color='#9EC9E8', marker='^', linestyle=(0, (1, 1))
+        ),
+        'cvae-cat-k8': ModelStyle(
+            label='CVAE (categorical, K=8)',
+            color='#5AA3D5',
+            marker='^',
+            linestyle=(0, (3, 1, 1, 1)),
+        ),
+        'cvae-cat-k32': ModelStyle(
+            label='CVAE (categorical, K=32)', color='#0B3D66', marker='^', linestyle=(0, (7, 2))
         ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),

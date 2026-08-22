@@ -21,9 +21,8 @@ class EmbeddingConfig(StrictModel):
 class TraceEncoderConfig(StrictModel):
     """Transformer encoder over a sequence of events, full self-attention.
 
-    Used for both the prefix, whose summary conditions the prior and the decoder, and, on the
-    training path only, the ground-truth suffix, which feeds the posterior. Runs at
-    `ModelConfig.d_model`.
+    Reads the prefix, whose summary conditions the prior and whose events the decoder
+    cross-attends over. Runs at `ModelConfig.d_model`.
     """
 
     num_layers: int = Field(..., gt=0)
@@ -37,8 +36,8 @@ class TraceEncoderConfig(StrictModel):
 
 
 class PriorConfig(StrictModel):
-    """MLP mapping the prefix summary to p(z | prefix), in place of the fixed N(0, I) prior of
-    an unconditional VAE.
+    """MLP mapping the prefix summary to p(k | prefix), the distribution over the latent's
+    modes.
     """
 
     hidden_dims: list[int] = Field(..., description='Hidden layer widths; empty for a linear prior')
@@ -46,7 +45,14 @@ class PriorConfig(StrictModel):
 
 
 class LatentConfig(StrictModel):
-    latent_dim: int = Field(..., gt=0)
+    """The modes the latent chooses between, one of which the decoder writes each suffix under."""
+
+    num_modes: int = Field(
+        ...,
+        gt=1,
+        description='How many ways the model may continue one prefix. Every training step writes '
+        "the suffix under all of them, so it is the factor the decoder's work is multiplied by",
+    )
 
 
 class DecoderConfig(StrictModel):
@@ -89,12 +95,11 @@ class ModelConfig(StrictModel):
     )
 
     d_model: int = Field(
-        ..., gt=0, description='Shared width for the embeddings, both encoders and the decoder'
+        ..., gt=0, description='Shared width for the embeddings, the prefix encoder and the decoder'
     )
 
     embeddings: EmbeddingConfig
     prefix_encoder: TraceEncoderConfig
-    suffix_encoder: TraceEncoderConfig
     prior: PriorConfig
     latent: LatentConfig
     decoder: DecoderConfig
@@ -103,7 +108,7 @@ class ModelConfig(StrictModel):
     def _heads_divide_width(self) -> ModelConfig:
         # nn.MultiheadAttention asserts this when the layer is built, halfway through a run's
         # setup. Checking it here turns a config mistake back into a config error.
-        for name in ('prefix_encoder', 'suffix_encoder', 'decoder'):
+        for name in ('prefix_encoder', 'decoder'):
             num_heads = getattr(self, name).num_heads
             if self.d_model % num_heads != 0:
                 raise ValueError(

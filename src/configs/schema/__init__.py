@@ -17,7 +17,6 @@ from .model import (
 from .training import (
     DataLoaderConfig,
     EarlyStoppingConfig,
-    LossConfig,
     OptimizerConfig,
     TrainingConfig,
 )
@@ -33,7 +32,6 @@ __all__ = [
     'ExperimentConfig',
     'InferenceConfig',
     'LatentConfig',
-    'LossConfig',
     'ModelConfig',
     'OptimizerConfig',
     'PriorConfig',

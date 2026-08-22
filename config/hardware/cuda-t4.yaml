@@ -1,21 +1,20 @@
-# Azure T4 VM: 8 vCPUs, 16GB GPU memory. 
-# Each parameter is scaled from mps.yaml's values by the same factor of 8x.
+# Azure T4 VM: 8 vCPUs, 16GB GPU memory.
+# Each parameter is scaled from mps.yaml's values by the same factor of 8x,
 # the lr is scaled by sqrt(8) because it is a per-step parameter, not a per-epoch parameter.
 training:
   device: cuda
   # A ceiling, not the expected end of a run: 120 validations, so early stopping's
   # 30-validation patience governs. See base.yaml's early_stopping section.
-  max_steps: 12000
-  val_every_n_steps: 100
-
-loss:
-  kl_annealing_period_steps: 1250
+  max_steps: 96000
+  val_every_n_steps: 800
 
 optimizer:
-  lr: 0.00085
+  lr: 0.00028
 
 dataloader:
-  batch_size: 2048
+  # A step decodes batch_size * model.latent.num_modes rows, so the row count is what GPU memory
+  # is spent on and the batch is set from it: 256 x 16 is 4096 rows.
+  batch_size: 256
   # 8 vCPUs, Linux forks cheaply unlike macOS spawn
   num_workers: 6
 

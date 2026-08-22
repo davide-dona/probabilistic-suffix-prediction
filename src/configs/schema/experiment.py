@@ -5,7 +5,6 @@ from .model import ModelConfig
 from .training import (
     DataLoaderConfig,
     EarlyStoppingConfig,
-    LossConfig,
     OptimizerConfig,
     TrainingConfig,
 )
@@ -24,7 +23,6 @@ class ExperimentConfig(StrictModel):
     declare: DeclareConfig
     dataloader: DataLoaderConfig
     model: ModelConfig
-    loss: LossConfig
     optimizer: OptimizerConfig
     training: TrainingConfig
     early_stopping: EarlyStoppingConfig

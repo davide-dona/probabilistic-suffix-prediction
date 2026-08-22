@@ -45,22 +45,17 @@ class Gaussian:
         mean, logvar = parameters.chunk(chunks=2, dim=-1)  # each [batch_size, dim]
         return cls.create(mean=mean, logvar=logvar)
 
-    def sample(self) -> torch.Tensor:
-        """Draw one sample through the reparametrization trick, so the gradient reaches
-        `mean` and `logvar`."""
-        # mean + std * noise: the randomness sits in a term with no parameters, which is what
-        # leaves a gradient path through `mean` and `logvar`.
-        std = torch.exp(input=0.5 * self.logvar)  # [batch_size, dim]
-        return self.mean + std * torch.randn_like(input=self.mean)  # [batch_size, dim]
-
     def nll(self, target: torch.Tensor) -> torch.Tensor:
-        """Negative log-likelihood of a target under this Gaussian.
+        """Negative log-likelihood of a target under this Gaussian, one value per element.
+
+        Left unreduced because the caller decides what a row is: the marginal likelihood weighs
+        each mode's negative log-likelihood before anything is summed.
+
         Args:
-            target: The observed value, `[batch_size]`.
+            target: The observed value, broadcast against `mean`.
         Returns:
-            A scalar, the sum of the negative log-likelihoods over the batch.
+            The negative log-likelihoods, the shape `mean` came in at.
         """
-        nll = 0.5 * (
+        return 0.5 * (
             self.logvar + (target - self.mean) ** 2 / self.logvar.exp() + math.log(2.0 * math.pi)
-        )  # [batch_size]
-        return nll.sum()
+        )
