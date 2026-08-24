@@ -141,9 +141,12 @@ def main() -> None:
         '--evaluations-dir',
         type=existing_directory,
         metavar='DIR',
-        help='Path to a directory to compare every evaluation report under, at any depth, e.g. '
-        '`outputs/eval` for all of them or `outputs/eval/bpic17` for one log. Each report says '
-        'which model and log it belongs to.',
+        nargs='+',
+        help='Path(s) to a directory to compare every evaluation report under, at any depth, '
+        'e.g. `outputs/eval` for all of them or `outputs/eval/bpic17` for one log. Several '
+        'directories are swept together, e.g. `outputs/eval pinned/eval` to compare '
+        'in-progress runs against pinned ones. Each report says which model and log it belongs '
+        'to.',
     )
 
     generations = parser.add_mutually_exclusive_group()
@@ -162,8 +165,10 @@ def main() -> None:
         '--generations-dir',
         type=existing_directory,
         metavar='DIR',
-        help='Path to a directory to draw every generations file under, at any depth, e.g. '
-        '`outputs/generations` for all of them or `outputs/generations/bpic17` for one log.',
+        nargs='+',
+        help='Path(s) to a directory to draw every generations file under, at any depth, e.g. '
+        '`outputs/generations` for all of them or `outputs/generations/bpic17` for one log. '
+        'Several directories are swept together, e.g. `outputs/generations pinned/generations`.',
     )
     args = parser.parse_args()
 

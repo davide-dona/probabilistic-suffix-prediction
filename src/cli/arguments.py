@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -36,23 +37,25 @@ def existing_directory(value: str) -> Path:
     return path
 
 
-def swept(directory: Path, suffix: str, kind: str, pipeline: str) -> list[Path]:
-    """Find every artifact of one kind under a directory.
+def swept(directories: Sequence[Path], suffix: str, kind: str, pipeline: str) -> list[Path]:
+    """Find every artifact of one kind under one or more directories, e.g. `outputs/eval` and
+    `pinned/eval` swept together to compare in-progress runs against pinned ones.
 
     Args:
-        directory: The directory to sweep.
+        directories: The directories to sweep.
         suffix: The extension the artifact is written with, e.g. `.json`.
         kind: What the artifact is called in the error, e.g. `evaluation reports`.
         pipeline: The pipeline that writes it, named in the error.
     Returns:
-        The artifacts under it, in path order.
+        The artifacts under them, in path order.
     Raises:
-        FileNotFoundError: If it holds none at all.
+        FileNotFoundError: If they hold none at all.
     """
-    found = sorted(directory.rglob(f'*{suffix}'))
+    found = sorted(path for directory in directories for path in directory.rglob(f'*{suffix}'))
     if not found:
+        under = ', '.join(str(directory) for directory in directories)
         raise FileNotFoundError(
-            f'no {kind} under {directory}. Run `python -m {pipeline}` first, or sweep the right '
+            f'no {kind} under {under}. Run `python -m {pipeline}` first, or sweep the right '
             'directory.'
         )
     return found
