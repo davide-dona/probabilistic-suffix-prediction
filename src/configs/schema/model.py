@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 
 from .base import NAME_PATTERN, StrictModel
+
+# How the latent reaches the decoder. `token` projects z into an extra cross-attention token
+# prepended to the prefix; `adaln` leaves the prefix alone and modulates every decoder
+# sublayer with z instead. `src/model/components/conditioning.py` holds one class per value.
+Conditioning = Literal['token', 'adaln']
 
 
 class EmbeddingConfig(StrictModel):
@@ -71,6 +78,11 @@ class DecoderConfig(StrictModel):
     )
     head_hidden_dim: int = Field(
         ..., gt=0, description='Width of the layer shared by the two output heads'
+    )
+    conditioning: Conditioning = Field(
+        ...,
+        description='How the latent reaches the decoder: `token` prepends it to the '
+        'cross-attention source, `adaln` modulates every sublayer of every layer with it',
     )
 
 

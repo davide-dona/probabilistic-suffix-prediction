@@ -7,6 +7,7 @@ from .data import DataConfig, DeclareConfig
 from .experiment import DatasetConfig, ExperimentConfig
 from .inference import InferenceConfig
 from .model import (
+    Conditioning,
     DecoderConfig,
     EmbeddingConfig,
     LatentConfig,
@@ -23,6 +24,7 @@ from .training import (
 )
 
 __all__ = [
+    'Conditioning',
     'DataConfig',
     'DataLoaderConfig',
     'DatasetConfig',

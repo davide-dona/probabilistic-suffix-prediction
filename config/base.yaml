@@ -54,6 +54,11 @@ model:
     dropout: 0.1
     activity_dropout: 0.3  # teacher-forced activities blanked in training, so the decoder must lean on z
     head_hidden_dim: 128
+    # How z reaches the decoder. `token` prepends it to the cross-attention source, so a position
+    # reads it with an attention weight the softmax is free to drive to zero; `adaln` leaves the
+    # prefix alone and scales, shifts and gates every sublayer with z instead, which no attention
+    # weight can attenuate.
+    conditioning: token
 
 # All the hyperparameters below are defined in steps, not epochs, 
 # so that they are independent of the dataset size and batch size.
