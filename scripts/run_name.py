@@ -1,0 +1,39 @@
+import argparse
+from pathlib import Path
+
+from src.cli import existing_file
+from src.identity import RunIdentity
+from src.model import load_checkpoint
+
+
+def run(checkpoint_path: Path) -> None:
+    """Print the identity of the run a checkpoint was written by, as one filename-safe name.
+
+    Args:
+        checkpoint_path: The checkpoint to read. Its run is read from inside it, so a copy of one
+            is named after the run that wrote it whatever the copy is called.
+    """
+    identity = RunIdentity.from_dict(load_checkpoint(checkpoint_path)['run'])
+    print(f'{identity.dataset}-{identity.model}-{identity.tag}')
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description='Print the identity of the run a checkpoint was written by, as '
+        '<dataset>-<model>-<tag>.'
+    )
+    parser.add_argument(
+        '-m',
+        '--checkpoint',
+        type=existing_file,
+        metavar='CHECKPOINT',
+        required=True,
+        help='Path to the checkpoint to read.',
+    )
+    args = parser.parse_args()
+
+    run(args.checkpoint)
+
+
+if __name__ == '__main__':
+    main()
