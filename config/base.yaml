@@ -12,7 +12,7 @@ declare:
 # Model architecture
 model:
   # Names every run this architecture produces, and the series it is drawn as.
-  name: cvae-filtered
+  name: cvae
 
   # The size of the embedding space
   d_model: 128

@@ -7,6 +7,7 @@ from src.configs.schema import DecoderConfig, LatentConfig
 from src.datasets.dataset import Events
 from src.distributions.gaussian import Gaussian
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
+from src.model.components.conditioning import AdaLNConditioning, LayerModulation, gate, modulate
 from src.model.components.embeddings import EventEmbeddings
 
 
@@ -99,9 +100,12 @@ class DecoderLayer(nn.Module):
             nn.Dropout(p=config.dropout),
             nn.Linear(in_features=config.feedforward_dim, out_features=d_model),
         )
-        self.self_attention_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.cross_attention_norm = nn.LayerNorm(normalized_shape=d_model)
-        self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model)
+        # AdaLN conditioning supplies its own scale and shift, so the pre-norms only standardize.
+        self.self_attention_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
+        self.cross_attention_norm = nn.LayerNorm(
+            normalized_shape=d_model, elementwise_affine=False
+        )
+        self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
         self.dropout = nn.Dropout(p=config.dropout)
 
     def forward(
@@ -111,6 +115,7 @@ class DecoderLayer(nn.Module):
         prefix_encoded: torch.Tensor,
         prefix_pad_mask: torch.Tensor,
         cache: LayerCache | None,
+        modulation: LayerModulation,
     ) -> tuple[torch.Tensor, LayerCache]:
         """Run one layer over the suffix positions in `hidden`.
 
@@ -120,10 +125,11 @@ class DecoderLayer(nn.Module):
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
             cache: What a previous call projected, or None to project everything.
+            modulation: What the latent does to this layer, from `AdaLNConditioning.layers`.
         Returns:
             The layer's output for the positions read, and the cache to hand the next call.
         """
-        hidden_norm = self.self_attention_norm(hidden)
+        hidden_norm = modulate(self.self_attention_norm(hidden), modulation.self_attention)
         step_kv = self.self_attention.project(hidden_norm)
         # With a cache, the new projection is written into the suffix positions already read.
         if cache is not None:
@@ -134,23 +140,34 @@ class DecoderLayer(nn.Module):
                 keys=step_kv.keys, values=step_kv.values, length=step_kv.keys.size(dim=2)
             )
             suffix_kv = step_kv
-        hidden = hidden + self.dropout(
-            self.self_attention(query=hidden_norm, keys_values=suffix_kv, causal=cache is None)
+        hidden = hidden + gate(
+            self.dropout(
+                self.self_attention(query=hidden_norm, keys_values=suffix_kv, causal=cache is None)
+            ),
+            modulation.self_attention,
         )
 
         # The prefix is projected once, by `init_cache`, and read back here on every call after.
         prefix_kv = (
             cache.prefix_kv if cache is not None else self.cross_attention.project(prefix_encoded)
         )
-        hidden = hidden + self.dropout(
-            self.cross_attention(
-                query=self.cross_attention_norm(hidden),
-                keys_values=prefix_kv,
-                key_padding_mask=prefix_pad_mask,
-            )
+        hidden = hidden + gate(
+            self.dropout(
+                self.cross_attention(
+                    query=modulate(self.cross_attention_norm(hidden), modulation.cross_attention),
+                    keys_values=prefix_kv,
+                    key_padding_mask=prefix_pad_mask,
+                )
+            ),
+            modulation.cross_attention,
         )
 
-        hidden = hidden + self.dropout(self.feedforward(self.feedforward_norm(hidden)))
+        hidden = hidden + gate(
+            self.dropout(
+                self.feedforward(modulate(self.feedforward_norm(hidden), modulation.feedforward))
+            ),
+            modulation.feedforward,
+        )
         return hidden, LayerCache(prefix_kv=prefix_kv, suffix_kv=suffix_cache)
 
     def init_cache(self, prefix_encoded: torch.Tensor, *, max_steps: int) -> LayerCache:
@@ -162,8 +179,7 @@ class DecoderLayer(nn.Module):
         concatenation would.
 
         Args:
-            prefix_encoded: The encoded prefix events, with the latent token already
-                prepended, `[batch_size, prefix_seq_len, d_model]`.
+            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             max_steps: The suffix cache's capacity.
         Returns:
             This layer's starting cache, an empty suffix cache beside the projected prefix.
@@ -182,10 +198,9 @@ class DecoderLayer(nn.Module):
 class Decoder(nn.Module):
     """Transformer decoder that predicts a suffix of events, given the prefix and a latent z.
 
-    Applies self-attention over the suffix positions read so far, cross-attention over
-    the encoded prefix. The latent z is projected into an extra cross-attention token
-    prepended to the prefix, so every position reads it with a content-dependent weight
-    rather than a fixed additive bias."""
+    Applies self-attention over the suffix positions read so far, cross-attention over the
+    encoded prefix. The latent z enters through `AdaLNConditioning`, which the decoder asks
+    once per pass for what each layer is modulated by."""
 
     def __init__(
         self,
@@ -210,9 +225,8 @@ class Decoder(nn.Module):
         self.pad_resource_index = pad_resource_index
         self.eot_activity_index = eot_activity_index
 
-        # Brings the latent up to the width of the cross-attention token it becomes.
-        self.latent_projection = nn.Linear(
-            in_features=latent_config.latent_dim, out_features=d_model
+        self.conditioning = AdaLNConditioning(
+            latent_dim=latent_config.latent_dim, d_model=d_model, num_layers=config.num_layers
         )
         self.layers = nn.ModuleList(
             DecoderLayer(config, d_model=d_model) for _ in range(config.num_layers)
@@ -255,45 +269,19 @@ class Decoder(nn.Module):
         decoder_input = self._teacher_forced_input(suffix_activities)
         if self.training and self.activity_dropout > 0.0:
             decoder_input = self._drop_activities(decoder_input)
-        prefix_encoded, prefix_pad_mask = self._append_latent_token(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
-        )
         hidden, _ = self._run_layers(
             activities=decoder_input,
             prefix_encoded=prefix_encoded,
             prefix_pad_mask=prefix_pad_mask,
             start_position=0,
             caches=None,
+            modulations=self.conditioning.layers(z),
         )  # [batch_size, seq_len, d_model]
         features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
         return DecoderOutput(
             activity_logits=self.activity_head(features),
             remaining_time_distr=self._remaining_time_distr(features[:, 0]),
         )
-
-    def _append_latent_token(
-        self, z: torch.Tensor, prefix_encoded: torch.Tensor, prefix_pad_mask: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Prepend the projected latent to the prefix as an extra cross-attention token.
-
-        Args:
-            z: The sampled latent, `[batch_size, latent_dim]`.
-            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
-            prefix_pad_mask: True where a prefix position holds padding.
-        Returns:
-            `prefix_encoded` and `prefix_pad_mask`, each one position longer, with the latent
-            token first.
-        """
-        latent_token = self.latent_projection(z).unsqueeze(dim=1)  # [batch_size, 1, d_model]
-        prefix_encoded = torch.cat(
-            tensors=(latent_token, prefix_encoded), dim=1
-        )  # [batch_size, 1 + prefix_seq_len, d_model]
-        # The latent token is never padding, so add a column of False to match the new width.
-        latent_column = prefix_pad_mask.new_zeros(size=(prefix_pad_mask.size(dim=0), 1))
-        prefix_pad_mask = torch.cat(
-            tensors=(latent_column, prefix_pad_mask), dim=1
-        )  # [batch_size, 1 + prefix_seq_len]
-        return prefix_encoded, prefix_pad_mask
 
     def _teacher_forced_input(self, suffix_activities: torch.Tensor) -> torch.Tensor:
         """What the decoder reads at each position: the suffix moved one step later, behind SOS.
@@ -334,6 +322,7 @@ class Decoder(nn.Module):
         prefix_pad_mask: torch.Tensor,
         start_position: int,
         caches: list[LayerCache] | None,
+        modulations: tuple[LayerModulation, ...],
     ) -> tuple[torch.Tensor, list[LayerCache]]:
         """Embed a run of decoder inputs and push it through the stack.
 
@@ -343,11 +332,11 @@ class Decoder(nn.Module):
 
         Args:
             activities: The decoder input activities to read, `[batch_size, seq_len]`.
-            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`,
-                with the latent token already prepended.
+            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
             start_position: Where in the suffix `activities` starts, for the positional encoding.
             caches: One per layer, from a previous call, or None to read from the beginning.
+            modulations: What the latent does to each layer, from `AdaLNConditioning.layers`.
         Returns:
             The stack's output for the positions read, and the caches carrying them.
         """
@@ -360,9 +349,13 @@ class Decoder(nn.Module):
         # leave a row with nothing to attend to, whose softmax is a NaN.
         layer_caches = caches if caches is not None else [None] * len(self.layers)
         new_caches: list[LayerCache] = []
-        for layer, cache in zip(self.layers, layer_caches, strict=True):
+        for layer, cache, modulation in zip(self.layers, layer_caches, modulations, strict=True):
             hidden, layer_cache = layer(
-                hidden, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask, cache=cache
+                hidden,
+                prefix_encoded=prefix_encoded,
+                prefix_pad_mask=prefix_pad_mask,
+                cache=cache,
+                modulation=modulation,
             )
             new_caches.append(layer_cache)
 
@@ -445,9 +438,9 @@ class Decoder(nn.Module):
             The generated suffixes, the length of each, and the remaining time of each.
         """
         batch_size = z.size(dim=0)
-        prefix_encoded, prefix_pad_mask = self._append_latent_token(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
-        )
+        # z does not change while a suffix is being written, so what it does to each layer is
+        # read once here rather than at every step of the loop below.
+        modulations = self.conditioning.layers(z)
 
         # What the decoder reads at each step: SOS first, exactly how `_teacher_forced_input`
         # opens, then the activity the previous step predicted.
@@ -482,6 +475,7 @@ class Decoder(nn.Module):
                 prefix_pad_mask=prefix_pad_mask,
                 start_position=position,
                 caches=caches,
+                modulations=modulations,
             )
             features = self.shared_layer(hidden[:, 0])  # [batch_size, head_hidden_dim]
             activities = self.activity_head(features).argmax(dim=-1)  # [batch_size]

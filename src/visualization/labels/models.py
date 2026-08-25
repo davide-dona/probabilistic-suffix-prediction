@@ -26,12 +26,6 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'cvae-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
-        ),
-        'cvae-small-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
-        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),
     },
