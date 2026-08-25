@@ -7,12 +7,7 @@ from src.configs.schema import DecoderConfig, LatentConfig
 from src.datasets.dataset import Events
 from src.distributions.gaussian import Gaussian
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
-from src.model.components.conditioning import (
-    LayerModulation,
-    build_conditioning,
-    gate,
-    modulate,
-)
+from src.model.components.conditioning import AdaLNConditioning, LayerModulation, gate, modulate
 from src.model.components.embeddings import EventEmbeddings
 
 
@@ -91,7 +86,7 @@ class DecoderLayer(nn.Module):
     """One layer of the decoder stack, with self-attention over the suffix and cross-attention
     over the prefix."""
 
-    def __init__(self, config: DecoderConfig, *, d_model: int, affine_norms: bool):
+    def __init__(self, config: DecoderConfig, *, d_model: int):
         super().__init__()
         self.self_attention = MultiHeadAttention(
             d_model=d_model, num_heads=config.num_heads, dropout=config.dropout
@@ -105,17 +100,12 @@ class DecoderLayer(nn.Module):
             nn.Dropout(p=config.dropout),
             nn.Linear(in_features=config.feedforward_dim, out_features=d_model),
         )
-        # A conditioning mechanism that supplies its own scale and shift takes the affine
-        # over from the norms, which then only standardize.
-        self.self_attention_norm = nn.LayerNorm(
-            normalized_shape=d_model, elementwise_affine=affine_norms
-        )
+        # AdaLN conditioning supplies its own scale and shift, so the pre-norms only standardize.
+        self.self_attention_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
         self.cross_attention_norm = nn.LayerNorm(
-            normalized_shape=d_model, elementwise_affine=affine_norms
+            normalized_shape=d_model, elementwise_affine=False
         )
-        self.feedforward_norm = nn.LayerNorm(
-            normalized_shape=d_model, elementwise_affine=affine_norms
-        )
+        self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
         self.dropout = nn.Dropout(p=config.dropout)
 
     def forward(
@@ -135,8 +125,7 @@ class DecoderLayer(nn.Module):
             prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
             cache: What a previous call projected, or None to project everything.
-            modulation: What the latent does to this layer, from `LatentConditioning.layers`.
-                Unmodulated fields leave their sublayer as it stands.
+            modulation: What the latent does to this layer, from `AdaLNConditioning.layers`.
         Returns:
             The layer's output for the positions read, and the cache to hand the next call.
         """
@@ -190,8 +179,7 @@ class DecoderLayer(nn.Module):
         concatenation would.
 
         Args:
-            prefix_encoded: The cross-attention source, from `LatentConditioning.prefix`,
-                `[batch_size, prefix_seq_len, d_model]`.
+            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             max_steps: The suffix cache's capacity.
         Returns:
             This layer's starting cache, an empty suffix cache beside the projected prefix.
@@ -210,10 +198,9 @@ class DecoderLayer(nn.Module):
 class Decoder(nn.Module):
     """Transformer decoder that predicts a suffix of events, given the prefix and a latent z.
 
-    Applies self-attention over the suffix positions read so far, cross-attention over
-    the encoded prefix. How the latent z enters is `config.conditioning`'s to say: the decoder
-    holds one `LatentConditioning`, asks it for the cross-attention source and for what each
-    layer is modulated by, and is otherwise the same stack either way."""
+    Applies self-attention over the suffix positions read so far, cross-attention over the
+    encoded prefix. The latent z enters through `AdaLNConditioning`, which the decoder asks
+    once per pass for what each layer is modulated by."""
 
     def __init__(
         self,
@@ -238,15 +225,11 @@ class Decoder(nn.Module):
         self.pad_resource_index = pad_resource_index
         self.eot_activity_index = eot_activity_index
 
-        self.conditioning = build_conditioning(
-            conditioning=config.conditioning,
-            latent_dim=latent_config.latent_dim,
-            d_model=d_model,
-            num_layers=config.num_layers,
+        self.conditioning = AdaLNConditioning(
+            latent_dim=latent_config.latent_dim, d_model=d_model, num_layers=config.num_layers
         )
         self.layers = nn.ModuleList(
-            DecoderLayer(config, d_model=d_model, affine_norms=self.conditioning.affine_norms)
-            for _ in range(config.num_layers)
+            DecoderLayer(config, d_model=d_model) for _ in range(config.num_layers)
         )
         # Pre-norm leaves the last layer's residual stream unnormalized, so the stack closes
         # with a norm of its own.
@@ -286,9 +269,6 @@ class Decoder(nn.Module):
         decoder_input = self._teacher_forced_input(suffix_activities)
         if self.training and self.activity_dropout > 0.0:
             decoder_input = self._drop_activities(decoder_input)
-        prefix_encoded, prefix_pad_mask = self.conditioning.prefix(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
-        )
         hidden, _ = self._run_layers(
             activities=decoder_input,
             prefix_encoded=prefix_encoded,
@@ -352,12 +332,11 @@ class Decoder(nn.Module):
 
         Args:
             activities: The decoder input activities to read, `[batch_size, seq_len]`.
-            prefix_encoded: The cross-attention source, from `LatentConditioning.prefix`,
-                `[batch_size, prefix_seq_len, d_model]`.
+            prefix_encoded: The encoded prefix events, `[batch_size, prefix_seq_len, d_model]`.
             prefix_pad_mask: True where a prefix position holds padding.
             start_position: Where in the suffix `activities` starts, for the positional encoding.
             caches: One per layer, from a previous call, or None to read from the beginning.
-            modulations: What the latent does to each layer, from `LatentConditioning.layers`.
+            modulations: What the latent does to each layer, from `AdaLNConditioning.layers`.
         Returns:
             The stack's output for the positions read, and the caches carrying them.
         """
@@ -459,9 +438,6 @@ class Decoder(nn.Module):
             The generated suffixes, the length of each, and the remaining time of each.
         """
         batch_size = z.size(dim=0)
-        prefix_encoded, prefix_pad_mask = self.conditioning.prefix(
-            z=z, prefix_encoded=prefix_encoded, prefix_pad_mask=prefix_pad_mask
-        )
         # z does not change while a suffix is being written, so what it does to each layer is
         # read once here rather than at every step of the loop below.
         modulations = self.conditioning.layers(z)

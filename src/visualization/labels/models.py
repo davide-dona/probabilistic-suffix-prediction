@@ -26,19 +26,6 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'cvae-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
-        ),
-        'cvae-small-filtered': ModelStyle(
-            label='CVAE (filtered)', color='#C2185B', marker='o', linestyle='-.'
-        ),
-        # The AdaLN conditioning arm: one mechanism on two model widths, so these share a style
-        # the way `cvae` and `cvae-small` do, and a log given either fills its AdaLN column. The
-        # arm it is read against is the plain CVAE above, which is the token mechanism.
-        'cvae-adaln': ModelStyle(label='CVAE (AdaLN)', color='#1F77B4', marker='^', linestyle='--'),
-        'cvae-small-adaln': ModelStyle(
-            label='CVAE (AdaLN)', color='#1F77B4', marker='^', linestyle='--'
-        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),
     },
