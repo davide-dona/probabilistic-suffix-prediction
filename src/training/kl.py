@@ -1,11 +1,10 @@
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Self
 
 import torch
 
 from src.distributions.gaussian import Gaussian
-
-if TYPE_CHECKING:
-    from torch.utils.tensorboard import SummaryWriter
+from src.scalar_metrics import ScalarMetrics
 
 
 def gaussian_kl(posterior: Gaussian, prior: Gaussian) -> torch.Tensor:
@@ -74,57 +73,35 @@ def free_bits_kl(kl_per_dim: torch.Tensor, *, free_bits: float) -> torch.Tensor:
     return kl_per_dim.mean(dim=0).clamp(min=free_bits).sum() * batch_size
 
 
-# Margin over `free_bits` a dimension has to clear to be counted as used. A dimension parked on
-# the floor pays no gradient and drifts around it between passes, so counting it from the floor
-# exactly would make the count flicker on noise rather than on the latent changing.
+# Margin over `free_bits` a dimension has to clear to count as used: one parked on the floor pays
+# no gradient and drifts around it, so counting from the floor exactly would flicker on noise.
 ACTIVE_MARGIN_NATS = 0.05
 
 
-def active_latent_dims(kl_per_dim: torch.Tensor, *, free_bits: float) -> int:
-    """How many latent dimensions carry meaningfully more KL than the free-bits floor.
+@dataclass(frozen=True, slots=True)
+class LatentMetrics(ScalarMetrics):
+    """What z carried over one pass: the KL it holds, and how many dimensions hold it.
 
-    A total KL cannot tell a fully collapsed latent from a handful of dead dimensions among used
-    ones, which is exactly what `free_bits` hides: a dimension below the floor is left unpenalized,
-    so a run can pay `latent_dim * free_bits` nats and still carry no information at all. This
-    counts the dimensions the floor is not what is holding up.
-
-    Args:
-        kl_per_dim: `[latent_dim]`, the nats each dimension contributed, averaged over the traces
-            of the pass, which is the scale `free_bits_kl` floors on.
-        free_bits: Nats per dimension the KL is not penalized below, the same value the pass was
-            scored with.
-    Returns:
-        The number of dimensions above `free_bits` by at least `ACTIVE_MARGIN_NATS`.
+    Neither is a term of the loss. A total KL cannot tell a collapsed latent from a few dead
+    dimensions among used ones, which is what `free_bits` hides: a dimension below the floor is
+    left unpenalized, so a run can pay `latent_dim * free_bits` nats and carry no information.
+    Logged rather than reported, so like `Loss` it declares no units.
     """
-    return int((kl_per_dim > free_bits + ACTIVE_MARGIN_NATS).sum().item())
 
+    kl_nats: float = 0.0
+    active_dims: float = 0.0
 
-def log_kl_diagnostics(
-    kl_per_dim: torch.Tensor,
-    writer: 'SummaryWriter',
-    step: int,
-    *,
-    free_bits: float,
-    prefix: str,
-) -> None:
-    """Write what each latent dimension carried, and how many of them are used, to TensorBoard.
+    @classmethod
+    def of(cls, kl_per_dim: torch.Tensor, *, free_bits: float) -> Self:
+        """Read one batch's KL, counting dimensions on the scale `free_bits_kl` floors.
 
-    The count is the headline, the per-dimension curves what it is read against: once the count
-    says three dimensions are alive, only the curves say whether it is the same three across a
-    cycle of the annealing schedule.
-
-    Args:
-        kl_per_dim: `[latent_dim]`, the nats each dimension contributed, averaged over the traces
-            of the pass.
-        writer: The TensorBoard writer to log to.
-        step: The step these belong to.
-        free_bits: Nats per dimension the KL is not penalized below, the same value the pass was
-            scored with.
-        prefix: Namespace to log under, e.g. `val`, so these sit beside the total KL of the same
-            pass.
-    """
-    writer.add_scalar(
-        f'{prefix}/active_latent_dims', active_latent_dims(kl_per_dim, free_bits=free_bits), step
-    )
-    for index, nats in enumerate(kl_per_dim.tolist()):
-        writer.add_scalar(f'{prefix}/kl_per_dim/{index:02d}', nats, step)
+        Args:
+            kl_per_dim: `[batch_size, latent_dim]`, the per-dimension KL from `gaussian_kl`.
+            free_bits: Nats per dimension the KL is not penalized below.
+        Returns:
+            The metrics, scaled by the batch like the loss terms they are logged beside, so the
+            caller's division by the batch recovers both.
+        """
+        batch_size = kl_per_dim.size(0)
+        active = (kl_per_dim.mean(dim=0) > free_bits + ACTIVE_MARGIN_NATS).sum().item()
+        return cls(kl_nats=kl_per_dim.sum().item(), active_dims=active * batch_size)

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from src.datasets.dataset import SplitTrace
 from src.model import TransformerCVAEOutput
 from src.scalar_metrics import ScalarMetrics
-from src.training.kl import free_bits_kl, gaussian_kl
+from src.training.kl import LatentMetrics, free_bits_kl, gaussian_kl
 
 
 @dataclass(frozen=True)
@@ -15,8 +15,9 @@ class Loss(ScalarMetrics):
 
     loss: float = 0.0
     reconstruction_loss: float = 0.0
-    kl_loss: float = 0.0
-    penalized_kl_loss: float = 0.0
+    # The KL after each dimension is floored at `free_bits`, which is what `loss` charges for.
+    # The weight it is charged at is `kl_weight`, logged on its own.
+    floored_kl_loss: float = 0.0
     activity_loss: float = 0.0
     remaining_time_loss: float = 0.0
 
@@ -28,7 +29,7 @@ def compute_loss(
     pad_activity_index: int,
     kl_weight: float,
     free_bits: float,
-) -> tuple[torch.Tensor, Loss]:
+) -> tuple[torch.Tensor, Loss, LatentMetrics]:
     """Score a forward pass's predictions against the batch it was run on.
     Args:
         output: The model's prediction for `batch`, from `model(batch)`.
@@ -37,7 +38,8 @@ def compute_loss(
         kl_weight: The weight the KL term is given at this step (see `training/kl.py`).
         free_bits: Nats per latent dimension the KL is not penalized below (see `free_bits_kl`).
     Returns:
-        The per-trace loss to backpropagate, and the metrics to log, summed over the batch.
+        The per-trace loss to backpropagate, the terms it is made of, and what the latent
+        carried, the last two summed over the batch.
     """
     batch_size = batch.suffix.activities.size(0)
 
@@ -55,16 +57,15 @@ def compute_loss(
     kl_per_dim = gaussian_kl(
         posterior=output.posterior, prior=output.prior
     )  # [batch_size, latent_dim]
-    kl_loss = kl_per_dim.sum()
-    penalized_kl_loss = free_bits_kl(kl_per_dim, free_bits=free_bits)
-    total_loss = reconstruction_loss + kl_weight * penalized_kl_loss
+    floored_kl_loss = free_bits_kl(kl_per_dim, free_bits=free_bits)
+    total_loss = reconstruction_loss + kl_weight * floored_kl_loss
 
     metrics = Loss(
         loss=total_loss.item(),
         reconstruction_loss=reconstruction_loss.item(),
-        kl_loss=kl_loss.item(),
-        penalized_kl_loss=penalized_kl_loss.item(),
+        floored_kl_loss=floored_kl_loss.item(),
         activity_loss=activity_loss.item(),
         remaining_time_loss=remaining_time_loss.item(),
     )
-    return total_loss / batch_size, metrics
+    latent = LatentMetrics.of(kl_per_dim, free_bits=free_bits)
+    return total_loss / batch_size, metrics, latent

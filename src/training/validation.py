@@ -5,7 +5,7 @@ from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import AccuracyScores
 from src.inference.generate import generate_batch
 from src.model import TransformerCVAE
-from src.training.kl import gaussian_kl
+from src.training.kl import LatentMetrics
 from src.training.loss import Loss, compute_loss
 
 
@@ -17,7 +17,7 @@ def validate(
     kl_weight: float,
     free_bits: float,
     device: torch.device,
-) -> tuple[Loss, torch.Tensor]:
+) -> tuple[Loss, LatentMetrics]:
     """
     Run one pass over `loader` without learning from it.
     Args:
@@ -27,19 +27,17 @@ def validate(
         free_bits: Nats per latent dimension the KL is not penalized below.
         device: The device to run the computations on.
     Returns:
-        The metrics of the pass and the KL each latent dimension carried, `[latent_dim]`, both
-        averaged over the traces of the split. The vector sums to the metrics' own `kl_loss`, so
-        the two are read on one scale, and it is averaged over the split rather than per batch
-        because that is the scale `free_bits` floors on.
+        The loss terms of the pass and what the latent carried, both averaged over the traces
+        of the split.
     """
     model.eval()
 
     totals = Loss()
-    kl_totals: list[torch.Tensor] = []
+    latent_totals = LatentMetrics()
     for batch in loader:
         batch = batch.to(device)
         output = model(batch)
-        _, metrics = compute_loss(
+        _, metrics, latent = compute_loss(
             output,
             batch,
             pad_activity_index=model.pad_activity_index,
@@ -47,12 +45,10 @@ def validate(
             free_bits=free_bits,
         )
         totals += metrics
-        kl_totals.append(
-            gaussian_kl(posterior=output.posterior, prior=output.prior).sum(dim=0)
-        )  # [latent_dim]
+        latent_totals += latent
 
     traces = len(loader.dataset)
-    return totals / traces, torch.stack(tensors=kl_totals).sum(dim=0) / traces  # [latent_dim]
+    return totals / traces, latent_totals / traces
 
 
 @torch.no_grad()
