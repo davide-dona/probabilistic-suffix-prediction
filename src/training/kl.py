@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING
+
 import torch
 
 from src.distributions.gaussian import Gaussian
+
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
 
 
 def gaussian_kl(posterior: Gaussian, prior: Gaussian) -> torch.Tensor:
@@ -67,3 +72,59 @@ def free_bits_kl(kl_per_dim: torch.Tensor, *, free_bits: float) -> torch.Tensor:
     """
     batch_size = kl_per_dim.size(0)
     return kl_per_dim.mean(dim=0).clamp(min=free_bits).sum() * batch_size
+
+
+# Margin over `free_bits` a dimension has to clear to be counted as used. A dimension parked on
+# the floor pays no gradient and drifts around it between passes, so counting it from the floor
+# exactly would make the count flicker on noise rather than on the latent changing.
+ACTIVE_MARGIN_NATS = 0.05
+
+
+def active_latent_dims(kl_per_dim: torch.Tensor, *, free_bits: float) -> int:
+    """How many latent dimensions carry meaningfully more KL than the free-bits floor.
+
+    A total KL cannot tell a fully collapsed latent from a handful of dead dimensions among used
+    ones, which is exactly what `free_bits` hides: a dimension below the floor is left unpenalized,
+    so a run can pay `latent_dim * free_bits` nats and still carry no information at all. This
+    counts the dimensions the floor is not what is holding up.
+
+    Args:
+        kl_per_dim: `[latent_dim]`, the nats each dimension contributed, averaged over the traces
+            of the pass, which is the scale `free_bits_kl` floors on.
+        free_bits: Nats per dimension the KL is not penalized below, the same value the pass was
+            scored with.
+    Returns:
+        The number of dimensions above `free_bits` by at least `ACTIVE_MARGIN_NATS`.
+    """
+    return int((kl_per_dim > free_bits + ACTIVE_MARGIN_NATS).sum().item())
+
+
+def log_kl_diagnostics(
+    kl_per_dim: torch.Tensor,
+    writer: 'SummaryWriter',
+    step: int,
+    *,
+    free_bits: float,
+    prefix: str,
+) -> None:
+    """Write what each latent dimension carried, and how many of them are used, to TensorBoard.
+
+    The count is the headline, the per-dimension curves what it is read against: once the count
+    says three dimensions are alive, only the curves say whether it is the same three across a
+    cycle of the annealing schedule.
+
+    Args:
+        kl_per_dim: `[latent_dim]`, the nats each dimension contributed, averaged over the traces
+            of the pass.
+        writer: The TensorBoard writer to log to.
+        step: The step these belong to.
+        free_bits: Nats per dimension the KL is not penalized below, the same value the pass was
+            scored with.
+        prefix: Namespace to log under, e.g. `val`, so these sit beside the total KL of the same
+            pass.
+    """
+    writer.add_scalar(
+        f'{prefix}/active_latent_dims', active_latent_dims(kl_per_dim, free_bits=free_bits), step
+    )
+    for index, nats in enumerate(kl_per_dim.tolist()):
+        writer.add_scalar(f'{prefix}/kl_per_dim/{index:02d}', nats, step)

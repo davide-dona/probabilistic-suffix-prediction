@@ -14,7 +14,7 @@ from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.model import TransformerCVAE, save_checkpoint
 from src.training.early_stopping import EarlyStopper
-from src.training.kl import cyclical_linear_weight
+from src.training.kl import cyclical_linear_weight, log_kl_diagnostics
 from src.training.loss import Loss, compute_loss
 from src.training.validation import validate, validate_generation
 
@@ -192,7 +192,7 @@ def train(
 
                     # Score the model on the validation set and the generation set, and log
                     # the results.
-                    val_metrics = validate(
+                    val_metrics, val_kl_per_dim = validate(
                         model,
                         val_loader,
                         kl_weight=kl_weight,
@@ -200,6 +200,13 @@ def train(
                         device=device,
                     )
                     val_metrics.log(writer, step, prefix='val')
+                    log_kl_diagnostics(
+                        val_kl_per_dim,
+                        writer,
+                        step,
+                        free_bits=loss_config.free_bits,
+                        prefix='val',
+                    )
 
                     gen_metrics = validate_generation(
                         model,
