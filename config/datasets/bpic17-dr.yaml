@@ -37,8 +37,7 @@ data:
     - Selected
     - CreditScore
     - OfferedAmount
-    # Minutes since the previous event and since the case began, derived from the timestamp
-    - ts_prev
+    # Minutes since the case began, derived from the timestamp
     - ts_start
     # Calendar position of the event, cyclically encoded
     - day_sin
@@ -53,6 +52,6 @@ data:
     - FirstWithdrawalAmount
     - MonthlyCost
     - OfferedAmount
-    - ts_prev
     - ts_start
   log_scaled_remaining_time: true
+  log_scaled_activity_duration: true

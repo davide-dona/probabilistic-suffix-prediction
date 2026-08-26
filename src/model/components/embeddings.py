@@ -10,8 +10,8 @@ from src.datasets.dataset import Events
 
 class EventEmbeddings(nn.Module):
     """Turns a sequence of events into the vectors the transformer stacks read.
-    An event is its activity encoding, its resource encoding and whatever channels
-    `data.event_features` offers, concatenated and projected to `d_model`.
+    An event is its activity encoding, its resource encoding, its activity duration and
+    whatever channels `data.event_features` offers, concatenated and projected to `d_model`.
 
     A sinusoidal encoding of its position is added to the projected vector, so the stacks
     can read the order of events out of the vectors.
@@ -41,11 +41,14 @@ class EventEmbeddings(nn.Module):
             if self.num_categorical > 0
             else None
         )
-        # Two scalars per numeric attribute: value + presence flag.
+        # Two scalars per numeric attribute: value + presence flag. Activity duration is one
+        # scalar on its own: `add_event_delta` fills every case's first event with 0.0, so it is
+        # never missing and needs no presence flag.
         self.projection = nn.Linear(
             in_features=(
                 config.activity_dim
                 + config.resource_dim
+                + 1
                 + self.num_categorical * config.feature_dim
                 + 2 * self.num_numeric
             ),
@@ -73,6 +76,7 @@ class EventEmbeddings(nn.Module):
         channels = [
             self.activity_embedding(events.activities),  # [batch_size, seq_len, activity_dim]
             self.resource_embedding(events.resources),  # [batch_size, seq_len, resource_dim]
+            events.activity_durations.unsqueeze(dim=-1),  # [batch_size, seq_len, 1]
         ]
         if self.feature_embedding is not None:
             channels.append(

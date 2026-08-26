@@ -7,6 +7,10 @@ class DecodedEvents:
     to the model's output must be added here"""
 
     activities: list[str]
+    # Each activity's duration, in the same order, so a run's timestamps are these
+    # accumulated from the last prefix event on.
+    activity_duration_minutes: list[float]
+    # Minutes until the case ends. Predicted on its own rather than summed from the times above.
     remaining_time_minutes: float
 
     def __len__(self) -> int:

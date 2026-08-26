@@ -14,6 +14,7 @@ from src.configs.schema import DataConfig, StrictModel
 from src.logs.keys import (
     ACTIVITY_KEY,
     EOT_TOKEN,
+    EVENT_DELTA_KEY,
     PAD_TOKEN,
     REMAINING_TIME_KEY,
     RESOURCE_KEY,
@@ -249,10 +250,10 @@ class DatasetCodec(StrictModel):
 
     activity: CategoricalColumn
     resource: CategoricalColumn
-    # The decoder's target rather than a channel the encoders read. Whether it takes a log1p
-    # before the standardization is `data.log_scaled_remaining_time`: off in every config here,
-    # which is what both baselines do, and available for a run that wants the tail of a duration
-    # compressed instead.
+    # `activity_duration` is fit once, like `activity`/`resource` above, and read by both the
+    # encoders (elapsed since the previous event) and the decoder (its duration target).
+    # `remaining_time` is decoder-only: the minutes from the last prefix event to the case's end.
+    activity_duration: NumericColumn
     remaining_time: NumericColumn
 
     # The columns `data.event_features` names, sorted by dtype into the two kinds.
@@ -281,8 +282,8 @@ class DatasetCodec(StrictModel):
         """Fit the codec on the train split.
         Args:
             train: The train split, as `pipelines/preprocess.py` holds it before writing.
-            data_config: The `data` section, for the feature columns and which of them are
-                log-scaled.
+            data_config: The `data` section, for the feature columns, which of them are
+                log-scaled, and how the two time targets are scaled.
             max_trace_length: The sequence length splits were preprocessed to, from
                 `pipelines.preprocess.case_length_cutoff`.
         Returns:
@@ -299,6 +300,9 @@ class DatasetCodec(StrictModel):
             ),
             resource=CategoricalColumn.fit(
                 train, column=RESOURCE_KEY, special_tokens=RESOURCE_TOKENS
+            ),
+            activity_duration=NumericColumn.fit(
+                train, column=EVENT_DELTA_KEY, log=data_config.log_scaled_activity_duration
             ),
             remaining_time=NumericColumn.fit(
                 train, column=REMAINING_TIME_KEY, log=data_config.log_scaled_remaining_time
