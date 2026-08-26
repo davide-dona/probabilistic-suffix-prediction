@@ -39,8 +39,7 @@ data:
     - case:Goods Receipt
     # Event-level: vary per row in a case
     - Cumulative net worth (EUR)
-    # Minutes since the previous event and since the case began, derived from the timestamp
-    - ts_prev
+    # Minutes since the case began, derived from the timestamp
     - ts_start
     # Calendar position of the event, cyclically encoded
     - day_sin
@@ -52,6 +51,6 @@ data:
   # values, log1p'd before standardization so the bulk of the distribution is not squashed.
   log_scaled_features:
     - Cumulative net worth (EUR)
-    - ts_prev
     - ts_start
   log_scaled_remaining_time: true
+  log_scaled_time_to_next: true

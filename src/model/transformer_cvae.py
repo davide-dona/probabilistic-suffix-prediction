@@ -34,7 +34,8 @@ class TransformerCVAE(nn.Module):
         prefix summary      -> p(z | prefix)               (scored by the KL term only)
         + suffix summary    -> q(z | prefix, suffix)
         z ~ q(z | prefix, suffix)
-        z, prefix events, suffix -> activity predictions, and the case's remaining time
+        z, prefix events, suffix -> an activity, the wait until it and a remaining time,
+                                   at every suffix position
     """
 
     def __init__(self, config: ModelConfig, codec: DatasetCodec):
@@ -176,5 +177,6 @@ class TransformerCVAE(nn.Module):
         return GeneratedSuffix(
             activities=generated.activities.view(batch_size, num_samples, -1),
             lengths=generated.lengths.view(batch_size, num_samples),
+            times_to_next=generated.times_to_next.view(batch_size, num_samples, -1),
             remaining_time=generated.remaining_time.view(batch_size, num_samples),
         )
