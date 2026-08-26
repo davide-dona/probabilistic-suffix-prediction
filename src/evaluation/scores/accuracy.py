@@ -1,5 +1,6 @@
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
+from itertools import chain, islice, repeat
 from typing import Self
 
 import numpy as np
@@ -43,6 +44,11 @@ class AccuracyScores(ScalarMetrics):
     # Absolute error (AE) between the predicted and true remaining cycle time, in days.
     remaining_time_ae_mean_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
     remaining_time_ae_point_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
+
+    # Absolute error (AE) between the predicted and true duration of each generated event,
+    # averaged over the positions the true suffix covers, in days.
+    activity_duration_ae_mean_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
+    activity_duration_ae_point_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
 
     # Absolute error (AE) between the predicted and true suffix length, in events.
     length_ae_mean: float = metric(unit=Unit.EVENTS, higher_is_better=False)
@@ -95,6 +101,21 @@ class AccuracyScores(ScalarMetrics):
                 point.remaining_time_minutes - truth.remaining_time_minutes
             )
             / MINUTES_PER_DAY,
+            activity_duration_ae_mean_days=mean(
+                [
+                    duration_ae_minutes(
+                        predicted=sample.activity_duration_minutes,
+                        true=truth.activity_duration_minutes,
+                    )
+                    for sample in samples
+                ]
+            )
+            / MINUTES_PER_DAY,
+            activity_duration_ae_point_days=duration_ae_minutes(
+                predicted=point.activity_duration_minutes,
+                true=truth.activity_duration_minutes,
+            )
+            / MINUTES_PER_DAY,
             length_ae_mean=mean([float(abs(len(sample) - len(truth))) for sample in samples]),
             length_ae_point=float(abs(len(point) - len(truth))),
             suffix_length=float(len(truth)),
@@ -120,6 +141,24 @@ def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
     # The matrix is symmetric with a diagonal of 0.0, so one triangle holds each pair once.
     rows, columns = np.triu_indices(n=len(samples), k=1)
     return mean(pairs[rows, columns].tolist())
+
+
+def duration_ae_minutes(predicted: Sequence[float], true: Sequence[float]) -> float:
+    """Mean absolute error between a run's event durations and the true ones, in minutes.
+
+    The true suffix sets the range the error is read over: a run that ended early counts as 0
+    minutes at every position it did not write, and anything it wrote past the true end is dropped.
+
+    Args:
+        predicted: The generated duration of each event of one run, in minutes.
+        true: The duration of each event of the true suffix, in minutes.
+    Returns:
+        The mean absolute error over the `len(true)` positions, or 0.0 for an empty true suffix.
+    """
+    if not true:
+        return 0.0
+    padded = islice(chain(predicted, repeat(0.0)), len(true))
+    return mean([abs(prediction - actual) for prediction, actual in zip(padded, true, strict=True)])
 
 
 def energy_score(dls_mean: float, sample_diversity: float) -> float:
