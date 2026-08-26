@@ -166,7 +166,7 @@ def train(
                 output = model(batch)
 
                 # Compute the loss and propagate gradients
-                loss, metrics = compute_loss(
+                loss, metrics, latent = compute_loss(
                     output,
                     batch,
                     pad_activity_index=model.pad_activity_index,
@@ -185,6 +185,7 @@ def train(
                 seen += batch_size
                 step += 1
                 (metrics / batch_size).log(writer, step, prefix='train')
+                (latent / batch_size).log(writer, step, prefix='train')
 
                 if step % training.val_every_n_steps == 0 or step >= training.max_steps:
                     train_metrics = interval_totals / seen
@@ -192,7 +193,7 @@ def train(
 
                     # Score the model on the validation set and the generation set, and log
                     # the results.
-                    val_metrics = validate(
+                    val_metrics, val_latent = validate(
                         model,
                         val_loader,
                         kl_weight=kl_weight,
@@ -200,6 +201,7 @@ def train(
                         device=device,
                     )
                     val_metrics.log(writer, step, prefix='val')
+                    val_latent.log(writer, step, prefix='val')
 
                     gen_metrics = validate_generation(
                         model,

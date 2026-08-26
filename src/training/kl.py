@@ -1,6 +1,10 @@
+from dataclasses import dataclass
+from typing import Self
+
 import torch
 
 from src.distributions.gaussian import Gaussian
+from src.scalar_metrics import ScalarMetrics
 
 
 def gaussian_kl(posterior: Gaussian, prior: Gaussian) -> torch.Tensor:
@@ -67,3 +71,37 @@ def free_bits_kl(kl_per_dim: torch.Tensor, *, free_bits: float) -> torch.Tensor:
     """
     batch_size = kl_per_dim.size(0)
     return kl_per_dim.mean(dim=0).clamp(min=free_bits).sum() * batch_size
+
+
+# Margin over `free_bits` a dimension has to clear to count as used: one parked on the floor pays
+# no gradient and drifts around it, so counting from the floor exactly would flicker on noise.
+ACTIVE_MARGIN_NATS = 0.05
+
+
+@dataclass(frozen=True, slots=True)
+class LatentMetrics(ScalarMetrics):
+    """What z carried over one pass: the KL it holds, and how many dimensions hold it.
+
+    Neither is a term of the loss. A total KL cannot tell a collapsed latent from a few dead
+    dimensions among used ones, which is what `free_bits` hides: a dimension below the floor is
+    left unpenalized, so a run can pay `latent_dim * free_bits` nats and carry no information.
+    Logged rather than reported, so like `Loss` it declares no units.
+    """
+
+    kl_nats: float = 0.0
+    active_dims: float = 0.0
+
+    @classmethod
+    def of(cls, kl_per_dim: torch.Tensor, *, free_bits: float) -> Self:
+        """Read one batch's KL, counting dimensions on the scale `free_bits_kl` floors.
+
+        Args:
+            kl_per_dim: `[batch_size, latent_dim]`, the per-dimension KL from `gaussian_kl`.
+            free_bits: Nats per dimension the KL is not penalized below.
+        Returns:
+            The metrics, scaled by the batch like the loss terms they are logged beside, so the
+            caller's division by the batch recovers both.
+        """
+        batch_size = kl_per_dim.size(0)
+        active = (kl_per_dim.mean(dim=0) > free_bits + ACTIVE_MARGIN_NATS).sum().item()
+        return cls(kl_nats=kl_per_dim.sum().item(), active_dims=active * batch_size)
