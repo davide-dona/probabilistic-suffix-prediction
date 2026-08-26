@@ -53,4 +53,4 @@ data:
     - Cumulative net worth (EUR)
     - ts_start
   log_scaled_remaining_time: true
-  log_scaled_activity_duration: true
+  log_scaled_time_to_next: true

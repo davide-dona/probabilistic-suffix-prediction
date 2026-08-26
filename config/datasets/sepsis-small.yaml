@@ -61,7 +61,7 @@ data:
   log_scaled_features:
     - ts_start
   log_scaled_remaining_time: true
-  log_scaled_activity_duration: true
+  log_scaled_time_to_next: true
 
 # Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
 model:

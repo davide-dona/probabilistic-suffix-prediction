@@ -29,7 +29,7 @@ TABLES = (
             MetricEntry(METRICS['conformance_point'], 'Conformance'),
             MetricEntry(METRICS['length_ae_point'], 'Length MAE'),
             MetricEntry(METRICS['remaining_time_ae_point_days'], 'Remaining time MAE'),
-            MetricEntry(METRICS['activity_duration_ae_point_days'], 'Event time MAE'),
+            MetricEntry(METRICS['time_to_next_ae_point_days'], 'Event time MAE'),
         ),
     ),
     # Probabilistic generation results
@@ -41,7 +41,7 @@ TABLES = (
             MetricEntry(METRICS['conformance_mean'], 'Conformance'),
             MetricEntry(METRICS['length_ae_mean'], 'Length MAE'),
             MetricEntry(METRICS['remaining_time_ae_mean_days'], 'Remaining time MAE'),
-            MetricEntry(METRICS['activity_duration_ae_mean_days'], 'Event time MAE'),
+            MetricEntry(METRICS['time_to_next_ae_mean_days'], 'Event time MAE'),
         ),
     ),
     # Comparison of distributions

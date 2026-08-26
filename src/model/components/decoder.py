@@ -56,16 +56,16 @@ class LayerCache:
 
 @dataclass(frozen=True)
 class DecoderOutput:
-    """What the decoder predicts at every suffix position: the activity to write there, its
-    duration, and the minutes until the case ends.
+    """What the decoder predicts at every suffix position: the activity to write there, the
+    minutes until it, and the minutes until the case ends.
 
     Both times are points on the standardized scale their targets are encoded at, so each is
-    scored by a squared error. They overlap - a remaining time is the sum of the durations from
+    scored by a squared error. They overlap - a remaining time is the sum of the waits from
     that position on - and are read as two independent estimates rather than tied together.
     """
 
     activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    activity_durations: torch.Tensor  # [batch_size, seq_len], standardized
+    times_to_next: torch.Tensor  # [batch_size, seq_len], standardized
     remaining_times: torch.Tensor  # [batch_size, seq_len], standardized
 
 
@@ -80,7 +80,7 @@ class GeneratedSuffix:
 
     activities: torch.Tensor  # [..., steps]
     lengths: torch.Tensor  # [...], events emitted before EOT, or `steps` if EOT never came
-    activity_durations: torch.Tensor  # [..., steps], standardized like the targets
+    times_to_next: torch.Tensor  # [..., steps], standardized like the targets
     # Read at position 0 alone, so it measures from the last prefix event, which is how the
     # reported remaining time is defined.
     remaining_time: torch.Tensor  # [...], standardized like the targets
@@ -248,7 +248,7 @@ class Decoder(nn.Module):
         )
         # Both times are point predictions, so each head is width 1, and neither output is
         # squashed: the targets are standardized rather than bounded.
-        self.activity_duration_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
+        self.time_to_next_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
         self.remaining_time_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
 
     def forward(
@@ -284,7 +284,7 @@ class Decoder(nn.Module):
         features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
         return DecoderOutput(
             activity_logits=self.activity_head(features),
-            activity_durations=self.activity_duration_head(features).squeeze(dim=-1),
+            times_to_next=self.time_to_next_head(features).squeeze(dim=-1),
             remaining_times=self.remaining_time_head(features).squeeze(dim=-1),
         )
 
@@ -390,7 +390,7 @@ class Decoder(nn.Module):
                 dtype=torch.long,
                 device=device,
             ),
-            activity_durations=torch.zeros(size=(batch_size, seq_len), device=device),
+            times_to_next=torch.zeros(size=(batch_size, seq_len), device=device),
             categorical_attributes=torch.zeros(
                 size=(batch_size, seq_len, self.embeddings.num_categorical),
                 dtype=torch.long,
@@ -449,7 +449,7 @@ class Decoder(nn.Module):
         generated_activities = torch.zeros(
             size=(batch_size, max_steps), dtype=torch.long, device=z.device
         )
-        generated_activity_durations = torch.zeros(
+        generated_times_to_next = torch.zeros(
             size=(batch_size, max_steps), dtype=z.dtype, device=z.device
         )
         # A row that never emits EOT ran to the cap, so that is the length it keeps.
@@ -482,9 +482,7 @@ class Decoder(nn.Module):
                 remaining_time = self.remaining_time_head(features).squeeze(dim=-1)  # [batch_size]
 
             generated_activities[:, position] = activities
-            generated_activity_durations[:, position] = self.activity_duration_head(
-                features
-            ).squeeze(dim=-1)
+            generated_times_to_next[:, position] = self.time_to_next_head(features).squeeze(dim=-1)
             next_input = activities.unsqueeze(dim=1)  # [batch_size, 1]
 
             # A suffix ends at its first EOT, so a later one cannot move the length back.
@@ -500,6 +498,6 @@ class Decoder(nn.Module):
         return GeneratedSuffix(
             activities=generated_activities[:, :steps_taken],  # [batch_size, steps]
             lengths=lengths,
-            activity_durations=generated_activity_durations[:, :steps_taken],  # [batch_size, steps]
+            times_to_next=generated_times_to_next[:, :steps_taken],  # [batch_size, steps]
             remaining_time=remaining_time,
         )

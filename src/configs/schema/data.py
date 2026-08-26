@@ -72,9 +72,9 @@ class DataConfig(StrictModel):
         'through `log_scaled_features` instead',
     )
 
-    log_scaled_activity_duration: bool = Field(
+    log_scaled_time_to_next: bool = Field(
         ...,
-        description='Whether the activity-duration target takes a log1p before being '
+        description='Whether the time-to-next-event target takes a log1p before being '
         'standardized. It is the more skewed of the two, a few long waits behind a mass of '
         'same-day events',
     )
@@ -99,11 +99,11 @@ class DataConfig(StrictModel):
 
     @model_validator(mode='after')
     def _event_delta_is_not_an_event_feature(self) -> DataConfig:
-        # ts_prev would otherwise be fit twice: once here, once as activity_duration.
+        # ts_prev would otherwise be fit twice: once here, once as time_to_next.
         if EVENT_DELTA_KEY in self.event_features:
             raise ValueError(
                 f'event_features names "{EVENT_DELTA_KEY}", which is read through '
-                f'DatasetCodec.activity_duration instead and must not also be listed here'
+                f'DatasetCodec.time_to_next instead and must not also be listed here'
             )
         return self
 

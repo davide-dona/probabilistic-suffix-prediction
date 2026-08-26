@@ -19,7 +19,7 @@ class Loss(ScalarMetrics):
     # The weight it is charged at is `kl_weight`, logged on its own.
     floored_kl_loss: float = 0.0
     activity_loss: float = 0.0
-    activity_duration_loss: float = 0.0
+    time_to_next_loss: float = 0.0
     remaining_time_loss: float = 0.0
 
 
@@ -56,14 +56,14 @@ def compute_loss(
     # Both time targets are defined at the suffix's content alone: the EOT has no time of its
     # own, and `suffix.length` counts it.
     timed = _timed_positions(batch)  # [batch_size, seq_len]
-    activity_duration_loss = _squared_error(
-        prediction=output.decoder.activity_durations, target=batch.activity_durations, mask=timed
+    time_to_next_loss = _squared_error(
+        prediction=output.decoder.times_to_next, target=batch.times_to_next, mask=timed
     )
     remaining_time_loss = _squared_error(
         prediction=output.decoder.remaining_times, target=batch.remaining_times, mask=timed
     )
 
-    reconstruction_loss = activity_loss + activity_duration_loss + remaining_time_loss
+    reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 
     # Compute KL divergence, summed over the batch
     kl_per_dim = gaussian_kl(
@@ -77,7 +77,7 @@ def compute_loss(
         reconstruction_loss=reconstruction_loss.item(),
         floored_kl_loss=floored_kl_loss.item(),
         activity_loss=activity_loss.item(),
-        activity_duration_loss=activity_duration_loss.item(),
+        time_to_next_loss=time_to_next_loss.item(),
         remaining_time_loss=remaining_time_loss.item(),
     )
     latent = LatentMetrics.of(kl_per_dim, free_bits=free_bits)

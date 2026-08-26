@@ -250,9 +250,9 @@ class DatasetCodec(StrictModel):
 
     activity: CategoricalColumn
     resource: CategoricalColumn
-    # activity_duration is read by both the encoders and the decoder; remaining_time is
+    # time_to_next is read by both the encoders and the decoder; remaining_time is
     # decoder-only.
-    activity_duration: NumericColumn
+    time_to_next: NumericColumn
     remaining_time: NumericColumn
 
     # The columns `data.event_features` names, sorted by dtype into the two kinds.
@@ -300,8 +300,8 @@ class DatasetCodec(StrictModel):
             resource=CategoricalColumn.fit(
                 train, column=RESOURCE_KEY, special_tokens=RESOURCE_TOKENS
             ),
-            activity_duration=NumericColumn.fit(
-                train, column=EVENT_DELTA_KEY, log=data_config.log_scaled_activity_duration
+            time_to_next=NumericColumn.fit(
+                train, column=EVENT_DELTA_KEY, log=data_config.log_scaled_time_to_next
             ),
             remaining_time=NumericColumn.fit(
                 train, column=REMAINING_TIME_KEY, log=data_config.log_scaled_remaining_time

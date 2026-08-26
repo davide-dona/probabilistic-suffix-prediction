@@ -60,17 +60,15 @@ FIGURES = (
         ),
     ),
     Plot(
-        name='activity-duration-point-by-suffix-length',
+        name='time-to-next-point-by-suffix-length',
         breakdowns=(Axis.SUFFIX,),
-        metrics=(
-            MetricEntry(METRICS['activity_duration_ae_point_days'], 'Event time MAE (point)'),
-        ),
+        metrics=(MetricEntry(METRICS['time_to_next_ae_point_days'], 'Event time MAE (point)'),),
     ),
     Plot(
-        name='activity-duration-mean-by-suffix-length',
+        name='time-to-next-mean-by-suffix-length',
         breakdowns=(Axis.SUFFIX,),
         metrics=(
-            MetricEntry(METRICS['activity_duration_ae_mean_days'], 'Event time MAE (sample mean)'),
+            MetricEntry(METRICS['time_to_next_ae_mean_days'], 'Event time MAE (sample mean)'),
         ),
     ),
     Plot(
