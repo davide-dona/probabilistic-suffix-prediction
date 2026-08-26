@@ -64,24 +64,32 @@ Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkp
 
 A resumed run also keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
 
-#### Training several datasets at once
+#### Running a batch on every GPU at once
 
-Testing an experiment usually means training it on every dataset. Copy the configs to train into
-`config/queue/` and hand the whole folder to the machine's GPUs:
+Testing an experiment usually means training it on every dataset, then generating from every run
+it produced. Both are batched the same way: copy the jobs into `queue/` and hand the whole folder
+to the machine's GPUs.
 
 ```bash
-cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml config/queue/
-scripts/train_queue.sh -w config/hardware/cuda-a6000.yaml   # -g 0,1 by default
+cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
+scripts/train_queue.sh -w config/hardware/cuda-a6000.yaml      # -g 0,1 by default
+
+cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
+scripts/generate_queue.sh -w config/hardware/cuda-a6000.yaml   # -n 100 for every job in the batch
 ```
 
-One run per GPU at a time, and a GPU that finishes picks up the next config rather than waiting on
-the run beside it. Each run is launched with `CUDA_VISIBLE_DEVICES` masking in its own card, so the
-one profile is used for both rather than a second one naming `cuda:1`.
+A training job is a dataset config; a generation job is a copy of a best checkpoint, which carries
+the config and the run identity of what wrote it. Both scripts are thin callers of
+`scripts/lib/queue.sh`, which is the queue itself.
 
-Each run's output goes to `outputs/queue/<config>-<timestamp>.log`, since two of them share a
-terminal; the console gets a line per run and a summary at the end. A config that trained
-successfully is deleted from the queue, and one whose run failed is renamed `<config>.yaml.failed`
-and kept, to be re-queued by dropping the suffix once the log has been read.
+One job per GPU at a time, and a GPU that finishes picks up the next rather than waiting on the job
+beside it. Each is launched with `CUDA_VISIBLE_DEVICES` masking in its own card, so the one profile
+is used for both rather than a second one naming `cuda:1`.
+
+Each job's output goes to `outputs/queue/<pipeline>/<job>-<timestamp>.log`, since two of them share
+a terminal; the console gets a line per job and a summary at the end. A job that succeeded is
+deleted from the queue, and one that failed is renamed `<job>.failed` and kept, to be re-queued by
+dropping the suffix once the log has been read. See [`queue/README.md`](queue/README.md).
 
 > [!NOTE]
 > **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published model into `pretrained/` with:

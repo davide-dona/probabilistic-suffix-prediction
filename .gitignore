@@ -24,11 +24,10 @@ data/
 !original.csv
 
 
-# Dataset configs staged for a batch training run, kept out of the repo like the runs they
-# produce; config/queue/README.md is what makes the directory exist on a fresh clone
-config/queue/*.yaml
-config/queue/*.running
-config/queue/*.failed
+# Jobs staged for a batch run, kept out of the repo like the runs they produce;
+# queue/README.md is what makes the directory exist on a fresh clone
+queue/*
+!queue/README.md
 
 # Temporary scripts
 tmp/
