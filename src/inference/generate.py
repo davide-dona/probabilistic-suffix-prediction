@@ -58,12 +58,19 @@ def generate_batch(
 
     activities = generated.activities.cpu().numpy()  # [batch_size, num_samples, steps]
     lengths = generated.lengths.cpu().numpy()  # [batch_size, num_samples]
+    # [batch_size, num_samples, steps]
+    times_to_next = generated.times_to_next.cpu().numpy()
     remaining_time = generated.remaining_time.cpu().numpy()  # [batch_size, num_samples]
     point_activities = point.activities.squeeze(dim=1).cpu().numpy()  # [batch_size, steps]
     point_lengths = point.lengths.squeeze(dim=1).cpu().numpy()  # [batch_size]
+    # [batch_size, steps]
+    point_times_to_next = point.times_to_next.squeeze(dim=1).cpu().numpy()
     point_remaining_time = point.remaining_time.squeeze(dim=1).cpu().numpy()  # [batch_size]
     true_activities = batch.suffix.activities.cpu().numpy()  # [batch_size, seq_len]
-    true_remaining_time = batch.remaining_time.cpu().numpy()  # [batch_size]
+    true_times_to_next = batch.times_to_next.cpu().numpy()  # [batch_size, seq_len]
+    # Position 0 answers for the last prefix event, which is what a remaining time is measured
+    # from.
+    true_remaining_time = batch.remaining_times[:, 0].cpu().numpy()  # [batch_size]
     prefix_activities = batch.prefix.activities.cpu().numpy()  # [batch_size, seq_len]
     prefix_lengths = batch.prefix.length.cpu().numpy()  # [batch_size]
 
@@ -77,6 +84,7 @@ def generate_batch(
                 _decode(
                     codec,
                     activities=activities[position, sample],
+                    times_to_next=times_to_next[position, sample],
                     length=lengths[position, sample],
                     remaining_time=remaining_time[position, sample],
                 )
@@ -85,12 +93,14 @@ def generate_batch(
             point=_decode(
                 codec,
                 activities=point_activities[position],
+                times_to_next=point_times_to_next[position],
                 length=point_lengths[position],
                 remaining_time=point_remaining_time[position],
             ),
             truth=_decode(
                 codec,
                 activities=true_activities[position],
+                times_to_next=true_times_to_next[position],
                 length=true_lengths[position],
                 remaining_time=true_remaining_time[position],
             ),
@@ -100,13 +110,19 @@ def generate_batch(
 
 
 def _decode(
-    codec: DatasetCodec, *, activities: np.ndarray, length: int, remaining_time: float
+    codec: DatasetCodec,
+    *,
+    activities: np.ndarray,
+    times_to_next: np.ndarray,
+    length: int,
+    remaining_time: float,
 ) -> DecodedEvents:
     """One run of events, back in the log's own units.
 
     Args:
         codec: The codec the split was encoded through, read here in the decode direction.
         activities: The run's activity indices, `[steps]`.
+        times_to_next: The run's standardized wait until each of `activities`, `[steps]`.
         length: How many of them are events, the rest being the EOT and the padding behind it.
         remaining_time: The run's standardized remaining time.
     Returns:
@@ -114,5 +130,6 @@ def _decode(
     """
     return DecodedEvents(
         activities=codec.activity.decode(activities, length=length),
+        time_to_next_minutes=codec.time_to_next.denormalize(times_to_next[:length]).tolist(),
         remaining_time_minutes=float(codec.remaining_time.denormalize(remaining_time)),
     )

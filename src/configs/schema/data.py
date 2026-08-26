@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
+from src.logs.keys import EVENT_DELTA_KEY
+
 from .base import NAME_PATTERN, StrictModel
 
 
@@ -51,8 +53,8 @@ class DataConfig(StrictModel):
         ...,
         description='Every per-event column the encoders read beside the activity and the '
         'resource. Names either a raw column of the log or one preprocessing derives from the '
-        'timestamp (`ts_prev`, `ts_start`, `day_sin`, `day_cos`, `seconds_sin`, `seconds_cos`; '
-        'see `src/logs/keys.py`). A numeric one becomes a value and a present flag, anything '
+        'timestamp (`ts_start`, `day_sin`, `day_cos`, `seconds_sin`, `seconds_cos`; see '
+        '`src/logs/keys.py`). A numeric one becomes a value and a present flag, anything '
         'else a vocabulary. Changing this list requires re-preprocessing the dataset',
     )
 
@@ -65,10 +67,16 @@ class DataConfig(StrictModel):
 
     log_scaled_remaining_time: bool = Field(
         ...,
-        description="Whether the decoder's target takes a log1p before being standardized. Off "
-        'matches the baselines, which standardize durations raw. The duration columns the '
-        'encoders read are `event_features` like any other, so `log_scaled_features` is what '
-        'scales those',
+        description='Whether the remaining-time target takes a log1p before being standardized. '
+        'Off matches the baselines, which standardize durations raw. `ts_start` is scaled '
+        'through `log_scaled_features` instead',
+    )
+
+    log_scaled_time_to_next: bool = Field(
+        ...,
+        description='Whether the time-to-next-event target takes a log1p before being '
+        'standardized. It is the more skewed of the two, a few long waits behind a mass of '
+        'same-day events',
     )
 
     @model_validator(mode='after')
@@ -86,6 +94,16 @@ class DataConfig(StrictModel):
             raise ValueError(
                 f'log_scaled_features names columns that are not event_features: '
                 f'{", ".join(unknown)}'
+            )
+        return self
+
+    @model_validator(mode='after')
+    def _event_delta_is_not_an_event_feature(self) -> DataConfig:
+        # ts_prev would otherwise be fit twice: once here, once as time_to_next.
+        if EVENT_DELTA_KEY in self.event_features:
+            raise ValueError(
+                f'event_features names "{EVENT_DELTA_KEY}", which is read through '
+                f'DatasetCodec.time_to_next instead and must not also be listed here'
             )
         return self
 

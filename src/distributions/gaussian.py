@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 
 import torch
@@ -52,15 +51,3 @@ class Gaussian:
         # leaves a gradient path through `mean` and `logvar`.
         std = torch.exp(input=0.5 * self.logvar)  # [batch_size, dim]
         return self.mean + std * torch.randn_like(input=self.mean)  # [batch_size, dim]
-
-    def nll(self, target: torch.Tensor) -> torch.Tensor:
-        """Negative log-likelihood of a target under this Gaussian.
-        Args:
-            target: The observed value, `[batch_size]`.
-        Returns:
-            A scalar, the sum of the negative log-likelihoods over the batch.
-        """
-        nll = 0.5 * (
-            self.logvar + (target - self.mean) ** 2 / self.logvar.exp() + math.log(2.0 * math.pi)
-        )  # [batch_size]
-        return nll.sum()

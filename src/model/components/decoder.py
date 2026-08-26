@@ -5,7 +5,6 @@ from torch import nn
 
 from src.configs.schema import DecoderConfig, LatentConfig
 from src.datasets.dataset import Events
-from src.distributions.gaussian import Gaussian
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
 from src.model.components.conditioning import AdaLNConditioning, LayerModulation, gate, modulate
 from src.model.components.embeddings import EventEmbeddings
@@ -57,15 +56,17 @@ class LayerCache:
 
 @dataclass(frozen=True)
 class DecoderOutput:
-    """What the decoder predicts: an activity per suffix position, and one remaining-time
-    distribution for the whole suffix, read off position 0 (the state after SOS).
+    """What the decoder predicts at every suffix position: the activity to write there, the
+    minutes until it, and the minutes until the case ends.
 
-    The remaining time is a Gaussian rather than a point, so its loss is a log-likelihood in
-    nats, the same units as the activity cross-entropy it is added to.
+    Both times are points on the standardized scale their targets are encoded at, so each is
+    scored by a squared error. They overlap - a remaining time is the sum of the waits from
+    that position on - and are read as two independent estimates rather than tied together.
     """
 
     activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    remaining_time_distr: Gaussian  # [batch_size], mean and log-variance
+    times_to_next: torch.Tensor  # [batch_size, seq_len], standardized
+    remaining_times: torch.Tensor  # [batch_size, seq_len], standardized
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,9 @@ class GeneratedSuffix:
 
     activities: torch.Tensor  # [..., steps]
     lengths: torch.Tensor  # [...], events emitted before EOT, or `steps` if EOT never came
+    times_to_next: torch.Tensor  # [..., steps], standardized like the targets
+    # Read at position 0 alone, so it measures from the last prefix event, which is how the
+    # reported remaining time is defined.
     remaining_time: torch.Tensor  # [...], standardized like the targets
 
 
@@ -102,9 +106,7 @@ class DecoderLayer(nn.Module):
         )
         # AdaLN conditioning supplies its own scale and shift, so the pre-norms only standardize.
         self.self_attention_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
-        self.cross_attention_norm = nn.LayerNorm(
-            normalized_shape=d_model, elementwise_affine=False
-        )
+        self.cross_attention_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
         self.feedforward_norm = nn.LayerNorm(normalized_shape=d_model, elementwise_affine=False)
         self.dropout = nn.Dropout(p=config.dropout)
 
@@ -235,7 +237,7 @@ class Decoder(nn.Module):
         # with a norm of its own.
         self.norm = nn.LayerNorm(normalized_shape=d_model)
 
-        # A trunk shared by both heads, so the heads can be smaller.
+        # A trunk shared by every head, so the heads can be smaller.
         self.shared_layer = nn.Sequential(
             nn.Linear(in_features=d_model, out_features=config.head_hidden_dim),
             nn.ReLU(),
@@ -244,8 +246,10 @@ class Decoder(nn.Module):
         self.activity_head = nn.Linear(
             in_features=config.head_hidden_dim, out_features=num_activities
         )
-        # The remaining time is a Gaussian, so its head is width 2.
-        self.remaining_time_head = nn.Linear(in_features=config.head_hidden_dim, out_features=2)
+        # Both times are point predictions, so each head is width 1, and neither output is
+        # squashed: the targets are standardized rather than bounded.
+        self.time_to_next_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
+        self.remaining_time_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
 
     def forward(
         self,
@@ -280,7 +284,8 @@ class Decoder(nn.Module):
         features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
         return DecoderOutput(
             activity_logits=self.activity_head(features),
-            remaining_time_distr=self._remaining_time_distr(features[:, 0]),
+            times_to_next=self.time_to_next_head(features).squeeze(dim=-1),
+            remaining_times=self.remaining_time_head(features).squeeze(dim=-1),
         )
 
     def _teacher_forced_input(self, suffix_activities: torch.Tensor) -> torch.Tensor:
@@ -361,26 +366,14 @@ class Decoder(nn.Module):
 
         return self.norm(hidden), new_caches
 
-    def _remaining_time_distr(self, feature: torch.Tensor) -> Gaussian:
-        """Read the suffix's remaining time off position 0, the state after SOS.
-
-        Args:
-            feature: The shared trunk's output at position 0, `[batch_size, head_hidden_dim]`.
-        Returns:
-            The remaining-time distribution, `[batch_size]` per field.
-        """
-        parameters = self.remaining_time_head(feature)  # [batch_size, 2]
-        # Targets are standardized rather than bounded, so the mean is read off the head as it
-        # comes: squashing it would cap what the head can predict short of the longest cases.
-        return Gaussian.create(mean=parameters[..., 0], logvar=parameters[..., 1])
-
     def _blank_events(self, activities: torch.Tensor) -> Events:
         """Wrap decoder input activities as the events `EventEmbeddings` reads.
 
-        The decoder has no head to write a resource or a feature, so it may not read ground truth
-        for one either: teacher forcing would otherwise hand it values `generate` has none of to
-        feed, and the two would read different things. Only the activities carry real content;
-        every other channel is blanked to the same PAD row or 0.0 scalar `generate` starts from.
+        The activity is the one channel the decoder feeds itself, so it is the one channel that
+        may carry real content here: teacher forcing would otherwise hand it a ground-truth value
+        that `generate` has only its own prediction of, and the two would read different things.
+        Every other channel is blanked to the same PAD row or 0.0 scalar `generate` starts from,
+        the predicted times included.
 
         Args:
             activities: Vocabulary indices to read as the activity channel, `[batch_size, seq_len]`.
@@ -397,6 +390,7 @@ class Decoder(nn.Module):
                 dtype=torch.long,
                 device=device,
             ),
+            times_to_next=torch.zeros(size=(batch_size, seq_len), device=device),
             categorical_attributes=torch.zeros(
                 size=(batch_size, seq_len, self.embeddings.num_categorical),
                 dtype=torch.long,
@@ -425,9 +419,9 @@ class Decoder(nn.Module):
         """Run the decoder free, feeding each step the event the previous one predicted.
 
         Every step is one cached call to `_run_layers`, the same pass teacher forcing runs, so
-        writing n events costs n passes over one position. The activity head is read greedily
-        and the remaining time is its head's mean: two generations of one prefix differ only
-        in the z each was given.
+        writing n events costs n passes over one position. The activity head is read greedily and
+        both time heads are read as they come: two generations of one prefix differ only in the z
+        each was given.
 
         Args:
             z: The sampled latent, `[batch_size, latent_dim]`.
@@ -435,7 +429,8 @@ class Decoder(nn.Module):
             prefix_pad_mask: True where a prefix position holds padding.
             max_steps: Hard cap on the suffix length, for generations that never emit EOT.
         Returns:
-            The generated suffixes, the length of each, and the remaining time of each.
+            The generated suffixes, the length of each, the minutes until each of their events,
+            and the remaining time each was opened with.
         """
         batch_size = z.size(dim=0)
         # z does not change while a suffix is being written, so what it does to each layer is
@@ -453,6 +448,9 @@ class Decoder(nn.Module):
 
         generated_activities = torch.zeros(
             size=(batch_size, max_steps), dtype=torch.long, device=z.device
+        )
+        generated_times_to_next = torch.zeros(
+            size=(batch_size, max_steps), dtype=z.dtype, device=z.device
         )
         # A row that never emits EOT ran to the cap, so that is the length it keeps.
         lengths = torch.full(
@@ -481,9 +479,10 @@ class Decoder(nn.Module):
             activities = self.activity_head(features).argmax(dim=-1)  # [batch_size]
             # Only position 0, the state after SOS, answers for the whole suffix.
             if position == 0:
-                remaining_time = self._remaining_time_distr(features).mean  # [batch_size]
+                remaining_time = self.remaining_time_head(features).squeeze(dim=-1)  # [batch_size]
 
             generated_activities[:, position] = activities
+            generated_times_to_next[:, position] = self.time_to_next_head(features).squeeze(dim=-1)
             next_input = activities.unsqueeze(dim=1)  # [batch_size, 1]
 
             # A suffix ends at its first EOT, so a later one cannot move the length back.
@@ -499,5 +498,6 @@ class Decoder(nn.Module):
         return GeneratedSuffix(
             activities=generated_activities[:, :steps_taken],  # [batch_size, steps]
             lengths=lengths,
+            times_to_next=generated_times_to_next[:, :steps_taken],  # [batch_size, steps]
             remaining_time=remaining_time,
         )

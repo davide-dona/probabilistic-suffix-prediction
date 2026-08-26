@@ -15,6 +15,10 @@ type PrefixKey = tuple[str, int]
 # One run of activity names, the shape every activity column of the schema is built from.
 _ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
 
+# One run's wait until each of its activities. Timestamps are these accumulated, so they are
+# not written a second time.
+_TIMES_TO_NEXT = pa.list_(pa.field(name='element', type=pa.float64()))
+
 # The schema of the Parquet file that holds a run's generations. One row per prefix: the samples
 # nest inside it, so nothing describing the prefix is written once per sample.
 _SCHEMA = pa.schema(
@@ -25,12 +29,18 @@ _SCHEMA = pa.schema(
         ('prefix_activities', _ACTIVITIES),
         # One entry per draw of z, in the order they were drawn: `hit_rate_at_k` reads the first k.
         ('generated_activities', pa.list_(pa.field(name='element', type=_ACTIVITIES))),
+        (
+            'generated_time_to_next_minutes',
+            pa.list_(pa.field(name='element', type=_TIMES_TO_NEXT)),
+        ),
         ('generated_remaining_time_minutes', pa.list_(pa.field(name='element', type=pa.float64()))),
         # The suffix written from the mean of `p(z | prefix)`: the model's single answer, drawn once
         # per prefix and the only column comparable against a model that does not sample.
         ('point_activities', _ACTIVITIES),
+        ('point_time_to_next_minutes', _TIMES_TO_NEXT),
         ('point_remaining_time_minutes', pa.float64()),
         ('true_activities', _ACTIVITIES),
+        ('true_time_to_next_minutes', _TIMES_TO_NEXT),
         ('true_remaining_time_minutes', pa.float64()),
     ]
 )
@@ -66,12 +76,17 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
             'prefix_len': generation.prefix_len,
             'prefix_activities': generation.prefix_activities,
             'generated_activities': [sample.activities for sample in generation.samples],
+            'generated_time_to_next_minutes': [
+                sample.time_to_next_minutes for sample in generation.samples
+            ],
             'generated_remaining_time_minutes': [
                 sample.remaining_time_minutes for sample in generation.samples
             ],
             'point_activities': generation.point.activities,
+            'point_time_to_next_minutes': generation.point.time_to_next_minutes,
             'point_remaining_time_minutes': generation.point.remaining_time_minutes,
             'true_activities': generation.truth.activities,
+            'true_time_to_next_minutes': generation.truth.time_to_next_minutes,
             'true_remaining_time_minutes': generation.truth.remaining_time_minutes,
         }
         for generation in generations
@@ -171,20 +186,24 @@ def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generatio
                 samples=[
                     DecodedEvents(
                         activities=activities,
+                        time_to_next_minutes=time_to_next_minutes,
                         remaining_time_minutes=remaining_time_minutes,
                     )
-                    for activities, remaining_time_minutes in zip(
+                    for activities, time_to_next_minutes, remaining_time_minutes in zip(
                         columns['generated_activities'][position],
+                        columns['generated_time_to_next_minutes'][position],
                         columns['generated_remaining_time_minutes'][position],
                         strict=True,
                     )
                 ],
                 point=DecodedEvents(
                     activities=columns['point_activities'][position],
+                    time_to_next_minutes=columns['point_time_to_next_minutes'][position],
                     remaining_time_minutes=columns['point_remaining_time_minutes'][position],
                 ),
                 truth=DecodedEvents(
                     activities=columns['true_activities'][position],
+                    time_to_next_minutes=columns['true_time_to_next_minutes'][position],
                     remaining_time_minutes=columns['true_remaining_time_minutes'][position],
                 ),
             )

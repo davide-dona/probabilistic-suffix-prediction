@@ -60,6 +60,18 @@ FIGURES = (
         ),
     ),
     Plot(
+        name='time-to-next-point-by-suffix-length',
+        breakdowns=(Axis.SUFFIX,),
+        metrics=(MetricEntry(METRICS['time_to_next_ae_point_days'], 'Event time MAE (point)'),),
+    ),
+    Plot(
+        name='time-to-next-mean-by-suffix-length',
+        breakdowns=(Axis.SUFFIX,),
+        metrics=(
+            MetricEntry(METRICS['time_to_next_ae_mean_days'], 'Event time MAE (sample mean)'),
+        ),
+    ),
+    Plot(
         name='diversity-by-prefix-length',
         breakdowns=(Axis.PREFIX,),
         metrics=(
