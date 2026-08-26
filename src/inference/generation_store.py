@@ -1,18 +1,12 @@
-import json
 from collections.abc import Iterator
-from dataclasses import asdict
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from src.identity import RunIdentity
+from src.identity import RunIdentity, stamped
 from src.inference.generation import DecodedEvents, Generation
-
-# The schema metadata key the writing run's identity is stored under, so a generations file says
-# what produced it rather than leaving that to be read off the path it happens to sit at.
-_RUN_KEY = b'run'
 
 # Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
 # a case and a length, and the pair is unique within a file.
@@ -54,27 +48,7 @@ def open_generations(path: Path, run: RunIdentity) -> pq.ParquetWriter:
         what writes the file's footer.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    schema = _SCHEMA.with_metadata({_RUN_KEY: json.dumps(asdict(run)).encode()})
-    return pq.ParquetWriter(where=path, schema=schema)
-
-
-def read_run_identity(parquet: pq.ParquetFile) -> RunIdentity:
-    """Read back which run wrote a generations file.
-
-    Args:
-        parquet: The generations file, already open.
-    Returns:
-        The identity `open_generations` stamped into it.
-    Raises:
-        ValueError: If the file carries none, and so predates the identity it should name itself by.
-    """
-    metadata = parquet.schema_arrow.metadata or {}
-    if _RUN_KEY not in metadata:
-        raise ValueError(
-            'this generations file does not say which run wrote it. Generate it again with '
-            '`python -m pipelines.generate`.'
-        )
-    return RunIdentity.from_json(metadata[_RUN_KEY])
+    return pq.ParquetWriter(where=path, schema=stamped(_SCHEMA, run))
 
 
 def table_from_generations(generations: list[Generation]) -> pa.Table:
@@ -125,17 +99,18 @@ def read_suffixes(path: Path) -> Iterator[tuple[list[str], list[str]]]:
             yield from zip(truths, samples, strict=True)
 
 
-def read_prefix_keys(path: Path) -> set[PrefixKey]:
+def read_prefix_keys(path: Path) -> list[PrefixKey]:
     """Read which prefixes a generations file answers, without decoding a single suffix.
 
     Args:
         path: The generations file, opened and closed here.
     Returns:
-        The key of every row. Only the two columns that identify a prefix are read, which is cheap
+        The key of every row, in the order the file holds them, which is the order a walk of its
+        blocks scores them in. Only the two columns that identify a prefix are read, which is cheap
         even on a file of a quarter of a million rows.
     """
     table = pq.read_table(source=path, columns=['case_id', 'prefix_len'])
-    return set(
+    return list(
         zip(
             table.column('case_id').to_pylist(),
             table.column('prefix_len').to_pylist(),

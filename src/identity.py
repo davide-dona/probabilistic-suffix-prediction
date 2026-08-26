@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pydantic import TypeAdapter
 
 
@@ -56,6 +59,42 @@ class RunIdentity:
 
 # Built once, since a `TypeAdapter` compiles the schema it validates against.
 _RUN_ADAPTER = TypeAdapter(RunIdentity)
+
+# The schema metadata key a Parquet artifact stores the writing run's identity under, so a file
+# says what produced it rather than leaving that to be read off the path it happens to sit at.
+_RUN_KEY = b'run'
+
+
+def stamped(schema: pa.Schema, run: RunIdentity) -> pa.Schema:
+    """Stamp a run's identity into a Parquet schema, for the writer to carry into the footer.
+
+    Args:
+        schema: The artifact's own schema, from the module that owns it.
+        run: The run writing it.
+    Returns:
+        The same schema carrying the identity `read_run_identity` reads back.
+    """
+    return schema.with_metadata({_RUN_KEY: json.dumps(asdict(run)).encode()})
+
+
+def read_run_identity(parquet: pq.ParquetFile) -> RunIdentity:
+    """Read back which run wrote a Parquet artifact.
+
+    Args:
+        parquet: The file, already open.
+    Returns:
+        The identity `stamped` put there.
+    Raises:
+        ValueError: If the file carries none, and so predates the identity it should name itself
+            by.
+    """
+    metadata = parquet.schema_arrow.metadata or {}
+    if _RUN_KEY not in metadata:
+        raise ValueError(
+            'this file does not say which run wrote it. Write it again with the pipeline that '
+            'produces it.'
+        )
+    return RunIdentity.from_json(metadata[_RUN_KEY])
 
 
 def group_by_model(runs: Iterable[tuple[RunIdentity, Path]]) -> dict[str, dict[str, Path]]:

@@ -18,6 +18,7 @@ from src.visualization import (
     embed_suffixes,
     latex_table,
     reported_models,
+    test_significance,
 )
 
 
@@ -52,18 +53,19 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     return written
 
 
-def _write_tables(frame: pd.DataFrame) -> int:
+def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
     """Write every comparison table, over every log at once, under `outputs/visual/tables/`.
 
     Args:
         frame: Every report read, from `read_reports`.
+        significance: Which models are tied with the best of each row, from `test_significance`.
     Returns:
         How many tables were written.
     """
     for table in TABLES:
         path = paths.comparison_table_path(table.name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(latex_table(frame, table))
+        path.write_text(latex_table(frame, table, significance))
     return len(TABLES)
 
 
@@ -72,18 +74,20 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
 
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw
-            the metric figures and the comparison tables.
+            the metric figures and the comparison tables, and the per-prefix scores beside each of
+            them are what the tables' emphasis is tested on.
         generation_files: The generations of the same runs, from `python -m pipelines.generate`,
             or none. These draw the distribution figure, which costs minutes per log.
     Raises:
-        ValueError: If a file is not what it should be, if a model has no look declared in
-            `src.visualization.labels`, or if one log is given two runs of the same model.
+        ValueError: If a file is not what it should be, if a report has no per-prefix scores beside
+            it, if a model has no look declared in `src.visualization.labels`, or if one log is
+            given two runs of the same model.
     """
     apply_style()
     banner(
         'Drawing the figures and tables',
         {
-            'reports': f'{len(evaluation_files)} file(s)',
+            'reports': f'{len(evaluation_files)} file(s), with their per-prefix scores beside them',
             'generations': f'{len(generation_files)} file(s)' if generation_files else 'none',
             'figures': paths.FIGURES_DIR,
             'tables': paths.TABLES_DIR,
@@ -98,8 +102,13 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
     with step(f'Drawing {", ".join(logs)}'):
         drawn = _draw_figures(reports)
 
+    # Over the per-prefix scores beside each report, since a mean cannot say whether two models
+    # differ. A paired bootstrap over the cases of each log, which is seconds per log.
+    with step('Testing which differences are real'):
+        significance = reported_models(test_significance(evaluation_files))
+
     with step('Writing the comparison tables'):
-        tables = _write_tables(reports)
+        tables = _write_tables(reports, significance)
 
     # Opt-in, since this reads the generations rather than the reports and costs a minute or two
     # per log. Drawn from its own frame rather than through the catalogue above, since it reads
@@ -134,7 +143,8 @@ def main() -> None:
         metavar='REPORT',
         nargs='+',
         help='Paths to the evaluation reports to compare, from `pipelines.evaluate`. These draw '
-        'the metric figures and the comparison tables.',
+        'the metric figures and the comparison tables, and the per-prefix scores written beside '
+        "each of them are what the tables' emphasis is tested on.",
     )
     reports.add_argument(
         '-E',

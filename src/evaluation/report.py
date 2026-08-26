@@ -8,7 +8,7 @@ from typing import Self
 import pandas as pd
 from pydantic import TypeAdapter, ValidationError
 
-from src.evaluation.summary import EvaluationSummary, LengthSummary
+from src.evaluation.summary import EvaluationSummary, flatten_scores
 from src.identity import RunIdentity, group_by_model
 
 
@@ -68,24 +68,12 @@ class Axis(StrEnum):
 REPORT_COLUMNS = ('dataset', 'model', 'axis', 'length', 'prefixes', 'metric', 'value')
 
 
-def _flatten(summary: EvaluationSummary | LengthSummary) -> dict[str, float]:
-    """Every per-prefix metric one summary holds, keyed by its own name.
-
-    Args:
-        summary: An evaluation's means, or the means of the prefixes sharing one length.
-    Returns:
-        Both per-prefix families in one namespace, since a metric's name is unique across them and
-        a figure asks for a metric rather than for a family.
-    """
-    return asdict(summary.accuracy) | asdict(summary.conformance)
-
-
 def _rows(report: EvaluationReport) -> list[dict[str, object]]:
     """Lay one report out as one row per metric per breakdown."""
     run, summary = report.run, report.summary
     identity = {'dataset': run.dataset, 'model': run.model}
 
-    overall = _flatten(summary)
+    overall = flatten_scores(summary)
     rows: list[dict[str, object]] = [
         identity
         | {
@@ -109,7 +97,7 @@ def _rows(report: EvaluationReport) -> list[dict[str, object]]:
         }
         for axis, breakdown in breakdowns
         for entry in breakdown
-        for metric, value in _flatten(entry).items()
+        for metric, value in flatten_scores(entry).items()
     )
     return rows
 
