@@ -250,9 +250,8 @@ class DatasetCodec(StrictModel):
 
     activity: CategoricalColumn
     resource: CategoricalColumn
-    # `activity_duration` is fit once, like `activity`/`resource` above, and read by both the
-    # encoders (elapsed since the previous event) and the decoder (its duration target).
-    # `remaining_time` is decoder-only: the minutes from the last prefix event to the case's end.
+    # activity_duration is read by both the encoders and the decoder; remaining_time is
+    # decoder-only.
     activity_duration: NumericColumn
     remaining_time: NumericColumn
 

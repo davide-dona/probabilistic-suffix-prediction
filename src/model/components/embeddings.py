@@ -41,9 +41,8 @@ class EventEmbeddings(nn.Module):
             if self.num_categorical > 0
             else None
         )
-        # Two scalars per numeric attribute: value + presence flag. Activity duration is one
-        # scalar on its own: `add_event_delta` fills every case's first event with 0.0, so it is
-        # never missing and needs no presence flag.
+        # Two scalars per numeric attribute (value + presence); activity duration is never
+        # missing, so it gets one.
         self.projection = nn.Linear(
             in_features=(
                 config.activity_dim

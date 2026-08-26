@@ -19,9 +19,7 @@ class Events(NamedTuple):
 
     activities: torch.Tensor  # int64, [..., seq_len]
     resources: torch.Tensor  # int64, [..., seq_len]
-    # Standardized minutes since the previous event (0.0 at a case's first event); the decoder's
-    # target is this same channel, windowed to the suffix positions it is read at.
-    activity_durations: torch.Tensor  # float32, [..., seq_len]
+    activity_durations: torch.Tensor  # float32, standardized, [..., seq_len]
     categorical_attributes: torch.Tensor  # int64, [..., seq_len, num_categorical]
     numeric_attributes: torch.Tensor  # float32, standardized, [..., seq_len, num_numeric]
     numeric_attributes_present: (
@@ -83,12 +81,7 @@ class Events(NamedTuple):
 
 class SplitTrace(NamedTuple):
     """A single trace cut into a (prefix, suffix) pair, with the decoder's time targets aligned
-    to the suffix positions they are read at.
-
-    `activity_durations` here is the windowed decoder target (one value per suffix position,
-    measured from the event just before it), not to be confused with `Events.activity_durations`
-    on `prefix`/`suffix`, which carries one value per event, unwindowed, as an encoder channel.
-    """
+    to the suffix positions they are read at."""
 
     # Which case of the log this was cut from. Allow to identify the original trace after
     # generation.
@@ -118,7 +111,7 @@ class _Trace:
     """One case of the log, encoded once and shared by every trace cut from it."""
 
     case_id: str  # which case of the log this is
-    events: Events  # the case's events, unpadded; carries activity_durations per event
+    events: Events  # the case's events, unpadded
     remaining_times: (
         torch.Tensor
     )  # standardized minutes from each event to the case's real ending, [len(events)]

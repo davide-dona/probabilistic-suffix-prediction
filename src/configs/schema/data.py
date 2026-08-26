@@ -54,10 +54,8 @@ class DataConfig(StrictModel):
         description='Every per-event column the encoders read beside the activity and the '
         'resource. Names either a raw column of the log or one preprocessing derives from the '
         'timestamp (`ts_start`, `day_sin`, `day_cos`, `seconds_sin`, `seconds_cos`; see '
-        '`src/logs/keys.py`). `ts_prev` does not belong here: it is the decoder\'s activity-'
-        'duration target, read through its own dedicated `DatasetCodec.activity_duration` field '
-        'instead. A numeric one becomes a value and a present flag, anything else a vocabulary. '
-        'Changing this list requires re-preprocessing the dataset',
+        '`src/logs/keys.py`). A numeric one becomes a value and a present flag, anything '
+        'else a vocabulary. Changing this list requires re-preprocessing the dataset',
     )
 
     log_scaled_features: list[str] = Field(
@@ -70,17 +68,15 @@ class DataConfig(StrictModel):
     log_scaled_remaining_time: bool = Field(
         ...,
         description='Whether the remaining-time target takes a log1p before being standardized. '
-        'Off matches the baselines, which standardize durations raw. `ts_start`, the other '
-        'duration column the encoders read, is an `event_feature` like any other, so '
-        '`log_scaled_features` is what scales that one',
+        'Off matches the baselines, which standardize durations raw. `ts_start` is scaled '
+        'through `log_scaled_features` instead',
     )
 
     log_scaled_activity_duration: bool = Field(
         ...,
         description='Whether the activity-duration target takes a log1p before being '
         'standardized. It is the more skewed of the two, a few long waits behind a mass of '
-        'same-day events. Scales the one `DatasetCodec.activity_duration` fit that feeds both '
-        'the encoders and the decoder',
+        'same-day events',
     )
 
     @model_validator(mode='after')
@@ -103,9 +99,7 @@ class DataConfig(StrictModel):
 
     @model_validator(mode='after')
     def _event_delta_is_not_an_event_feature(self) -> DataConfig:
-        # ts_prev is the decoder's activity-duration target, fit once through its own dedicated
-        # DatasetCodec.activity_duration field. Listing it here too would fit it a second time,
-        # independently, with nothing keeping the two in agreement.
+        # ts_prev would otherwise be fit twice: once here, once as activity_duration.
         if EVENT_DELTA_KEY in self.event_features:
             raise ValueError(
                 f'event_features names "{EVENT_DELTA_KEY}", which is read through '

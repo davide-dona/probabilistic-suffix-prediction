@@ -5,9 +5,7 @@ ACTIVITY_KEY = 'concept:name'
 RESOURCE_KEY = 'org:resource'
 TIMESTAMP_KEY = 'time:timestamp'
 # Attributes added by pipelines/preprocess.py.
-# Minutes since the previous event of the same case. Read through `DatasetCodec.activity_duration`
-# rather than `data.event_features`, feeding both the encoders (elapsed since previous event) and
-# the decoder (its duration target)
+# Minutes since the previous event of the same case, read through `DatasetCodec.activity_duration`
 EVENT_DELTA_KEY = 'ts_prev'
 # Minutes since the first event of the same case, offered to the encoders the same way
 CASE_ELAPSED_KEY = 'ts_start'
