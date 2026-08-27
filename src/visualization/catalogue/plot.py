@@ -72,6 +72,23 @@ FIGURES = (
         ),
     ),
     Plot(
+        name='multi-reference-by-prefix-length',
+        breakdowns=(Axis.PREFIX,),
+        metrics=(
+            MetricEntry(METRICS['reference_energy_score'], 'Energy score (all continuations)'),
+            MetricEntry(METRICS['coverage'], 'Coverage'),
+            MetricEntry(METRICS['precision'], 'Precision'),
+        ),
+    ),
+    Plot(
+        name='marginals-by-prefix-length',
+        breakdowns=(Axis.PREFIX,),
+        metrics=(
+            MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
+            MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Remaining time W1'),
+        ),
+    ),
+    Plot(
         name='diversity-by-prefix-length',
         breakdowns=(Axis.PREFIX,),
         metrics=(

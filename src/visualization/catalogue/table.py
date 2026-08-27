@@ -44,7 +44,7 @@ TABLES = (
             MetricEntry(METRICS['time_to_next_ae_mean_days'], 'Event time MAE'),
         ),
     ),
-    # Comparison of distributions
+    # Comparison of distributions, against the one continuation each prefix actually took
     Table(
         name='comparison-distribution',
         axis=Axis.OVERALL,
@@ -54,6 +54,19 @@ TABLES = (
             MetricEntry(METRICS['hit_rate_at_5'], 'Hit rate @5'),
             MetricEntry(METRICS['hit_rate_at_10'], 'Hit rate @10'),
             MetricEntry(METRICS['dls_best'], 'Best-of-k DLS'),
+        ),
+    ),
+    # Comparison of distributions, against every continuation the log took after the prefix
+    Table(
+        name='comparison-multi-reference',
+        axis=Axis.OVERALL,
+        metrics=(
+            MetricEntry(METRICS['reference_energy_score'], 'Energy score (all continuations)'),
+            MetricEntry(METRICS['coverage'], 'Coverage'),
+            MetricEntry(METRICS['precision'], 'Precision'),
+            MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
+            MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Remaining time W1'),
+            MetricEntry(METRICS['reference_size'], 'Observed continuations'),
         ),
     ),
 )

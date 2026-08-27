@@ -22,13 +22,14 @@ class Unit(StrEnum):
 
     SHARE = 'share'  # A fraction of something, in [0, 1]
     SCORE = 'score'  # Dimensionless with no fixed range, e.g. a distance between two sets
+    COUNT = 'count'  # How many of something there were, starting at 0 with no ceiling
     DAYS = 'days'
     EVENTS = 'events'
 
     @property
     def symbol(self) -> str:
         """What is written after the metric's name, or `''` for a dimensionless number."""
-        return '' if self in (Unit.SHARE, Unit.SCORE) else str(self)
+        return '' if self in (Unit.SHARE, Unit.SCORE, Unit.COUNT) else str(self)
 
     @property
     def bounds(self) -> tuple[float | None, float | None]:
@@ -36,7 +37,8 @@ class Unit(StrEnum):
 
         A share spans the whole of `[0, 1]`, so a panel of one shows where a model sits within
         what the metric can be rather than within the range these models happen to cover. An
-        absolute error starts at 0 and has no ceiling. A score is bounded at neither end.
+        absolute error and a count both start at 0 and have no ceiling. A score is bounded at
+        neither end.
         """
         if self is Unit.SHARE:
             return 0.0, 1.0

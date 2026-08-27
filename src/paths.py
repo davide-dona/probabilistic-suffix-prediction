@@ -79,6 +79,11 @@ def declare_model_path(dataset: str) -> Path:
     return DATA_DIR / dataset / 'declare' / 'model.decl'
 
 
+def continuation_path(dataset: str) -> Path:
+    """A dataset's continuation index, built from its test split at preprocessing time."""
+    return DATA_DIR / dataset / 'continuations.parquet'
+
+
 def require_dataset(dataset: str) -> None:
     """Check that everything training and generation read from preprocessing is on disk, and say
     what is missing if it is not.
@@ -101,9 +106,27 @@ def require_dataset(dataset: str) -> None:
         )
 
 
+def require_continuations(dataset: str) -> None:
+    """Check that a dataset's continuation index is on disk, since it is the other artifact
+    `--skip-evaluation` leaves unwritten and evaluation is the only reader.
+
+    Args:
+        dataset: The dataset to check.
+    Raises:
+        FileNotFoundError: If the index is missing, naming what to rerun.
+    """
+    path = continuation_path(dataset)
+    if not path.exists():
+        raise FileNotFoundError(
+            f'"{dataset}" has no continuation index at {path}. Run '
+            f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
+            'without --skip-evaluation first.'
+        )
+
+
 def require_declare_model(dataset: str) -> None:
-    """Check that a dataset's declarative model is on disk, since discovery is optional at
-    preprocessing time and evaluation is the only reader.
+    """Check that a dataset's declarative model is on disk, since it is one of the two artifacts
+    `--skip-evaluation` leaves unwritten and evaluation is the only reader.
 
     Args:
         dataset: The dataset to check.
@@ -115,7 +138,7 @@ def require_declare_model(dataset: str) -> None:
         raise FileNotFoundError(
             f'"{dataset}" has no declarative model at {path}. Run '
             f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
-            'without --skip-discovery first.'
+            'without --skip-evaluation first.'
         )
 
 

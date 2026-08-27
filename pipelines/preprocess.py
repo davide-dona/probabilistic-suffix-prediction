@@ -8,6 +8,7 @@ from src import paths
 from src.cli import add_config_argument, banner, step
 from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
+from src.logs.continuations import build_index
 from src.logs.declare import discover_declare_model
 from src.logs.filters import (
     case_durations,
@@ -143,7 +144,7 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discovery: bool) -> None:
+def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluation: bool) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
 
@@ -153,16 +154,19 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
     splits what is left into train/val/test out of time.
 
     The vocabularies and normalization statistics the model is built against are fit here too,
-    on the train split alone, and written beside it as `dataset.json`. The declarative model is
-    discovered from the same split and written to `data/<dataset>/declare/model.decl`, unless
-    `skip_discovery` is set, since neither training nor generation reads it and discovery is the
-    slowest step here.
+    on the train split alone, and written beside it as `dataset.json`.
+
+    Two more artifacts follow, both read by evaluation alone and both skipped together under
+    `skip_evaluation`: the continuations the test split takes after each of its prefixes, indexed
+    beside the splits, and the declarative model discovered from the train split and written
+    to `data/<dataset>/declare/model.decl`. Discovery is the slowest step here by a wide margin,
+    which is what skipping the pair is worth doing for.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
         declare_config: The `declare` section, driving the discovery of the declarative model.
-        skip_discovery: Whether to skip discovering the declarative model. Evaluation will fail
-            until preprocessing is rerun without this flag.
+        skip_evaluation: Whether to skip the two artifacts only evaluation reads. Evaluation will
+            fail until preprocessing is rerun without this flag.
     """
     dataset = data_config.name
 
@@ -174,9 +178,12 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
             f'{data_config.test_split:.0%} test, out of time',
             'splits': paths.split_path(dataset=dataset, split=Split.TRAIN).parent,
             'codec': paths.codec_path(dataset),
-            'declarative model': paths.declare_model_path(dataset)
-            if not skip_discovery
-            else 'skipped (--skip-discovery)',
+            'continuations': 'skipped (--skip-evaluation)'
+            if skip_evaluation
+            else paths.continuation_path(dataset),
+            'declarative model': 'skipped (--skip-evaluation)'
+            if skip_evaluation
+            else paths.declare_model_path(dataset),
         },
     )
 
@@ -231,19 +238,24 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
         codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
         codec.save()
 
-    # Discover the declarative model from the train split and write it out to `model.decl`,
-    # unless discovery was skipped.
-    if skip_discovery:
-        constraints_summary = 'declarative model discovery skipped'
+    if skip_evaluation:
+        evaluation_summary = 'nothing evaluation reads'
     else:
+        with step('Indexing the continuations of the test split'):
+            prefixes, occurrences = build_index(test, dataset=dataset)
+            print(
+                f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
+                flush=True,
+            )
+
         # The slowest step of the pipeline by a wide margin, and pm4py reports its own progress.
         with step('Discovering the declarative model'):
-            num_constraints = discover_declare_model(
+            constraints = discover_declare_model(
                 train,
                 dataset=dataset,
                 declare_config=declare_config,
             )
-        constraints_summary = f'{num_constraints} declarative constraints'
+        evaluation_summary = f'{prefixes:,} indexed prefixes, {constraints} declarative constraints'
 
     print(
         f'Preprocessed "{dataset}": {len(train):,} train, {len(val):,} val, {len(test):,} test '
@@ -251,7 +263,7 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_discover
         f'{len(codec.resource.vocab)} resources, '
         f'{len(codec.categorical_features)} categorical and '
         f'{len(codec.numeric_features)} numeric feature channels, '
-        f'{constraints_summary}',
+        f'{evaluation_summary}',
         flush=True,
     )
 
@@ -262,16 +274,20 @@ def main() -> None:
     )
     add_config_argument(parser, required=True)
     parser.add_argument(
-        '--skip-discovery',
+        '--skip-evaluation',
         action='store_true',
-        help='Skip discovering the declarative model, the slowest preprocessing step and one '
-        'neither training nor generation reads. Evaluation needs it, so rerun without this '
-        'flag before evaluating.',
+        help='Skip the continuation index and the declarative model, the two artifacts neither '
+        'training nor generation reads. Evaluation needs both, so rerun without this flag '
+        'before evaluating.',
     )
     args = parser.parse_args()
 
     config = load_dataset_config(args.config)
-    run(data_config=config.data, declare_config=config.declare, skip_discovery=args.skip_discovery)
+    run(
+        data_config=config.data,
+        declare_config=config.declare,
+        skip_evaluation=args.skip_evaluation,
+    )
 
 
 if __name__ == '__main__':
