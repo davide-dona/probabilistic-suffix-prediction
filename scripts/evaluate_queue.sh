@@ -26,8 +26,10 @@ done
 
 mkdir -p "$LOGS"
 
-shopt -s nullglob globstar
-generations=("$GENERATIONS_DIR"/**/*.parquet)
+generations=()
+while IFS= read -r -d '' file; do
+  generations+=("$file")
+done < <(find "$GENERATIONS_DIR" -type f -name '*.parquet' -print0 | sort -z)
 (( ${#generations[@]} )) || { echo "nothing under $GENERATIONS_DIR/" >&2; exit 1; }
 
 ok=0
