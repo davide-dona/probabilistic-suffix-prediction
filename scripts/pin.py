@@ -23,6 +23,7 @@ def _artifacts(run: RunIdentity) -> list[tuple[Path, Path]]:
         (paths.checkpoint_path(run), paths.checkpoint_path(run, pinned=True)),
         (paths.generations_path(run), paths.generations_path(run, pinned=True)),
         (paths.evaluation_path(run), paths.evaluation_path(run, pinned=True)),
+        (paths.prefix_scores_path(run), paths.prefix_scores_path(run, pinned=True)),
         (paths.tensorboard_dir(run), paths.tensorboard_dir(run, pinned=True)),
     ]
 

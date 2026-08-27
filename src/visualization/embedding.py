@@ -7,11 +7,10 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from src.identity import RunIdentity, group_by_model
+from src.identity import RunIdentity, group_by_model, read_run_identity
 from src.inference.generation_store import (
     PrefixKey,
     read_prefix_keys,
-    read_run_identity,
     read_samples,
 )
 from src.suffixes import ActivityCodes, distances
@@ -87,7 +86,7 @@ def _shared_prefixes(dataset: str, files: Iterable[Path]) -> set[PrefixKey]:
     Raises:
         ValueError: If the runs answer no prefix in common.
     """
-    shared = set.intersection(*(read_prefix_keys(file) for file in files))
+    shared = set.intersection(*(set(read_prefix_keys(file)) for file in files))
     if not shared:
         raise ValueError(
             f'the runs of {dataset} answer no prefix in common, so their generations cannot be '

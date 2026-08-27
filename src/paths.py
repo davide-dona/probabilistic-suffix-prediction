@@ -218,6 +218,20 @@ def evaluation_path(run: RunIdentity, *, pinned: bool = False) -> Path:
     return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'eval' / f'{_run_dir(run)}.json'
 
 
+def prefix_scores_path(run: RunIdentity, *, pinned: bool = False) -> Path:
+    """The per-prefix scores the report was averaged from.
+
+    The report's own path with a different suffix, so a reader that has just read a report finds
+    these beside it without being told where to look.
+
+    Args:
+        run: The run to locate.
+        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
+            `scripts/pin.py` has moved the run there.
+    """
+    return evaluation_path(run, pinned=pinned).with_suffix('.parquet')
+
+
 def combined_figure_path(name: str) -> Path:
     """One figure covering every log at once.
 

@@ -1,8 +1,8 @@
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Self
 
-from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
+from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores, DistributionScores
 from src.inference.generation import Generation
 from src.logs.continuations import ContinuationIndex
 from src.logs.declare import ConformanceChecker
@@ -147,3 +147,29 @@ class EvaluationSummary:
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
         )
+
+
+# The three granularities that hold the two families side by side, and so the three a reader can
+# ask for every score of at once.
+type Summarized = PrefixSummary | LengthSummary | EvaluationSummary
+
+# The float fields of each family, read once rather than per summary: this is asked a quarter of a
+# million times when a run's prefixes are written out one by one.
+_FIELD_NAMES = {family: tuple(entry.name for entry in fields(family)) for family in FAMILIES}
+
+
+def flatten_scores(summary: Summarized) -> dict[str, float]:
+    """Every per-prefix metric one summary holds, keyed by its own name.
+
+    Args:
+        summary: One prefix's scores, the mean of the prefixes sharing one length, or an
+            evaluation's means.
+    Returns:
+        Every family in one namespace, since a metric's name is unique across them and a figure,
+        a table or a column of the per-prefix file asks for a metric rather than for a family.
+    """
+    return {
+        name: getattr(family, name)
+        for family in (summary.accuracy, summary.conformance, summary.distribution)
+        for name in _FIELD_NAMES[type(family)]
+    }

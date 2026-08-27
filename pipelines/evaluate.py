@@ -11,9 +11,11 @@ from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, duration, existing_file, step
+from src.evaluation.prefix_scores import stream_prefix_scores
 from src.evaluation.report import EvaluationReport
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
-from src.inference.generation_store import read_generation_block, read_run_identity
+from src.identity import read_run_identity
+from src.inference.generation_store import read_generation_block, read_prefix_keys
 from src.logs.continuations import ContinuationIndex
 from src.logs.declare import ConformanceChecker, discovery_settings
 
@@ -148,23 +150,36 @@ def run(generations_file: Path, workers: int | None) -> None:
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': paths.evaluation_path(run),
+            'prefix scores': paths.prefix_scores_path(run),
         },
     )
 
     started = time.perf_counter()
 
-    # Summarize the generation, folding each prefix's scores in as the pool hands them back.
+    # Which prefix each row answers, in the order the file holds them, which is the order the pool
+    # scores them in. Two columns, so this is cheap even on a quarter of a million rows.
+    keys = read_prefix_keys(generations_file)
+    scores_path = paths.prefix_scores_path(run)
+
+    # Summarize the generation, folding each prefix's scores in as the pool hands them back and
+    # writing them out on the way past. One stream, so the per-prefix file costs a write rather
+    # than a second scoring pass.
     with step(
         f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
         'declarative model and the continuation index first'
     ):
         summary = EvaluationSummary.of(
-            _score_in_parallel(
-                generations_file,
-                dataset=dataset,
-                blocks=blocks,
-                prefixes=prefixes,
-                workers=workers,
+            stream_prefix_scores(
+                _score_in_parallel(
+                    generations_file,
+                    dataset=dataset,
+                    blocks=blocks,
+                    prefixes=prefixes,
+                    workers=workers,
+                ),
+                keys,
+                path=scores_path,
+                run=run,
             )
         )
 
@@ -174,7 +189,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     path = report.write(paths.evaluation_path(run))
     print(
         f'Scored {summary.prefixes:,} prefixes in {duration(time.perf_counter() - started)}. '
-        f'Wrote evaluation report to {path}'
+        f'Wrote evaluation report to {path} and its per-prefix scores to {scores_path}'
     )
 
 
