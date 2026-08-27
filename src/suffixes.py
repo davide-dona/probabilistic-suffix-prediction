@@ -8,6 +8,9 @@ from rapidfuzz.distance import OSA
 # Start of the Unicode private use area, where the activity codes are drawn from.
 _FIRST_CODE = 0xE000
 
+# How many rows of the pairwise matrix `spread` holds at once.
+_SPREAD_BLOCK = 256
+
 
 @dataclass(slots=True)
 class ActivityCodes:
@@ -20,6 +23,23 @@ class ActivityCodes:
     """
 
     _codes: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def of(cls, activities: Sequence[str]) -> 'ActivityCodes':
+        """Seed a codebook from activity names already in code order.
+
+        Args:
+            activities: The names, in the order their codes were handed out, as `vocabulary`
+                returns them.
+        Returns:
+            A codebook giving each of them the code it had, and the next code to anything else.
+        """
+        return cls({activity: chr(_FIRST_CODE + code) for code, activity in enumerate(activities)})
+
+    @property
+    def vocabulary(self) -> tuple[str, ...]:
+        """The activity names in code order, which is what seeds `of` back into this codebook."""
+        return tuple(self._codes)
 
     def encode(self, activities: Sequence[str]) -> str:
         """Encode one suffix, giving each activity not seen before the next code point.
@@ -82,3 +102,42 @@ def distances(
     # In place: the matrix is already the largest thing here, and a second copy of it is what a
     # blocked walk exists to avoid.
     return np.subtract(1.0, similarities, out=similarities)
+
+
+def spread(
+    sequences: Sequence[Sequence[Hashable]],
+    *,
+    weights: Sequence[float] | None = None,
+) -> float:
+    """How far apart two draws of one set of sequences are from each other, in `[0, 1]`.
+
+    The mean distance over every ordered pair of two distinct draws, which is the term a two-sample
+    energy score subtracts for a set's own spread. A weighted set is a set of distinct sequences
+    standing for that many draws, so a sequence drawn twice is twice as likely to be picked and
+    the pair it makes with itself sits at distance 0.
+
+    Args:
+        sequences: The distinct sequences, either encoded suffixes or raw activity names.
+        weights: How many draws each of them stands for, in the same order, or `None` for one
+            each.
+    Returns:
+        0.0 below two draws, or where every draw is the same sequence, up to 1.0 for sequences
+        sharing nothing.
+    """
+    counts = (
+        np.ones(len(sequences), dtype=np.float64)
+        if weights is None
+        else np.asarray(weights, dtype=np.float64)
+    )
+    draws = counts.sum()
+    if draws < 2 or len(sequences) < 2:
+        return 0.0
+
+    # Walked in blocks: the full matrix of a prefix the log ran thousands of times is the largest
+    # thing this would hold, and only one block of its rows is needed at a time.
+    total = 0.0
+    for first in range(0, len(sequences), _SPREAD_BLOCK):
+        block = sequences[first : first + _SPREAD_BLOCK]
+        pairs = distances(queries=block, choices=sequences, dtype=np.float64)
+        total += float(counts[first : first + len(block)] @ pairs @ counts)
+    return total / (draws * (draws - 1.0))

@@ -74,10 +74,10 @@ def _flatten(summary: EvaluationSummary | LengthSummary) -> dict[str, float]:
     Args:
         summary: An evaluation's means, or the means of the prefixes sharing one length.
     Returns:
-        Both per-prefix families in one namespace, since a metric's name is unique across them and
+        Every per-prefix family in one namespace, since a metric's name is unique across them and
         a figure asks for a metric rather than for a family.
     """
-    return asdict(summary.accuracy) | asdict(summary.conformance)
+    return asdict(summary.accuracy) | asdict(summary.conformance) | asdict(summary.distribution)
 
 
 def _rows(report: EvaluationReport) -> list[dict[str, object]]:
