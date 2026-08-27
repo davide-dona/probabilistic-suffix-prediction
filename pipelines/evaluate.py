@@ -16,6 +16,7 @@ from src.evaluation.report import EvaluationReport
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
 from src.identity import read_run_identity
 from src.inference.generation_store import read_generation_block, read_prefix_keys
+from src.logs.continuations import ContinuationIndex
 from src.logs.declare import ConformanceChecker, discovery_settings
 
 
@@ -25,6 +26,7 @@ class _Worker:
 
     parquet: pq.ParquetFile
     checker: ConformanceChecker
+    index: ContinuationIndex
 
 
 # Set by `_init_worker` in each pool process, and read by `_score_block` there. Left
@@ -33,16 +35,19 @@ _worker: _Worker
 
 
 def _init_worker(generations_file: Path, dataset: str) -> None:
-    """Open the file and prepare the declarative model once for this process.
+    """Open the file, prepare the declarative model and read the continuation index once for this
+    process.
 
     Args:
         generations_file: The generations every task of this process reads from.
-        dataset: The dataset whose declarative model conformance is checked against.
+        dataset: The dataset whose declarative model conformance is checked against, and whose
+            observed continuations the generated ones are compared with.
     """
     global _worker
     _worker = _Worker(
         parquet=pq.ParquetFile(generations_file),
         checker=ConformanceChecker(dataset),
+        index=ContinuationIndex(dataset),
     )
 
 
@@ -55,7 +60,7 @@ def _score_block(block: int) -> list[PrefixSummary]:
         One entry per prefix of the block, in the order it was written.
     """
     return [
-        PrefixSummary.of(generation, checker=_worker.checker)
+        PrefixSummary.of(generation, checker=_worker.checker, index=_worker.index)
         for generation in read_generation_block(parquet=_worker.parquet, block=block)
     ]
 
@@ -119,6 +124,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     dataset = run.dataset
     paths.require_dataset(dataset)
     paths.require_declare_model(dataset)
+    paths.require_continuations(dataset)
 
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
@@ -140,6 +146,7 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
+            'continuations': paths.continuation_path(dataset),
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': paths.evaluation_path(run),
@@ -159,7 +166,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # than a second scoring pass.
     with step(
         f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
-        'declarative model first'
+        'declarative model and the continuation index first'
     ):
         summary = EvaluationSummary.of(
             stream_prefix_scores(

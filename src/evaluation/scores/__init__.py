@@ -1,18 +1,19 @@
 from src.evaluation.scores.accuracy import AccuracyScores
 from src.evaluation.scores.conformance import ConformanceScores
+from src.evaluation.scores.distribution import DistributionScores
 from src.registry import Registry
 from src.scalar_metrics import Metric
 
 # The families a report carries, in the order it lays them out.
-FAMILIES = (AccuracyScores, ConformanceScores)
+FAMILIES = (AccuracyScores, ConformanceScores, DistributionScores)
 
 
 def _declared() -> dict[str, Metric]:
     """Every number a report carries, keyed by the field it was declared on.
 
     Returns:
-        The declarations of every family in one namespace, exactly as `report._flatten` merges
-        them.
+        The declarations of every family in one namespace, exactly as `summary.flatten_scores`
+        merges them.
     Raises:
         ValueError: If two families declare the same name, which would leave a figure asking for
             one and reading whichever was flattened last.
@@ -43,4 +44,5 @@ __all__ = [
     'METRICS',
     'AccuracyScores',
     'ConformanceScores',
+    'DistributionScores',
 ]

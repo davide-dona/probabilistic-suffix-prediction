@@ -1,13 +1,11 @@
-from collections.abc import Hashable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import chain, islice, repeat
 from typing import Self
 
-import numpy as np
-
 from src.inference.generation import Generation
 from src.scalar_metrics import ScalarMetrics, Unit, mean, metric
-from src.suffixes import distances, sequence_similarity
+from src.suffixes import sequence_similarity, spread
 
 MINUTES_PER_DAY = 1440.0
 
@@ -74,7 +72,9 @@ class AccuracyScores(ScalarMetrics):
             sequence_similarity(sample.activities, truth.activities) for sample in samples
         ]
         dls_mean = mean(similarities)
-        spread = diversity([sample.activities for sample in samples])
+        # Comparing a prefix's samples against each other is what measures the spread
+        # `p(z | prefix)` claims the prefix leaves open.
+        sample_spread = spread([sample.activities for sample in samples])
         sample_activities = [tuple(sample.activities) for sample in samples]
         truth_activities = tuple(truth.activities)
 
@@ -86,9 +86,9 @@ class AccuracyScores(ScalarMetrics):
             hit_rate_at_5=is_hit(samples=sample_activities, truth=truth_activities, k=5),
             hit_rate_at_10=is_hit(samples=sample_activities, truth=truth_activities, k=10),
             energy_score=(
-                energy_score(dls_mean=dls_mean, sample_diversity=spread) if samples else 1.0
+                energy_score(dls_mean=dls_mean, sample_diversity=sample_spread) if samples else 1.0
             ),
-            sample_diversity=spread,
+            sample_diversity=sample_spread,
             unique_sample_rate=len(set(sample_activities)) / len(samples) if samples else 0.0,
             remaining_time_ae_mean_days=mean(
                 [
@@ -120,27 +120,6 @@ class AccuracyScores(ScalarMetrics):
             length_ae_point=float(abs(len(point) - len(truth))),
             suffix_length=float(len(truth)),
         )
-
-
-def diversity(samples: Sequence[Sequence[Hashable]]) -> float:
-    """How far apart a set of sequences generated for one prefix are from each other, in `[0, 1]`.
-
-    The mean distance over every pair, which is 0.0 when a prefix's samples are all the same
-    sequence (or there are fewer than two to compare). Comparing samples of one prefix against
-    each other is what measures the spread `p(z | prefix)` claims the prefix leaves open.
-
-    Args:
-        samples: The sequences generated for one prefix, one per draw of z.
-    Returns:
-        0.0 for identical (or singleton) sample sets, up to 1.0 for sequences sharing nothing.
-    """
-    if len(samples) < 2:
-        return 0.0
-    # Compute the full pairwise distance matrix
-    pairs = distances(queries=samples, choices=samples, dtype=np.float64)
-    # The matrix is symmetric with a diagonal of 0.0, so one triangle holds each pair once.
-    rows, columns = np.triu_indices(n=len(samples), k=1)
-    return mean(pairs[rows, columns].tolist())
 
 
 def time_to_next_ae_minutes(predicted: Sequence[float], true: Sequence[float]) -> float:

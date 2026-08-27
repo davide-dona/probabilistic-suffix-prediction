@@ -2,29 +2,39 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from typing import Self
 
-from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores
+from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores, DistributionScores
 from src.inference.generation import Generation
+from src.logs.continuations import ContinuationIndex
 from src.logs.declare import ConformanceChecker
 
 
 @dataclass(frozen=True, slots=True)
 class PrefixSummary:
-    """One prefix's samples reduced to two families of scores, the unit a worker hands back."""
+    """One prefix's samples reduced to three families of scores, the unit a worker hands back."""
 
     prefix_len: int
     suffix_len: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
+    distribution: DistributionScores
 
     @classmethod
-    def of(cls, generation: Generation, *, checker: ConformanceChecker) -> Self:
+    def of(
+        cls,
+        generation: Generation,
+        *,
+        checker: ConformanceChecker,
+        index: ContinuationIndex,
+    ) -> Self:
         """Score one prefix's generated suffixes against the ground truth they were generated for,
-        and against the declarative model the dataset was mined for.
+        against the declarative model the dataset was mined for, and against every continuation
+        the log took after that prefix.
 
         Args:
             generation: The model's answer for one prefix, decoded into the log's own units.
             checker: The declarative model to check conformance against, held by the process doing
                 the scoring.
+            index: The log's observed continuations, held by the same process.
         Returns:
             Only what `EvaluationSummary.of` needs, the generation itself being dropped here so
             that a split of hundreds of thousands of prefixes never brings more than a block's
@@ -35,6 +45,7 @@ class PrefixSummary:
             suffix_len=len(generation.truth),
             accuracy=AccuracyScores.of(generation),
             conformance=ConformanceScores.of(generation, checker=checker),
+            distribution=DistributionScores.of(generation, index=index),
         )
 
 
@@ -46,6 +57,7 @@ class LengthSummary:
     prefixes: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
+    distribution: DistributionScores
 
     @classmethod
     def of(cls, prefixes: Sequence[PrefixSummary], *, length: int) -> Self:
@@ -62,6 +74,7 @@ class LengthSummary:
             prefixes=len(prefixes),
             accuracy=AccuracyScores.mean([prefix.accuracy for prefix in prefixes]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in prefixes]),
+            distribution=DistributionScores.mean([prefix.distribution for prefix in prefixes]),
         )
 
 
@@ -81,7 +94,9 @@ class EvaluationSummary:
     """Everything one evaluation measured over one run's generated suffixes.
 
     Accuracy asks how close a generated suffix is to the one that actually happened, conformance
-    whether it is a trace the process allows at all, and both are means over every prefix.
+    whether it is a trace the process allows at all, distribution how the whole set of suffixes
+    generated for a prefix compares against every continuation the log took after it, and all
+    three are means over every prefix.
 
     The two breakdowns cut the per-prefix families either at the prefix or at the ground-truth
     suffix. They are not independent of each other: every cut point of a case is scored, so a long
@@ -95,6 +110,7 @@ class EvaluationSummary:
     prefixes: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
+    distribution: DistributionScores
     # In increasing order of prefix length
     by_prefix_length: list[LengthSummary]
     # In increasing order of ground-truth suffix length
@@ -127,6 +143,7 @@ class EvaluationSummary:
             prefixes=len(every_prefix),
             accuracy=AccuracyScores.mean([prefix.accuracy for prefix in every_prefix]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
+            distribution=DistributionScores.mean([prefix.distribution for prefix in every_prefix]),
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
         )
@@ -148,11 +165,11 @@ def flatten_scores(summary: Summarized) -> dict[str, float]:
         summary: One prefix's scores, the mean of the prefixes sharing one length, or an
             evaluation's means.
     Returns:
-        Both families in one namespace, since a metric's name is unique across them and a figure,
+        Every family in one namespace, since a metric's name is unique across them and a figure,
         a table or a column of the per-prefix file asks for a metric rather than for a family.
     """
     return {
         name: getattr(family, name)
-        for family in (summary.accuracy, summary.conformance)
+        for family in (summary.accuracy, summary.conformance, summary.distribution)
         for name in _FIELD_NAMES[type(family)]
     }
