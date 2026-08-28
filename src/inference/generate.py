@@ -7,7 +7,9 @@ from src.inference.generation import DecodedEvents, Generation
 from src.model import TransformerCVAE
 
 
-def generation_batch_size(inference: InferenceConfig, prefixes_upper_bound: int) -> int:
+def generation_batch_size(
+    inference: InferenceConfig, num_samples: int, prefixes_upper_bound: int
+) -> int:
     """How many prefixes to hand the decoder at once, to protect its memory.
 
     Two bounds apply, in two different units: `prefixes_upper_bound` counts prefixes, and
@@ -16,15 +18,15 @@ def generation_batch_size(inference: InferenceConfig, prefixes_upper_bound: int)
     and the smaller of the two is divided back into prefixes.
 
     Args:
-        inference: Provides `generation_rows_upper_bound` (the row budget) and `num_samples`.
+        inference: Provides `generation_rows_upper_bound`, the row budget both passes share.
+        num_samples: How many suffixes the pass being sized draws per prefix, which is what one
+            prefix costs in rows: `inference.validation_samples` or `inference.evaluation_samples`.
         prefixes_upper_bound: Ceiling on prefixes per call, typically `dataloader.batch_size`.
     Returns:
         The batch size in prefixes, at least 1.
     """
-    rows_per_call = min(
-        inference.generation_rows_upper_bound, prefixes_upper_bound * inference.num_samples
-    )
-    return max(1, rows_per_call // inference.num_samples)
+    rows_per_call = min(inference.generation_rows_upper_bound, prefixes_upper_bound * num_samples)
+    return max(1, rows_per_call // num_samples)
 
 
 def generate_batch(

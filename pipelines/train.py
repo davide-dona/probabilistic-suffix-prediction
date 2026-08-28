@@ -136,7 +136,9 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             validation_dataset, size=config.training.generation_pairs, generator=generator
         ),
         batch_size=generation_batch_size(
-            inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
+            inference=config.inference,
+            num_samples=config.inference.validation_samples,
+            prefixes_upper_bound=config.dataloader.batch_size,
         ),
         shuffle=False,
         num_workers=workers,
@@ -158,7 +160,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         experiment_config=config.model_dump(),
         generator=generator,
         resume=checkpoint,
-        generation_samples=config.inference.num_samples,
+        generation_samples=config.inference.validation_samples,
         codec=codec,
         loss_config=config.loss,
         optimizer_config=config.optimizer,

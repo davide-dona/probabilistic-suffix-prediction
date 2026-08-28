@@ -64,8 +64,9 @@ def validate_generation(
     Generate suffixes from the prefixes in `loader` and compare them to the ground truth.
 
     Scored through `AccuracyScores.of`, the same way the final report is built, over the same
-    population: every prefix counts here and in `pipelines/evaluate.py` alike, so a training
-    curve and a final report differ only in which split and how much of it they read.
+    population: every prefix counts here and in `pipelines/evaluate.py` alike. What differs is
+    which split is read, how much of it, and how many suffixes each prefix is answered with, so
+    a training curve is read for its shape over steps rather than against a report's numbers.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.

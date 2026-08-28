@@ -86,7 +86,8 @@ def load_generation_config(
             `checkpoint['experiment_config']`.
         hardware: Path to the hardware profile to generate under, whose device, batch size,
             workers and row bound replace the ones the run was trained with.
-        num_samples: How many suffixes to draw per prefix, or `None` to keep the run's own.
+        num_samples: How many suffixes to draw per prefix, replacing the run's own
+            `inference.evaluation_samples`, or `None` to keep it.
     Returns:
         The validated config.
     Raises:
@@ -96,5 +97,5 @@ def load_generation_config(
     merged = _deep_merge(experiment_config, _read(hardware))
     if num_samples is not None:
         # Merged in rather than set on the config, which is frozen once validated.
-        merged = _deep_merge(merged, {'inference': {'num_samples': num_samples}})
+        merged = _deep_merge(merged, {'inference': {'evaluation_samples': num_samples}})
     return ExperimentConfig.model_validate(merged)

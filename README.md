@@ -118,7 +118,7 @@ python -m pipelines.generate -m <path-to-checkpoint> -w config/hardware/<hardwar
 
 - `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/`, `outputs/checkpoints/best/` or `outputs/checkpoints/last/`. 
 - `-w`/`--hardware` is the profile to generate under, replacing the one the run was trained with.
-- `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.num_samples`.
+- `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.evaluation_samples`.
 
 The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
 
