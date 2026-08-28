@@ -56,9 +56,35 @@ data:
     - seconds_sin
     - seconds_cos
 
-  # Right-skewed numeric columns: durations dominated by a few large values, log1p'd before
-  # standardization so the bulk of the distribution is not squashed.
-  log_scaled_features:
-    - ts_start
-  log_scaled_remaining_time: true
-  log_scaled_time_to_next: true
+  log_scaled_features: []
+  log_scaled_remaining_time: false
+  log_scaled_time_to_next: false
+
+# Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
+model:
+  name: cvae-small
+
+  d_model: 64
+
+  embeddings:
+    resource_dim: 16  
+    feature_dim: 4
+
+  prefix_encoder:
+    num_layers: 1
+    feedforward_dim: 256  # keep the 4x d_model ratio
+
+  suffix_encoder:
+    num_layers: 1
+    feedforward_dim: 256
+
+  prior:
+    hidden_dims: [64]
+
+  latent:
+    latent_dim: 8
+
+  decoder:
+    num_layers: 1
+    feedforward_dim: 256
+    head_hidden_dim: 64
