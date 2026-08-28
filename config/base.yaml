@@ -24,16 +24,24 @@ model:
     resource_dim: 32  
     feature_dim: 8  # per categorical event feature; each one widens the projection's input
 
-  # Reads both sequences: the prefix, whose CLS summary feeds the prior and whose events the
-  # decoder cross-attends over, and, during training only, the ground-truth suffix, whose
-  # summary feeds the posterior.
+  # Reads both sequences: the prefix, which the prior pools and the decoder cross-attends over,
+  # and, during training only, the ground-truth suffix, which the posterior pools.
   encoder:
     num_layers: 2
     num_heads: 4
     feedforward_dim: 512  # 4x d_model ratio
     dropout: 0.1
 
-  # MLP mapping the prefix summary to p(z|prefix), sampled from at inference.
+  # How a latent network reads a sequence: learned queries cross-attending over every encoded
+  # event, then a feedforward. The prior and the posterior hold one of these each, so what either
+  # reads is pooled for its own purpose rather than for the encoder's.
+  pooling:
+    num_queries: 4
+    num_heads: 4
+    feedforward_dim: 512  # 4x d_model ratio
+    dropout: 0.1
+
+  # MLP mapping the pooled prefix, beside its summary, to p(z|prefix), sampled from at inference.
   prior:
     hidden_dims: [128]  # (empty for a linear prior)
     dropout: 0.1

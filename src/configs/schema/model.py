@@ -21,9 +21,9 @@ class EmbeddingConfig(StrictModel):
 class TraceEncoderConfig(StrictModel):
     """Transformer encoder over a sequence of events, full self-attention.
 
-    One stack reads both sequences: the prefix, whose summary conditions the prior and whose
-    events the decoder cross-attends over, and, on the training path only, the ground-truth
-    suffix, whose summary feeds the posterior. Runs at `ModelConfig.d_model`.
+    One stack reads both sequences: the prefix, which the prior pools and the decoder
+    cross-attends over, and, on the training path only, the ground-truth suffix, which the
+    posterior pools. Runs at `ModelConfig.d_model`.
     """
 
     num_layers: int = Field(..., gt=0)
@@ -36,8 +36,29 @@ class TraceEncoderConfig(StrictModel):
     dropout: float = Field(..., ge=0.0, lt=1.0)
 
 
+class PoolingConfig(StrictModel):
+    """Attention pooling a latent network reads a sequence through: learned queries that
+    cross-attend over every position of it, then a feedforward. One section for both, the prior's
+    over the prefix and the posterior's over the suffix, since the two are the same shape.
+    """
+
+    num_queries: int = Field(
+        ...,
+        gt=0,
+        description='Learned queries per latent network; each keeps its own slot in that '
+        "network's input, so the input is `num_queries` times `d_model` wide",
+    )
+    num_heads: int = Field(
+        ..., gt=0, description='Attention heads in the pooling; must divide `d_model`'
+    )
+    feedforward_dim: int = Field(
+        ..., gt=0, description='Width of the feed-forward block after the attention'
+    )
+    dropout: float = Field(..., ge=0.0, lt=1.0)
+
+
 class PriorConfig(StrictModel):
-    """MLP mapping the prefix summary to p(z | prefix), in place of the fixed N(0, I) prior of
+    """MLP mapping the pooled prefix to p(z | prefix), in place of the fixed N(0, I) prior of
     an unconditional VAE.
     """
 
@@ -94,6 +115,7 @@ class ModelConfig(StrictModel):
 
     embeddings: EmbeddingConfig
     encoder: TraceEncoderConfig
+    pooling: PoolingConfig
     prior: PriorConfig
     latent: LatentConfig
     decoder: DecoderConfig
@@ -102,7 +124,7 @@ class ModelConfig(StrictModel):
     def _heads_divide_width(self) -> ModelConfig:
         # nn.MultiheadAttention asserts this when the layer is built, halfway through a run's
         # setup. Checking it here turns a config mistake back into a config error.
-        for name in ('encoder', 'decoder'):
+        for name in ('encoder', 'pooling', 'decoder'):
             num_heads = getattr(self, name).num_heads
             if self.d_model % num_heads != 0:
                 raise ValueError(

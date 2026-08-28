@@ -61,8 +61,10 @@ data:
   log_scaled_time_to_next: false
 
 # Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
+# The pooled-latents arm: the prior and the posterior each read their sequence through an
+# attention pooling of their own. Named apart so it sits in outputs/ beside its baseline.
 model:
-  name: cvae-small
+  name: cvae-small-pooled
 
   d_model: 64
 

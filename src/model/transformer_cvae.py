@@ -24,18 +24,18 @@ class TransformerCVAEOutput:
 class TransformerCVAE(nn.Module):
     """A conditional VAE that predicts a trace's suffix from its prefix.
 
-    The prefix is the condition: the decoder cross-attends over its encoded events, and its
-    CLS summary feeds the latent networks. Because the decoder reads the prefix directly and
-    the prior is conditioned on it too, z is left encoding only what the prefix does not
-    determine.
+    The prefix is the condition: the decoder cross-attends over its encoded events, and the
+    latent networks read them too, each through a pooling of its own. Because the decoder reads
+    the prefix directly and the prior is conditioned on it too, z is left encoding only what the
+    prefix does not determine.
 
-    One encoder reads both sequences, so the two summaries the posterior is handed are two
-    reads of one representation rather than two coordinate systems the KL has to reconcile.
+    One encoder reads both sequences, so what the posterior is handed of each is two reads of one
+    representation rather than two coordinate systems the KL has to reconcile.
 
     Flow, with `prefix` and `suffix` both padded to `max_seq_len`:
-        prefix              -> prefix events (for the decoder) + summary (for the latents)
-        prefix summary      -> p(z | prefix)               (scored by the KL term only)
-        + suffix summary    -> q(z | prefix, suffix)
+        prefix              -> prefix events (for the decoder and the prior) + summary
+        encoded prefix      -> p(z | prefix)               (scored by the KL term only)
+        + encoded suffix    -> q(z | prefix, suffix)
         z ~ q(z | prefix, suffix)
         z, prefix events, suffix -> an activity, the wait until it and a remaining time,
                                    at every suffix position
@@ -55,9 +55,14 @@ class TransformerCVAE(nn.Module):
             config=config.encoder, embeddings=self.embeddings, d_model=config.d_model
         )
         self.prior = PriorNetwork(
-            config=config.prior, latent_config=config.latent, prefix_dim=config.d_model
+            config=config.prior,
+            pooling_config=config.pooling,
+            latent_config=config.latent,
+            d_model=config.d_model,
         )
-        self.posterior = PosteriorNetwork(latent_config=config.latent, summary_dim=config.d_model)
+        self.posterior = PosteriorNetwork(
+            pooling_config=config.pooling, latent_config=config.latent, d_model=config.d_model
+        )
         self.decoder = Decoder(
             config=config.decoder,
             latent_config=config.latent,
@@ -106,15 +111,18 @@ class TransformerCVAE(nn.Module):
         prefix_pad_mask = item.prefix.pad_mask()  # [batch_size, seq_len]
         prefix = self.encoder(events=item.prefix, pad_mask=prefix_pad_mask)
 
-        suffix_summary = self.encoder(
-            events=item.suffix, pad_mask=item.suffix.pad_mask()
-        ).summary  # [batch_size, d_model]
+        # The encoded suffix events are kept, not only its summary: the posterior pools them.
+        suffix_pad_mask = item.suffix.pad_mask()  # [batch_size, seq_len]
+        suffix = self.encoder(events=item.suffix, pad_mask=suffix_pad_mask)
 
-        prior = self.prior(prefix.summary)  # p(z | prefix)
-        posterior = self.posterior(prefix_summary=prefix.summary, suffix_summary=suffix_summary)
+        prior = self.prior(prefix=prefix, pad_mask=prefix_pad_mask)  # p(z | prefix)
+        posterior = self.posterior(
+            prefix_summary=prefix.summary, suffix=suffix, pad_mask=suffix_pad_mask
+        )
         z = posterior.sample()  # [batch_size, latent_dim]
 
-        # The decoder reads the prefix events only; the summary belongs to the latent path.
+        # The decoder reads the prefix events under its own cross-attention, the latent path
+        # having pooled them under its own.
         decoder_output = self.decoder(
             suffix_activities=item.suffix.activities,
             z=z,
@@ -148,7 +156,7 @@ class TransformerCVAE(nn.Module):
         # Computed once per prefix: every sample of one prefix is drawn from the same
         # p(z | prefix), so running the prior once and repeating its parameters skips
         # num_samples - 1 redundant forward passes over identical rows.
-        prior = self.prior(prefix.summary)
+        prior = self.prior(prefix=prefix, pad_mask=prefix_pad_mask)
 
         # Repeat the prefix events and pad mask for every sample, so the decoder sees a batch of
         # size `batch_size * num_samples` and can generate all samples in one forward pass

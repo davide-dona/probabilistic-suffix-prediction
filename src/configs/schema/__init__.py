@@ -11,6 +11,7 @@ from .model import (
     EmbeddingConfig,
     LatentConfig,
     ModelConfig,
+    PoolingConfig,
     PriorConfig,
     TraceEncoderConfig,
 )
@@ -36,6 +37,7 @@ __all__ = [
     'LossConfig',
     'ModelConfig',
     'OptimizerConfig',
+    'PoolingConfig',
     'PriorConfig',
     'StrictModel',
     'TraceEncoderConfig',
