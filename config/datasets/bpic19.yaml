@@ -47,10 +47,6 @@ data:
     - seconds_sin
     - seconds_cos
 
-  # Right-skewed numeric columns: durations and monetary amounts dominated by a few large
-  # values, log1p'd before standardization so the bulk of the distribution is not squashed.
-  log_scaled_features:
-    - Cumulative net worth (EUR)
-    - ts_start
-  log_scaled_remaining_time: true
-  log_scaled_time_to_next: true
+  log_scaled_features: []
+  log_scaled_remaining_time: false
+  log_scaled_time_to_next: false
