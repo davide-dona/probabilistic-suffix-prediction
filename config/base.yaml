@@ -83,5 +83,12 @@ early_stopping:
 
 
 inference:
-  # At least ten, since hit_rate_at_10 reads the tenth draw.
-  num_samples: 10
+  # Suffixes drawn per prefix, once for each of the two passes that generate them.
+  # At least ten on either, since hit_rate_at_10 reads the tenth draw.
+
+  # The pass inside the training loop, over training.generation_pairs prefixes every
+  # training.val_every_n_steps steps. Kept small: it is paid for on every validation.
+  validation_samples: 10
+  # The pass over the whole test split that a report is built from. Paid for once per run, and a
+  # hundred draws describe p(suffix | prefix) far better than ten.
+  evaluation_samples: 100

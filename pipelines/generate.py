@@ -27,7 +27,8 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
             run that wrote it, so nothing about the model or the dataset is passed alongside it.
         hardware: The hardware profile to generate under, replacing the one the run was trained
             with.
-        num_samples: How many suffixes to draw per prefix, or `None` for the run's own.
+        num_samples: How many suffixes to draw per prefix, or `None` for the run's own
+            `inference.evaluation_samples`.
     """
     # The run's own config, resized for the machine in hand. Read before the codec, since it is
     # what says which dataset's codec to read.
@@ -46,7 +47,9 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
     path = paths.generations_path(run)
     device = torch.device(config.training.device)
     batch_size = generation_batch_size(
-        inference=config.inference, prefixes_upper_bound=config.dataloader.batch_size
+        inference=config.inference,
+        num_samples=config.inference.evaluation_samples,
+        prefixes_upper_bound=config.dataloader.batch_size,
     )
     # A checkpoint that has been trimmed for publishing still carries both of these.
     trained_step, score = checkpoint.get('step'), checkpoint.get('selection_score')
@@ -60,7 +63,7 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
             if trained_step is not None and score is not None
             else config.model.name,
             'device': device,
-            'samples': f'{config.inference.num_samples} suffixes per prefix',
+            'samples': f'{config.inference.evaluation_samples} suffixes per prefix',
             'batch': f'{batch_size} prefixes, {config.dataloader.num_workers} loader workers',
             'generations': path,
         },
@@ -89,7 +92,7 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
     )
 
     print(
-        f'Generating {config.inference.num_samples} suffixes for each of '
+        f'Generating {config.inference.evaluation_samples} suffixes for each of '
         f'{len(test_dataset):,} test prefixes, in {len(test_loader):,} batches',
         flush=True,
     )
@@ -100,7 +103,7 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
             generations = generate_batch(
                 model=model,
                 batch=batch.to(device),
-                num_samples=config.inference.num_samples,
+                num_samples=config.inference.evaluation_samples,
                 codec=codec,
             )
             # Write the generations to the Parquet file in a single table, one row per prefix.
@@ -131,7 +134,7 @@ def main() -> None:
         default=None,
         metavar='N',
         help='How many suffixes to draw per prefix, overriding the config the checkpoint '
-        "carries. Defaults to the run's own `inference.num_samples`.",
+        "carries. Defaults to the run's own `inference.evaluation_samples`.",
     )
     args = parser.parse_args()
 
