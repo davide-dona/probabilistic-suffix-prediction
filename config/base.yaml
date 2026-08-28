@@ -58,11 +58,14 @@ model:
 # All the hyperparameters below are defined in steps, not epochs, 
 # so that they are independent of the dataset size and batch size.
 loss:
-  # KL annealing: for each period, the KL term is ramped up from 0 to full weight over a fraction of the period,
-  # then kept at full weight until the end of the period. This helps prevent posterior collapse early in training.
-  kl_annealing_ratio: 0.3   # fraction of the period spent ramping up from 0 to full weight
+  # KL annealing: the KL term is ramped up from 0 to full weight over the first
+  # `kl_annealing_ramp_steps` steps, set per hardware profile, then held there for the rest of the
+  # run. This helps prevent posterior collapse early in training.
   kl_annealing_start_weight: 0.0
-  kl_annealing_full_weight: 0.5  # below 1 keeps deviating from the prior cheaper than losing reconstruction
+  # Plain ELBO. The bpic17 sweep over 0.25/0.5/1.0/2.0/4.0 put the energy score's optimum here:
+  # below it z carries more nats and the samples drift off what the prior can produce, above it the
+  # KL squeezes the latent onto the free-bits floor.
+  kl_annealing_full_weight: 1.0
   free_bits: 0.3  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
 
 # lr is set per hardware profile, in config/hardware/, since it scales with batch_size.

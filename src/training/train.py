@@ -14,7 +14,7 @@ from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.model import TransformerCVAE, save_checkpoint
 from src.training.early_stopping import EarlyStopper
-from src.training.kl import cyclical_linear_weight
+from src.training.kl import linear_warmup_weight
 from src.training.loss import Loss, compute_loss
 from src.training.validation import validate, validate_generation
 
@@ -156,10 +156,9 @@ def train(
                 model.train()
                 batch = batch.to(device)
                 # Get the current KL weight for this step
-                kl_weight = cyclical_linear_weight(
+                kl_weight = linear_warmup_weight(
                     step,
-                    period_steps=loss_config.kl_annealing_period_steps,
-                    ratio=loss_config.kl_annealing_ratio,
+                    ramp_steps=loss_config.kl_annealing_ramp_steps,
                     start=loss_config.kl_annealing_start_weight,
                     stop=loss_config.kl_annealing_full_weight,
                 )
