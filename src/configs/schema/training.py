@@ -13,22 +13,21 @@ class DataLoaderConfig(StrictModel):
 
 
 class LossConfig(StrictModel):
-    """KL weighting: the annealing schedule and the free-bits floor.
+    """KL weighting: the annealing warmup and the free-bits floor.
 
-    Both are measured in optimizer steps, not epochs, so they mean the same thing on every
-    dataset. The cycle is a length rather than a count fitted into `training.max_steps`, so a
-    run that stops early has still seen whole cycles.
+    The ramp is measured in optimizer steps, not epochs, so it means the same thing on every
+    dataset. It is a length rather than a fraction of `training.max_steps`, so a run that stops
+    early has still spent the same time reaching full weight as one that does not.
     """
 
-    kl_annealing_period_steps: int = Field(..., gt=0, description='Optimizer steps in one cycle')
-    kl_annealing_ratio: float = Field(
-        ..., gt=0.0, lt=1.0, description='Fraction of each cycle spent ramping up'
+    kl_annealing_ramp_steps: int = Field(
+        ..., gt=0, description='Optimizer steps spent ramping the KL weight from start to full'
     )
     kl_annealing_start_weight: float = Field(
-        ..., ge=0.0, description='Weight each cycle ramps up from'
+        ..., ge=0.0, description='Weight the run ramps up from'
     )
     kl_annealing_full_weight: float = Field(
-        ..., ge=0.0, description='Weight each cycle ramps up to, and holds at'
+        ..., ge=0.0, description='Weight the run ramps up to, and holds at'
     )
 
     free_bits: float = Field(

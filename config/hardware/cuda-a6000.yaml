@@ -9,7 +9,7 @@ training:
   val_every_n_steps: 50
 
 loss:
-  kl_annealing_period_steps: 625
+  kl_annealing_ramp_steps: 1500
 
 optimizer:
   lr: 0.0012
