@@ -29,6 +29,9 @@ class TransformerCVAE(nn.Module):
     the prior is conditioned on it too, z is left encoding only what the prefix does not
     determine.
 
+    One encoder reads both sequences, so the two summaries the posterior is handed are two
+    reads of one representation rather than two coordinate systems the KL has to reconcile.
+
     Flow, with `prefix` and `suffix` both padded to `max_seq_len`:
         prefix              -> prefix events (for the decoder) + summary (for the latents)
         prefix summary      -> p(z | prefix)               (scored by the KL term only)
@@ -40,25 +43,21 @@ class TransformerCVAE(nn.Module):
 
     def __init__(self, config: ModelConfig, codec: DatasetCodec):
         super().__init__()
-        # Shared between both encoders and the decoder: a single embedding space for events,
+        # Shared between the encoder and the decoder: a single embedding space for events,
         # with fewer parameters.
         self.embeddings = EventEmbeddings(
             config=config.embeddings, codec=codec, d_model=config.d_model
         )
-        # Same architecture, separate weights: one reads prefixes, the other ground-truth
-        # suffixes. Only the prefix encoder runs at inference.
-        self.prefix_encoder = TraceEncoder(
-            config=config.prefix_encoder, embeddings=self.embeddings, d_model=config.d_model
-        )
-        self.suffix_encoder = TraceEncoder(
-            config=config.suffix_encoder, embeddings=self.embeddings, d_model=config.d_model
+        # One stack for both sequences: a prefix and a suffix are the same kind of thing, read
+        # the same way, so a summary of either lands in one coordinate system. Only the prefix
+        # is encoded at inference, the suffix being what the model is asked to write.
+        self.encoder = TraceEncoder(
+            config=config.encoder, embeddings=self.embeddings, d_model=config.d_model
         )
         self.prior = PriorNetwork(
             config=config.prior, latent_config=config.latent, prefix_dim=config.d_model
         )
-        self.posterior = PosteriorNetwork(
-            latent_config=config.latent, prefix_dim=config.d_model, suffix_dim=config.d_model
-        )
+        self.posterior = PosteriorNetwork(latent_config=config.latent, summary_dim=config.d_model)
         self.decoder = Decoder(
             config=config.decoder,
             latent_config=config.latent,
@@ -105,9 +104,9 @@ class TransformerCVAE(nn.Module):
             The decoder's predictions and the latent distributions the loss compares.
         """
         prefix_pad_mask = item.prefix.pad_mask()  # [batch_size, seq_len]
-        prefix = self.prefix_encoder(events=item.prefix, pad_mask=prefix_pad_mask)
+        prefix = self.encoder(events=item.prefix, pad_mask=prefix_pad_mask)
 
-        suffix_summary = self.suffix_encoder(
+        suffix_summary = self.encoder(
             events=item.suffix, pad_mask=item.suffix.pad_mask()
         ).summary  # [batch_size, d_model]
 
@@ -144,7 +143,7 @@ class TransformerCVAE(nn.Module):
             j-th sample for the i-th prefix of the batch.
         """
         prefix_pad_mask = item.prefix.pad_mask()  # [batch_size, seq_len]
-        prefix = self.prefix_encoder(events=item.prefix, pad_mask=prefix_pad_mask)
+        prefix = self.encoder(events=item.prefix, pad_mask=prefix_pad_mask)
 
         # Computed once per prefix: every sample of one prefix is drawn from the same
         # p(z | prefix), so running the prior once and repeating its parameters skips

@@ -34,7 +34,7 @@ class PriorNetwork(nn.Module):
     def forward(self, prefix_summary: torch.Tensor) -> Gaussian:
         """
         Args:
-            prefix_summary: The prefix encoder's summary, `[batch_size, d_model]`.
+            prefix_summary: The encoder's summary of the prefix, `[batch_size, d_model]`.
         Returns:
             `p(z | prefix)`.
         """
@@ -50,19 +50,19 @@ class PosteriorNetwork(nn.Module):
     substitution legitimate.
     """
 
-    def __init__(self, latent_config: LatentConfig, *, prefix_dim: int, suffix_dim: int):
+    def __init__(self, latent_config: LatentConfig, *, summary_dim: int):
         super().__init__()
-        # Both summaries come in already encoded by a transformer each, so a single linear layer
-        # is enough here; like the prior's output layer it emits mean and log-variance together.
+        # Both summaries come out of the same encoder, so a single linear layer is enough here;
+        # like the prior's output layer it emits mean and log-variance together.
         self.head = nn.Linear(
-            in_features=suffix_dim + prefix_dim, out_features=2 * latent_config.latent_dim
+            in_features=2 * summary_dim, out_features=2 * latent_config.latent_dim
         )
 
     def forward(self, prefix_summary: torch.Tensor, suffix_summary: torch.Tensor) -> Gaussian:
         """
         Args:
-            prefix_summary: The prefix encoder's summary, `[batch_size, d_model]`.
-            suffix_summary: The suffix encoder's summary, `[batch_size, d_model]`.
+            prefix_summary: The encoder's summary of the prefix, `[batch_size, d_model]`.
+            suffix_summary: The encoder's summary of the suffix, `[batch_size, d_model]`.
         Returns:
             `q(z | prefix, suffix)`.
         """

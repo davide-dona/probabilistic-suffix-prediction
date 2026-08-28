@@ -70,13 +70,9 @@ model:
     resource_dim: 16  
     feature_dim: 4
 
-  prefix_encoder:
+  encoder:
     num_layers: 1
     feedforward_dim: 256  # keep the 4x d_model ratio
-
-  suffix_encoder:
-    num_layers: 1
-    feedforward_dim: 256
 
   prior:
     hidden_dims: [64]
