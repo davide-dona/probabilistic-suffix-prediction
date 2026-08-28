@@ -6,7 +6,7 @@ from .base import NAME_PATTERN, StrictModel
 
 
 class EmbeddingConfig(StrictModel):
-    """Event embeddings, shared by both trace encoders and the decoder."""
+    """Event embeddings, shared by the trace encoder and the decoder."""
 
     activity_dim: int = Field(..., gt=0)
     resource_dim: int = Field(..., gt=0)
@@ -21,9 +21,9 @@ class EmbeddingConfig(StrictModel):
 class TraceEncoderConfig(StrictModel):
     """Transformer encoder over a sequence of events, full self-attention.
 
-    Used for both the prefix, whose summary conditions the prior and the decoder, and, on the
-    training path only, the ground-truth suffix, which feeds the posterior. Runs at
-    `ModelConfig.d_model`.
+    One stack reads both sequences: the prefix, whose summary conditions the prior and whose
+    events the decoder cross-attends over, and, on the training path only, the ground-truth
+    suffix, whose summary feeds the posterior. Runs at `ModelConfig.d_model`.
     """
 
     num_layers: int = Field(..., gt=0)
@@ -89,12 +89,11 @@ class ModelConfig(StrictModel):
     )
 
     d_model: int = Field(
-        ..., gt=0, description='Shared width for the embeddings, both encoders and the decoder'
+        ..., gt=0, description='Shared width for the embeddings, the encoder and the decoder'
     )
 
     embeddings: EmbeddingConfig
-    prefix_encoder: TraceEncoderConfig
-    suffix_encoder: TraceEncoderConfig
+    encoder: TraceEncoderConfig
     prior: PriorConfig
     latent: LatentConfig
     decoder: DecoderConfig
@@ -103,7 +102,7 @@ class ModelConfig(StrictModel):
     def _heads_divide_width(self) -> ModelConfig:
         # nn.MultiheadAttention asserts this when the layer is built, halfway through a run's
         # setup. Checking it here turns a config mistake back into a config error.
-        for name in ('prefix_encoder', 'suffix_encoder', 'decoder'):
+        for name in ('encoder', 'decoder'):
             num_heads = getattr(self, name).num_heads
             if self.d_model % num_heads != 0:
                 raise ValueError(

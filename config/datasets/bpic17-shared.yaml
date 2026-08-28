@@ -1,10 +1,16 @@
+# One shared trace encoder, against config/datasets/bpic17.yaml (`cvae`) on main.
+#
+# The `data` section below is that file verbatim; this config differs from it only in the
+# `model.name` that follows it, the architecture change itself being unconditional on this
+# branch. See ideas/shared-encoder.md.
+
 data:
-  name: sepsis
+  name: bpic17
 
   # Keys of the raw event log to be mapped to the standard keys used in the framework.
-  case_key: "Case ID"
-  activity_key: Activity
-  resource_key: Resource
+  case_key: "case:concept:name"
+  activity_key: "concept:name"
+  resource_key: "org:resource"
   timestamp_key: "time:timestamp"
 
   # Split the dataset into train, validation, and test sets.
@@ -22,32 +28,21 @@ data:
   string_features: []
 
   event_features:
+    # Case-level: share the same value for every row in a case
+    - case:LoanGoal
+    - case:ApplicationType
+    - case:RequestedAmount
     # Event-level: vary per row in a case
-    - DiagnosticArtAstrup
-    - DiagnosticBlood
-    - DiagnosticECG
-    - DiagnosticIC
-    - DiagnosticLacticAcid
-    - DiagnosticLiquor
-    - DiagnosticSputum
-    - DiagnosticUrinaryCulture
-    - DiagnosticUrinarySediment
-    - DiagnosticXthorax
-    - DisfuncOrg
-    - Hypotensie
-    - Hypoxie
-    - InfectionSuspected
-    - Infusion
-    - Oligurie
-    - SIRSCritHeartRate
-    - SIRSCritLeucos
-    - SIRSCritTachypnea
-    - SIRSCritTemperature
-    - SIRSCriteria2OrMore
-    - Age
-    - CRP
-    - LacticAcid
-    - Leucocytes
+    - Action
+    - EventOrigin
+    - lifecycle:transition
+    - FirstWithdrawalAmount
+    - NumberOfTerms
+    - Accepted
+    - MonthlyCost
+    - Selected
+    - CreditScore
+    - OfferedAmount
     # Minutes since the case began, derived from the timestamp
     - ts_start
     # Calendar position of the event, cyclically encoded
@@ -60,27 +55,5 @@ data:
   log_scaled_remaining_time: false
   log_scaled_time_to_next: false
 
-# Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
 model:
-  name: cvae-small
-
-  d_model: 64
-
-  embeddings:
-    resource_dim: 16  
-    feature_dim: 4
-
-  encoder:
-    num_layers: 1
-    feedforward_dim: 256  # keep the 4x d_model ratio
-
-  prior:
-    hidden_dims: [64]
-
-  latent:
-    latent_dim: 8
-
-  decoder:
-    num_layers: 1
-    feedforward_dim: 256
-    head_hidden_dim: 64
+  name: cvae-shared

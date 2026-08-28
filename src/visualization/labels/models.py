@@ -26,6 +26,11 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
+        # The shared-encoder runs, one per log of config/datasets/*-shared.yaml.
+        'cvae-shared': ModelStyle(label='CVAE shared', color='#5FA8D3', marker='o', linestyle='-'),
+        'cvae-small-shared': ModelStyle(
+            label='CVAE shared', color='#5FA8D3', marker='o', linestyle='-'
+        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),
     },

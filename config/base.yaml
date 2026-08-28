@@ -24,18 +24,13 @@ model:
     resource_dim: 32  
     feature_dim: 8  # per categorical event feature; each one widens the projection's input
 
-  # Encodes the prefix; its CLS summary feeds both the prior and the decoder's cross-attention.
-  prefix_encoder:
+  # Reads both sequences: the prefix, whose CLS summary feeds the prior and whose events the
+  # decoder cross-attends over, and, during training only, the ground-truth suffix, whose
+  # summary feeds the posterior.
+  encoder:
     num_layers: 2
     num_heads: 4
     feedforward_dim: 512  # 4x d_model ratio
-    dropout: 0.1
-
-  # Encodes the ground-truth suffix for the posterior, training only; shallower on purpose.
-  suffix_encoder:
-    num_layers: 2 
-    num_heads: 4
-    feedforward_dim: 512
     dropout: 0.1
 
   # MLP mapping the prefix summary to p(z|prefix), sampled from at inference.

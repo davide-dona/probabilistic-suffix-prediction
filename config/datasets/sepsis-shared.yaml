@@ -1,3 +1,8 @@
+# One shared trace encoder, against config/datasets/sepsis.yaml (`cvae-small`) on main.
+#
+# Everything below is that file verbatim but for `model.name`, the architecture change itself
+# being unconditional on this branch. See ideas/shared-encoder.md.
+
 data:
   name: sepsis
 
@@ -62,7 +67,7 @@ data:
 
 # Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
 model:
-  name: cvae-small
+  name: cvae-small-shared
 
   d_model: 64
 
