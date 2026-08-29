@@ -242,7 +242,9 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluati
         evaluation_summary = 'nothing evaluation reads'
     else:
         with step('Indexing the continuations of the test split'):
-            prefixes, occurrences = build_index(test, dataset=dataset)
+            prefixes, occurrences = build_index(
+                test, dataset=dataset, vocabulary=codec.activity.vocab
+            )
             print(
                 f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
                 flush=True,
