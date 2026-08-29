@@ -64,15 +64,16 @@ data:
 model:
   name: cvae-small
 
-  d_model: 64
+  d_model: 32
 
   embeddings:
-    resource_dim: 16  
+    resource_dim: 16
     feature_dim: 4
 
   encoder:
-    num_layers: 1
-    feedforward_dim: 256  # keep the 4x d_model ratio
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
 
   prior:
     hidden_dims: [64]
@@ -81,6 +82,7 @@ model:
     latent_dim: 8
 
   decoder:
-    num_layers: 1
-    feedforward_dim: 256
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
     head_hidden_dim: 64
