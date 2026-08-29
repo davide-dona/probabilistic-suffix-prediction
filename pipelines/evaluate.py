@@ -16,8 +16,8 @@ from src.evaluation.report import EvaluationReport
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
 from src.identity import read_run_identity
 from src.inference.generation_store import read_generation_block, read_prefix_keys
+from src.logs.conformance import ConformanceChecker, discovery_settings
 from src.logs.continuations import ContinuationIndex
-from src.logs.declare import ConformanceChecker, discovery_settings
 
 
 @dataclass(frozen=True)

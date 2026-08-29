@@ -1,5 +1,5 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src import paths
-from src.logs.keys import ACTIVITY_KEY, CASE_KEY, REMAINING_TIME_KEY
+from src.logs.keys import ACTIVITY_KEY, CASE_KEY, REMAINING_TIME_KEY, UNK_TOKEN
 from src.suffixes import ActivityCodes, spread
 
 # The activity names the encoded prefixes and suffixes are read back through, in code order.
@@ -110,7 +110,9 @@ class ContinuationIndex:
         )
 
 
-def build_index(test: pd.DataFrame, *, dataset: str) -> tuple[int, int]:
+def build_index(
+    test: pd.DataFrame, *, dataset: str, vocabulary: Collection[str]
+) -> tuple[int, int]:
     """Index every continuation a log's test split takes, and write it beside the split.
 
     The reference distribution a generated one is compared against is the test split and nothing
@@ -120,16 +122,32 @@ def build_index(test: pd.DataFrame, *, dataset: str) -> tuple[int, int]:
     `min_prefix_len` included, since that bound governs what a model may be asked rather than what
     the log was observed to do.
 
+    The split is read through the train split's vocabulary, an activity missing from it becoming
+    UNK, which is the only name generation can give it: a model can emit no activity it was never
+    shown, and the generations name a prefix and its ground truth the same way. Keying the index
+    on the raw names instead would leave every prefix of an out-of-time activity unlookupable,
+    and every reference suffix holding one unmatchable by construction.
+
     Args:
         test: The test split, as preprocessing holds it, sorted by case and by timestamp.
         dataset: The dataset the split came from, naming where the index goes.
+        vocabulary: The activity names the train split holds, from `codec.activity.vocab`.
     Returns:
         How many distinct prefixes were indexed, and how many occurrences they cover.
     """
+    known = set(vocabulary)
+    seen = test.assign(
+        **{
+            ACTIVITY_KEY: test[ACTIVITY_KEY].where(
+                cond=test[ACTIVITY_KEY].isin(known), other=UNK_TOKEN
+            )
+        }
+    )
+
     codes = ActivityCodes()
     cases = [
         (codes.encode(events[ACTIVITY_KEY]), events[REMAINING_TIME_KEY].tolist())
-        for _, events in test.groupby(CASE_KEY, sort=False)
+        for _, events in seen.groupby(CASE_KEY, sort=False)
     ]
 
     # Every cut point of every case, grouped under the prefix it leaves behind. A prefix's

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Self
 
 from src.inference.generation import Generation
-from src.logs.declare import ConformanceChecker
+from src.logs.conformance import ConformanceChecker
 from src.scalar_metrics import ScalarMetrics, Unit, mean, metric
 
 

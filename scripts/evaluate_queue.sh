@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Evaluate every generations file under outputs/generations/ that has no report yet, one at a
-# time. Evaluation is CPU-bound and already parallelizes internally via pipelines.evaluate's own
-# -j/--workers, so this is a plain sequential loop rather than scripts/lib/queue.sh's per-GPU
-# worker queue.
+# Evaluate every generations file that has no report yet, one at a time. Evaluation is CPU-bound
+# and already parallelizes internally via pipelines.evaluate's own -j/--workers, so this is a plain
+# sequential loop rather than scripts/lib/queue.sh's per-GPU worker queue.
+#
+# Both generations trees are walked: outputs/generations/ and the same layout under pinned/, where
+# a run is moved by hand so a wipe of outputs/ cannot touch it. A report is named after the run
+# that wrote it either way, so both land under outputs/eval/ and a pinned run is no different to
+# anything reading one.
 set -uo pipefail
 
-readonly GENERATIONS_DIR='outputs/generations'
+readonly GENERATIONS_DIRS=('outputs/generations' 'pinned/generations')
 readonly EVAL_DIR='outputs/eval'
 readonly LOGS='outputs/queue/evaluate'
 force=0
@@ -26,17 +30,28 @@ done
 
 mkdir -p "$LOGS"
 
+# pinned/ is gitignored, so a checkout that has never pinned a run does not have it.
+roots=()
+for dir in "${GENERATIONS_DIRS[@]}"; do
+  [[ -d "$dir" ]] && roots+=("$dir")
+done
+(( ${#roots[@]} )) || { echo "none of ${GENERATIONS_DIRS[*]}/ exists" >&2; exit 1; }
+
 generations=()
 while IFS= read -r -d '' file; do
   generations+=("$file")
-done < <(find "$GENERATIONS_DIR" -type f -name '*.parquet' -print0 | sort -z)
-(( ${#generations[@]} )) || { echo "nothing under $GENERATIONS_DIR/" >&2; exit 1; }
+done < <(find "${roots[@]}" -type f -name '*.parquet' -print0 | sort -z)
+(( ${#generations[@]} )) || { echo "nothing under ${roots[*]}/" >&2; exit 1; }
 
 ok=0
 failed=()
 
 for file in "${generations[@]}"; do
-  rel="${file#"$GENERATIONS_DIR"/}"
+  # Whichever tree it came from, a run names itself the same way below the root.
+  rel="$file"
+  for dir in "${GENERATIONS_DIRS[@]}"; do
+    rel="${rel#"$dir"/}"
+  done
   name="${rel%.parquet}"
   report="$EVAL_DIR/$name.json"
 

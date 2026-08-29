@@ -1,48 +1,18 @@
-import re
-from collections.abc import Callable
-from dataclasses import dataclass
-from functools import cache, lru_cache
-from pathlib import Path
-from types import CodeType
-from typing import Any
+"""Mine a declarative model from a dataset's train split.
+
+What checks a trace against the written model lives in `src.logs.conformance`, which reads the
+file this writes and depends on neither pm4py nor Declare4Py.
+"""
 
 import pandas as pd
 import pm4py
 from Declare4Py.D4PyEventLog import D4PyEventLog
 from Declare4Py.ProcessMiningTasks.Discovery.DeclareMiner import DeclareMiner
-from Declare4Py.ProcessModels.DeclareModel import (
-    DeclareModelConditionParserUtility,
-    DeclareModelTemplate,
-)
-from Declare4Py.Utils.Declare.Checkers import CheckerResult, TemplateConstraintChecker
-from Declare4Py.Utils.Declare.TraceStates import TraceState
 
 from src import paths
 from src.configs import DeclareConfig
+from src.logs.conformance import COMMENT, SETTINGS_LINE
 from src.logs.keys import ACTIVITY_KEY, CASE_KEY, TIMESTAMP_KEY
-
-# Parse the declarative model written by `discover_declare_model` back into the constraints it
-# holds. Read here rather than through `DeclareModel.parse_from_file`, whose grammar rejects the
-# activity names a real log carries: see `_read_constraints`.
-_CONSTRAINT_LINE = re.compile(r'^(.*)\[(.*)\]\s*(.*)$')
-_TEMPLATE_AND_CARDINALITY = re.compile(r'(^.+?)(\d*$)')
-
-# The header `discover_declare_model` opens a model with and `discovery_settings` reads back.
-# Comment lines, so nothing that parses the constraints has to know about them.
-_COMMENT = '#'
-_SETTINGS_LINE = '# settings: '
-
-# What a constraint a trace never activates counts as when scoring. False makes it count as
-# violated, so the rate only credits constraints the trace actually exercises. Independent of the
-# `declare.consider_vacuity` a model was discovered under: that one decides which constraints hold
-# on enough of the log to keep, this one decides what a generated trace is credited for.
-_CONSIDER_VACUITY = False
-
-# Maximum number of distinct traces cached by the ConformanceChecker.
-# Each prefix generates one trace per sample, and the same trace may be
-# generated for multiple prefixes. Caching previously computed scores avoids
-# redundant conformance checks and can significantly reduce computation.
-_TRACE_CACHE_SIZE = 100_000
 
 
 def discover_declare_model(
@@ -95,10 +65,10 @@ def discover_declare_model(
 
     # What the constraints below were mined under, so a reader of the file can tell a model mined
     # one way from one mined another. Nothing reads it back to check conformance with: see
-    # `discovery_settings`.
+    # `src.logs.conformance.discovery_settings`.
     lines = [
-        f'{_COMMENT} discovered from the train split of {dataset} by pipelines.preprocess',
-        f'{_SETTINGS_LINE}{declare_config.model_dump_json()}',
+        f'{COMMENT} discovered from the train split of {dataset} by pipelines.preprocess',
+        f'{SETTINGS_LINE}{declare_config.model_dump_json()}',
     ]
     # Write the activities in the Declare4py format
     lines += [f'activity {activity}' for activity in model.activities]
@@ -114,208 +84,3 @@ def discover_declare_model(
     path.write_text('\n'.join(lines) + '\n')
 
     return len(model.constraints)
-
-
-def discovery_settings(path: Path) -> DeclareConfig | None:
-    """What a declarative model was discovered under, as its own header records it.
-
-    Discovery and conformance checking each decide, separately, whether a constraint a trace never
-    activates counts as satisfied: discovery because it decides which constraints hold on enough of
-    the log to keep, checking because it decides what a trace is credited for. They are independent
-    settings and need not agree, which is why the file records the one it was mined under rather
-    than the checker reading it as its own.
-
-    Args:
-        path: The model file, from `paths.declare_model_path`.
-    Returns:
-        The settings its header records, or `None` for a model written before the header existed,
-        which says nothing about how it was mined.
-    Raises:
-        pydantic.ValidationError: If the header is there but does not describe a discovery.
-    """
-    for line in path.read_text().splitlines():
-        if line.startswith(_SETTINGS_LINE):
-            return DeclareConfig.model_validate_json(line.removeprefix(_SETTINGS_LINE))
-    return None
-
-
-def _read_constraints(path: Path) -> list[tuple[str, dict[str, Any]]]:
-    """Read a written declarative model and return its constraints.
-
-    This reads the model directly instead of using `DeclareModel.parse_from_file`,
-    whose grammar does not support arbitrary activity names. For example, names
-    containing parentheses or colons can be misparsed as declarations or attribute
-    assignments. Constraint lines, however, delimit their activities with brackets,
-    so their names can be recovered reliably from the constraint itself.
-
-    Args:
-        path: The model file produced by `discover_declare_model`.
-
-    Returns:
-        One entry per supported constraint, containing the template and the
-        activities, conditions, and cardinality expected by
-        `TemplateConstraintChecker`. Constraints using templates unknown to
-        Declare4Py are skipped, matching the behaviour of its parser.
-    """
-    constraints = []
-
-    for line in path.read_text().splitlines():
-        line = line.strip()
-
-        # Skip the header, which says how the model was mined rather than what it holds, and any
-        # other line that is not a constraint.
-        if line.startswith(_COMMENT) or not _CONSTRAINT_LINE.search(line):
-            continue
-
-        head, activities = line.split('[', 1)
-        # Get the template and cardinality from the head of the line
-        named = _TEMPLATE_AND_CARDINALITY.search(head)
-        if named is None:
-            continue
-
-        template = DeclareModelTemplate.get_template_from_string(named.group(1))
-        if template is None:
-            continue
-        cardinality = named.group(2)
-        # Build the constraint dictionary expected by TemplateConstraintChecker
-        constraint: dict[str, Any] = {
-            'template': template,
-            'activities': activities.split(']')[0].split(', '),
-            # Everything past the activities, one condition per `|`-separated field.
-            'condition': re.split(r'\s+\|', line)[1:],
-        }
-        if template.supports_cardinality:
-            constraint['n'] = int(cardinality) if cardinality else 1
-        constraints.append((line, constraint))
-    return constraints
-
-
-class _CompilingConditionParser(DeclareModelConditionParserUtility):
-    """Compile Declare conditions once and reuse the resulting code objects.
-
-    Declare4Py's template checkers pass conditions directly to `eval`. While
-    `eval` accepts both strings and code objects, string inputs are parsed and
-    compiled on every call. A mined model typically reuses the same small set of
-    conditions across many constraints, and each condition may be evaluated for
-    every matching event in every trace. Caching compiled conditions therefore
-    replaces repeated parsing with a dictionary lookup.
-    """
-
-    @cache  # noqa: B019 -- one parser per checker, and one checker per scoring process
-    def parse_data_cond(self, condition: str) -> CodeType:
-        return super().parse_data_cond(condition)
-
-    @cache  # noqa: B019 -- one parser per checker, and one checker per scoring process
-    def parse_time_cond(self, condition: str) -> CodeType:
-        return super().parse_time_cond(condition)
-
-
-@dataclass(frozen=True)
-class _PreparedConstraint:
-    """One constraint of a model, resolved down to what checking a trace against it needs.
-
-    The activities and the conditions a constraint is checked with are the same for every trace,
-    so they are read off the model once rather than rebuilt per check.
-    """
-
-    # The bound template checker to call, already tied to the trace holder it reads from.
-    check: Callable[[], CheckerResult]
-    activities: list[str]
-    rules: dict[str, Any]
-
-
-class ConformanceChecker:
-    """Scores traces against the declarative model a dataset was mined for.
-
-    Holds one trace at a time and swaps the constraint under it, so a check costs the constraint
-    and nothing around it. Not shareable between threads or processes for that reason: a scoring
-    pool builds one per worker.
-    """
-
-    def __init__(self, dataset: str) -> None:
-        """
-        Args:
-            dataset: The dataset whose model to check against, read from where preprocessing
-                wrote it.
-        """
-        # The checkers only ever read `event[ACTIVITY_KEY]` and the trace's length, so a trace is
-        # a list of one-key dicts: no event log, and nothing read off disk per check. Every trace
-        # is judged as a finished case, which the checkers assume anyway.
-        self._trace_holder = TemplateConstraintChecker(
-            traces=[],
-            completed=True,
-            activities=[],
-            rules={},
-            concept_name=ACTIVITY_KEY,
-        )
-        self._trace_holder.declare_parser_utility = _CompilingConditionParser()
-        self._constraints = self._prepare(_read_constraints(paths.declare_model_path(dataset)))
-
-    def _prepare(self, constraints: list[tuple[str, dict[str, Any]]]) -> list[_PreparedConstraint]:
-        """Resolve a model's constraints into what each check needs.
-
-        Args:
-            constraints: The model's constraints beside the line each was read from, from
-                `_read_constraints`.
-        Returns:
-            One entry per constraint whose conditions compile. A constraint whose conditions do
-            not is reported and dropped, so it counts towards neither side of the rate.
-        """
-        parser = self._trace_holder.declare_parser_utility
-        prepared = []
-        for line, constraint in constraints:
-            template = constraint['template']
-            rules: dict[str, Any] = {
-                'vacuous_satisfaction': _CONSIDER_VACUITY,
-                'activation': constraint['condition'][0],
-                # The time condition is always at the last position.
-                'time': constraint['condition'][-1],
-            }
-            if template.supports_cardinality:
-                rules['n'] = constraint['n']
-            if template.is_binary:
-                rules['correlation'] = constraint['condition'][1]
-
-            checker_name = f'mp{template.templ_str.replace(" ", "")}'
-            check = getattr(self._trace_holder, checker_name, None)
-            if check is None:
-                raise NotImplementedError(
-                    f'Declare4Py has no checker for the {template.templ_str} template.'
-                )
-            try:
-                # Compiled here so a malformed condition is reported once rather than per trace.
-                parser.parse_data_cond(rules['activation'])
-                parser.parse_time_cond(rules['time'])
-                if template.is_binary:
-                    parser.parse_data_cond(rules['correlation'])
-            except SyntaxError:
-                print(f'Condition not properly formatted for constraint "{line}".')
-                continue
-            prepared.append(
-                _PreparedConstraint(
-                    check=check,
-                    activities=constraint['activities'],
-                    rules=rules,
-                )
-            )
-        return prepared
-
-    @lru_cache(maxsize=_TRACE_CACHE_SIZE)  # noqa: B019 -- one checker per scoring process
-    def rate(self, trace: tuple[str, ...]) -> float:
-        """
-        The fraction of the model's constraints one trace satisfies.
-
-        Args:
-            trace: The trace's activity names, in order. A whole case, prefix included: a
-                constraint like `Init` or `Precedence` is about the trace, not about a run of
-                events inside it.
-        Returns:
-            The satisfied share, in `[0, 1]`, or 0.0 for a model that checks nothing.
-        """
-        self._trace_holder.traces = [{ACTIVITY_KEY: activity} for activity in trace]
-        satisfied = 0
-        for constraint in self._constraints:
-            self._trace_holder.activities = constraint.activities
-            self._trace_holder.rules = constraint.rules
-            satisfied += constraint.check().state == TraceState.SATISFIED
-        return satisfied / len(self._constraints) if self._constraints else 0.0

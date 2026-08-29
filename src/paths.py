@@ -9,11 +9,6 @@ DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
 PRETRAINED_DIR = ROOT / 'pretrained'
 
-# Where a run's artifacts move once `scripts/pin.py` has pinned them, mirroring `OUTPUTS_DIR`'s
-# own layout so the two are interchangeable to every reader. Kept out of `outputs/` itself so
-# clearing that directory can never sweep a pinned run up with it.
-PINNED_DIR = ROOT / 'pinned'
-
 # Where everything `pipelines.visualize` writes for the paper lands. The figures are split per
 # log and the tables span every log at once, so the two sit in separate directories rather than
 # the tables sitting beside the logs' directories.
@@ -142,42 +137,26 @@ def require_declare_model(dataset: str) -> None:
         )
 
 
-def tensorboard_dir(run: RunIdentity, *, pinned: bool = False) -> Path:
+def tensorboard_dir(run: RunIdentity) -> Path:
     """A run's TensorBoard events. One directory is one run, so the tag has to tell two runs of
     one model on one dataset apart.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
     """
-    return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'tensorboard' / _run_dir(run)
+    return OUTPUTS_DIR / 'tensorboard' / _run_dir(run)
 
 
-def checkpoint_path(run: RunIdentity, *, pinned: bool = False) -> Path:
-    """A run's last validated step, overwritten every validation; what `--resume` reads.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
-    """
-    return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'checkpoints' / 'last' / f'{_run_dir(run)}.pt'
+def checkpoint_path(run: RunIdentity) -> Path:
+    """A run's last validated step, overwritten every validation; what `--resume` reads."""
+    return OUTPUTS_DIR / 'checkpoints' / 'last' / f'{_run_dir(run)}.pt'
 
 
-def best_model_path(run: RunIdentity, *, pinned: bool = False) -> Path:
+def best_model_path(run: RunIdentity) -> Path:
     """A run's best step, overwritten whenever the selection score improves.
 
     The same file as `checkpoint_path` in everything but when it is written, which is why the two
     sit under one directory: both are a run's own output, and neither is what anyone downloads.
     `scripts/publish.py` promotes one of these to the curated name `pretrained_path` describes.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
     """
-    return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'checkpoints' / 'best' / f'{_run_dir(run)}.pt'
+    return OUTPUTS_DIR / 'checkpoints' / 'best' / f'{_run_dir(run)}.pt'
 
 
 def pretrained_path(dataset: str, model: str) -> Path:
@@ -196,40 +175,23 @@ def pretrained_path(dataset: str, model: str) -> Path:
     return PRETRAINED_DIR / dataset / f'{model}.pt'
 
 
-def generations_path(run: RunIdentity, *, pinned: bool = False) -> Path:
-    """The suffixes a run generated for the test split.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
-    """
-    return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'generations' / f'{_run_dir(run)}.parquet'
+def generations_path(run: RunIdentity) -> Path:
+    """The suffixes a run generated for the test split."""
+    return OUTPUTS_DIR / 'generations' / f'{_run_dir(run)}.parquet'
 
 
-def evaluation_path(run: RunIdentity, *, pinned: bool = False) -> Path:
-    """The report those generations scored.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
-    """
-    return (PINNED_DIR if pinned else OUTPUTS_DIR) / 'eval' / f'{_run_dir(run)}.json'
+def evaluation_path(run: RunIdentity) -> Path:
+    """The report those generations scored."""
+    return OUTPUTS_DIR / 'eval' / f'{_run_dir(run)}.json'
 
 
-def prefix_scores_path(run: RunIdentity, *, pinned: bool = False) -> Path:
+def prefix_scores_path(run: RunIdentity) -> Path:
     """The per-prefix scores the report was averaged from.
 
     The report's own path with a different suffix, so a reader that has just read a report finds
     these beside it without being told where to look.
-
-    Args:
-        run: The run to locate.
-        pinned: Whether to read this under `PINNED_DIR` instead of `OUTPUTS_DIR`, once
-            `scripts/pin.py` has moved the run there.
     """
-    return evaluation_path(run, pinned=pinned).with_suffix('.parquet')
+    return evaluation_path(run).with_suffix('.parquet')
 
 
 def combined_figure_path(name: str) -> Path:

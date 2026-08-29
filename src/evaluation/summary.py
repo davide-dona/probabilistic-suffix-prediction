@@ -4,8 +4,8 @@ from typing import Self
 
 from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores, DistributionScores
 from src.inference.generation import Generation
+from src.logs.conformance import ConformanceChecker
 from src.logs.continuations import ContinuationIndex
-from src.logs.declare import ConformanceChecker
 
 
 @dataclass(frozen=True, slots=True)
