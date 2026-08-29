@@ -1,20 +1,3 @@
-"""Score traces against the declarative model a dataset was mined for.
-
-The templates are evaluated over a trace's activity sequence alone, which is all a mined model
-constrains: `pipelines.preprocess` writes every constraint with empty activation, correlation and
-time conditions, so nothing outside the sequence can decide whether one holds.
-
-Two readings are fixed here rather than left as settings, since they are what a generated suffix
-is credited for rather than properties of the model:
-
-- A trace is judged as a finished case, which is what a generated suffix completes its prefix into.
-- A constraint the trace never activates counts as violated, so the rate only credits constraints
-  the trace actually exercises. `Absence` is the one template a trace can satisfy without running
-  its activity, since not running it is what it asks for. This is independent of the
-  `declare.consider_vacuity` a model was discovered under, which decides which constraints hold on
-  enough of the log to keep.
-"""
-
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
