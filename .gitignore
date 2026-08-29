@@ -8,7 +8,8 @@ CLAUDE.md
 # Published models, fetched from the Hugging Face repo rather than committed
 pretrained/
 
-# Pinned runs, moved out of outputs/ by scripts/pin.py so a wipe of it can't touch them
+# Runs pinned by hand, moved out of outputs/ so a wipe of it cannot touch them. Mirrors
+# outputs/ own layout, and scripts/evaluate_queue.sh walks it alongside outputs/generations/.
 pinned/
 
 
