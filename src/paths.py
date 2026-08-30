@@ -74,9 +74,21 @@ def declare_model_path(dataset: str) -> Path:
     return DATA_DIR / dataset / 'declare' / 'model.decl'
 
 
-def continuation_path(dataset: str) -> Path:
-    """A dataset's continuation index, built from its test split at preprocessing time."""
-    return DATA_DIR / dataset / 'continuations.parquet'
+def continuation_path(dataset: str, split: Split) -> Path:
+    """A dataset's continuation index for one split, built at preprocessing time.
+
+    Keyed by split rather than by dataset alone: evaluation reads the test split's continuations,
+    training selects checkpoints on the validation split's, and selecting on the test split's would
+    fold the held-out set into what gets kept.
+
+    Args:
+        dataset: The dataset the index belongs to.
+        split: Which split's continuations to name. Only `VAL` and `TEST` are indexed; the train
+            split is what a model is fitted on, so it is no reference to score against.
+    Returns:
+        The path to that index.
+    """
+    return DATA_DIR / dataset / 'continuations' / f'{split}.parquet'
 
 
 def require_dataset(dataset: str) -> None:
@@ -101,19 +113,20 @@ def require_dataset(dataset: str) -> None:
         )
 
 
-def require_continuations(dataset: str) -> None:
-    """Check that a dataset's continuation index is on disk, since it is the other artifact
-    `--skip-evaluation` leaves unwritten and evaluation is the only reader.
+def require_continuations(dataset: str, split: Split) -> None:
+    """Check that a dataset's continuation index for one split is on disk, since it is one of the
+    artifacts `--skip-evaluation` leaves unwritten.
 
     Args:
         dataset: The dataset to check.
+        split: Which split's index is wanted. Training asks for `VAL`, evaluation for `TEST`.
     Raises:
         FileNotFoundError: If the index is missing, naming what to rerun.
     """
-    path = continuation_path(dataset)
+    path = continuation_path(dataset=dataset, split=split)
     if not path.exists():
         raise FileNotFoundError(
-            f'"{dataset}" has no continuation index at {path}. Run '
+            f'"{dataset}" has no {split} continuation index at {path}. Run '
             f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
             'without --skip-evaluation first.'
         )
@@ -209,7 +222,7 @@ def comparison_table_path(name: str) -> Path:
     """One results table comparing every visualized run.
 
     Args:
-        name: Which table, e.g. `comparison-point`.
+        name: Which table, e.g. `fidelity`.
     Returns:
         The path to that table's LaTeX source.
     """

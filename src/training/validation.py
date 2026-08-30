@@ -1,12 +1,28 @@
+from dataclasses import dataclass
+
 import torch
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.evaluation.scores import AccuracyScores
+from src.evaluation.scores import AccuracyScores, DistributionScores
 from src.inference.generate import generate_batch
+from src.logs.continuations import ContinuationIndex
 from src.model import TransformerCVAE
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss, compute_loss
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationMetrics:
+    """What one generation pass measured: how close the suffixes are to the ground truth, and how
+    the set of them compares against every continuation the validation split took.
+
+    The two families a training run reads. Accuracy is the curve a run is watched on, and
+    `DistributionScores.emsc` is the score a checkpoint is selected on.
+    """
+
+    accuracy: AccuracyScores
+    distribution: DistributionScores
 
 
 @torch.no_grad()
@@ -58,15 +74,17 @@ def validate_generation(
     *,
     num_samples: int,
     codec: DatasetCodec,
+    index: ContinuationIndex,
     device: torch.device,
-) -> AccuracyScores:
+) -> GenerationMetrics:
     """
-    Generate suffixes from the prefixes in `loader` and compare them to the ground truth.
+    Generate suffixes from the prefixes in `loader` and compare them to the ground truth and to
+    every continuation the split was observed to take.
 
-    Scored through `AccuracyScores.of`, the same way the final report is built, over the same
-    population: every prefix counts here and in `pipelines/evaluate.py` alike. What differs is
-    which split is read, how much of it, and how many suffixes each prefix is answered with, so
-    a training curve is read for its shape over steps rather than against a report's numbers.
+    Scored through the same two families the final report is built from, over the same population:
+    every prefix counts here and in `pipelines/evaluate.py` alike. What differs is which split is
+    read, how much of it, and how many suffixes each prefix is answered with, so a training curve
+    is read for its shape over steps rather than against a report's numbers.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
@@ -78,14 +96,17 @@ def validate_generation(
             generations back into the log's own units. Passed rather than read off
             `loader.dataset`, which is a `Subset` wherever the split is bigger than the slice
             validated on.
+        index: The continuations the validation split takes after each of its prefixes. The
+            validation split's and never the test split's: selecting a checkpoint against the
+            test split's continuations would fold the held-out set into what gets kept.
         device: The device to run the computations on.
     Returns:
         The metrics of the pass, averaged over prefixes.
     """
     model.eval()
 
-    scores = [
-        AccuracyScores.of(generation)
+    generations = [
+        generation
         for batch in loader
         for generation in generate_batch(
             model=model,
@@ -94,4 +115,9 @@ def validate_generation(
             codec=codec,
         )
     ]
-    return AccuracyScores.mean(scores)
+    return GenerationMetrics(
+        accuracy=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]),
+        distribution=DistributionScores.mean(
+            [DistributionScores.of(one, index=index) for one in generations]
+        ),
+    )

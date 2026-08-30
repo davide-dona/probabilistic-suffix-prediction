@@ -144,7 +144,12 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluation: bool) -> None:
+def run(
+    data_config: DataConfig,
+    declare_config: DeclareConfig,
+    *,
+    skip_evaluation: bool,
+) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
 
@@ -156,17 +161,18 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluati
     The vocabularies and normalization statistics the model is built against are fit here too,
     on the train split alone, and written beside it as `dataset.json`.
 
-    Two more artifacts follow, both read by evaluation alone and both skipped together under
-    `skip_evaluation`: the continuations the test split takes after each of its prefixes, indexed
-    beside the splits, and the declarative model discovered from the train split and written
-    to `data/<dataset>/declare/model.decl`. Discovery is the slowest step here by a wide margin,
-    which is what skipping the pair is worth doing for.
+    Two more artifacts follow, both skipped together under `skip_evaluation`: the continuations
+    each held-out split takes after each of its prefixes, indexed beside the splits, and the
+    declarative model discovered from the train split. Both held-out splits are indexed because
+    evaluation scores against the test split's continuations while training selects checkpoints
+    against the validation split's. Discovery is the slowest step here by a wide margin, which is
+    what skipping the pair is worth doing for.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
         declare_config: The `declare` section, driving the discovery of the declarative model.
-        skip_evaluation: Whether to skip the two artifacts only evaluation reads. Evaluation will
-            fail until preprocessing is rerun without this flag.
+        skip_evaluation: Whether to skip the artifacts training's selection and evaluation read.
+            Both will fail until preprocessing is rerun without this flag.
     """
     dataset = data_config.name
 
@@ -180,7 +186,7 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluati
             'codec': paths.codec_path(dataset),
             'continuations': 'skipped (--skip-evaluation)'
             if skip_evaluation
-            else paths.continuation_path(dataset),
+            else paths.continuation_path(dataset=dataset, split=Split.VAL).parent,
             'declarative model': 'skipped (--skip-evaluation)'
             if skip_evaluation
             else paths.declare_model_path(dataset),
@@ -241,14 +247,19 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluati
     if skip_evaluation:
         evaluation_summary = 'nothing evaluation reads'
     else:
-        with step('Indexing the continuations of the test split'):
-            prefixes, occurrences = build_index(
-                test, dataset=dataset, vocabulary=codec.activity.vocab
-            )
-            print(
-                f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
-                flush=True,
-            )
+        # Both held-out splits, since training selects on the validation split's continuations and
+        # evaluation scores against the test split's.
+        indexed = {}
+        for split, rows in ((Split.VAL, val), (Split.TEST, test)):
+            with step(f'Indexing the continuations of the {split} split'):
+                prefixes, occurrences = build_index(
+                    rows, dataset=dataset, split=split, vocabulary=codec.activity.vocab
+                )
+                indexed[split] = prefixes
+                print(
+                    f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
+                    flush=True,
+                )
 
         # The slowest step of the pipeline by a wide margin, and pm4py reports its own progress.
         with step('Discovering the declarative model'):
@@ -257,7 +268,11 @@ def run(data_config: DataConfig, declare_config: DeclareConfig, *, skip_evaluati
                 dataset=dataset,
                 declare_config=declare_config,
             )
-        evaluation_summary = f'{prefixes:,} indexed prefixes, {constraints} declarative constraints'
+
+        evaluation_summary = (
+            f'{indexed[Split.VAL]:,} val and {indexed[Split.TEST]:,} test indexed prefixes, '
+            f'{constraints} declarative constraints'
+        )
 
     print(
         f'Preprocessed "{dataset}": {len(train):,} train, {len(val):,} val, {len(test):,} test '
@@ -278,9 +293,9 @@ def main() -> None:
     parser.add_argument(
         '--skip-evaluation',
         action='store_true',
-        help='Skip the continuation index and the declarative model, the two artifacts neither '
-        'training nor generation reads. Evaluation needs both, so rerun without this flag '
-        'before evaluating.',
+        help='Skip the continuation indices and the declarative model. Training selects '
+        'checkpoints on the validation index and evaluation reads both, so rerun without this '
+        'flag before either.',
     )
     args = parser.parse_args()
 

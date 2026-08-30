@@ -26,6 +26,11 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
+        # The SuTraN-matched backbone, which is what a CVAE run is now named after.
+        'cvae-sutran-match': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
+        'cvae-small-sutran-match': ModelStyle(
+            label='CVAE', color='#2E8B57', marker='*', linestyle='-'
+        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
         'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),
     },

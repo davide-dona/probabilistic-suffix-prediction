@@ -56,6 +56,9 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             TensorBoard directory and the files the interrupted run was writing to.
     """
     paths.require_dataset(config.data.name)
+    # Checkpoints are selected on EMSC against the validation split's continuations, so the index
+    # is as much a precondition of training as the splits are.
+    paths.require_continuations(dataset=config.data.name, split=Split.VAL)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.
     torch.manual_seed(config.seed)
@@ -86,6 +89,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             f'{config.dataloader.num_workers} loader workers',
             'optimizer': f'Adam, lr {config.optimizer.lr}, '
             f'weight decay {config.optimizer.weight_decay}',
+            'continuations': paths.continuation_path(dataset=config.data.name, split=Split.VAL),
             'checkpoints': paths.checkpoint_path(run),
             'tensorboard': paths.tensorboard_dir(run),
         },
@@ -162,6 +166,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         resume=checkpoint,
         generation_samples=config.inference.validation_samples,
         codec=codec,
+        dataset=config.data.name,
         loss_config=config.loss,
         optimizer_config=config.optimizer,
         training=config.training,

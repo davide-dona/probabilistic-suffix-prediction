@@ -9,6 +9,7 @@ import pyarrow.parquet as pq
 
 from src import paths
 from src.logs.keys import ACTIVITY_KEY, CASE_KEY, REMAINING_TIME_KEY, UNK_TOKEN
+from src.paths import Split
 from src.suffixes import ActivityCodes, spread
 
 # The activity names the encoded prefixes and suffixes are read back through, in code order.
@@ -56,20 +57,22 @@ class References:
 
 
 class ContinuationIndex:
-    """Every continuation a log's test split was observed to take after each of its prefixes.
+    """Every continuation one split of a log was observed to take after each of its prefixes.
 
     Read by the scoring pool, one instance per worker, from what `build_index` wrote. A prefix is
     keyed by the activities it runs alone, so two cases that ran the same activities share one
     reference distribution.
     """
 
-    def __init__(self, dataset: str) -> None:
+    def __init__(self, dataset: str, split: Split) -> None:
         """
         Args:
             dataset: The dataset whose index to read, from where preprocessing wrote it.
+            split: Which split's continuations to read. Evaluation scores against `TEST`, and
+                training selects checkpoints against `VAL`.
         """
-        paths.require_continuations(dataset)
-        table = pq.read_table(paths.continuation_path(dataset))
+        paths.require_continuations(dataset=dataset, split=split)
+        table = pq.read_table(paths.continuation_path(dataset=dataset, split=split))
 
         self._codes = ActivityCodes.of(json.loads(table.schema.metadata[_VOCABULARY]))
         self._rows = {prefix: row for row, prefix in enumerate(table.column('prefix').to_pylist())}
@@ -111,16 +114,21 @@ class ContinuationIndex:
 
 
 def build_index(
-    test: pd.DataFrame, *, dataset: str, vocabulary: Collection[str]
+    rows: pd.DataFrame, *, dataset: str, split: Split, vocabulary: Collection[str]
 ) -> tuple[int, int]:
-    """Index every continuation a log's test split takes, and write it beside the split.
+    """Index every continuation one held-out split takes, and write it beside the splits.
 
-    The reference distribution a generated one is compared against is the test split and nothing
-    else: it is a held-out, out-of-time sample of `p(suffix | prefix)`, so a model that memorized
-    the train split gains nothing from it and the reference is not drawn from the older regime the
+    The reference distribution a generated suffix is compared against is one held-out split and
+    nothing else: an out-of-time sample of `p(suffix | prefix)`, so a model that memorized the
+    train split gains nothing from it and the reference is not drawn from the older regime the
     split's own separation exists to keep apart. Every cut point of every case contributes,
     `min_prefix_len` included, since that bound governs what a model may be asked rather than what
     the log was observed to do.
+
+    Both held-out splits are indexed, and which one is read is the reader's choice: evaluation
+    scores against the test split, while training selects checkpoints against the validation
+    split, since selecting on the test split's continuations would fold the held-out set into
+    what gets kept.
 
     The split is read through the train split's vocabulary, an activity missing from it becoming
     UNK, which is the only name generation can give it: a model can emit no activity it was never
@@ -129,17 +137,18 @@ def build_index(
     and every reference suffix holding one unmatchable by construction.
 
     Args:
-        test: The test split, as preprocessing holds it, sorted by case and by timestamp.
+        rows: The split to index, as preprocessing holds it, sorted by case and by timestamp.
         dataset: The dataset the split came from, naming where the index goes.
+        split: Which split `rows` is, naming the file written.
         vocabulary: The activity names the train split holds, from `codec.activity.vocab`.
     Returns:
         How many distinct prefixes were indexed, and how many occurrences they cover.
     """
     known = set(vocabulary)
-    seen = test.assign(
+    seen = rows.assign(
         **{
-            ACTIVITY_KEY: test[ACTIVITY_KEY].where(
-                cond=test[ACTIVITY_KEY].isin(known), other=UNK_TOKEN
+            ACTIVITY_KEY: rows[ACTIVITY_KEY].where(
+                cond=rows[ACTIVITY_KEY].isin(known), other=UNK_TOKEN
             )
         }
     )
@@ -175,7 +184,7 @@ def build_index(
         schema=_SCHEMA.with_metadata({_VOCABULARY: json.dumps(codes.vocabulary)}),
     )
 
-    path = paths.continuation_path(dataset)
+    path = paths.continuation_path(dataset=dataset, split=split)
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path, compression=_COMPRESSION)
     return len(grouped), sum(len(minutes) for _, minutes in grouped.values())

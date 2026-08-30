@@ -4,8 +4,8 @@ from itertools import chain, islice, repeat
 from typing import Self
 
 from src.inference.generation import Generation
-from src.scalar_metrics import ScalarMetrics, Unit, mean, metric
-from src.suffixes import sequence_similarity, spread
+from src.scalar_metrics import Direction, ScalarMetrics, Unit, mean, metric
+from src.suffixes import sequence_similarity
 
 MINUTES_PER_DAY = 1440.0
 
@@ -19,38 +19,29 @@ class AccuracyScores(ScalarMetrics):
 
     # The Damerau-Levenshtein Similarity (DLS) between the samples and the ground truth.
     # The mean similarity of a prefix's samples to the ground truth
-    dls_mean: float = metric(unit=Unit.SHARE, higher_is_better=True)
+    dls_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     # z = mean(p(z | prefix), a single greedy answer, scored against the ground truth
-    dls_point: float = metric(unit=Unit.SHARE, higher_is_better=True)
+    dls_point: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     # The closest of a prefix's samples to the ground truth.
-    dls_best: float = metric(unit=Unit.SHARE, higher_is_better=True)
+    dls_best: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
 
     # The share of prefixes whose true suffix is exactly among their first k samples.
-    hit_rate_at_1: float = metric(unit=Unit.SHARE, higher_is_better=True)
-    hit_rate_at_5: float = metric(unit=Unit.SHARE, higher_is_better=True)
-    hit_rate_at_10: float = metric(unit=Unit.SHARE, higher_is_better=True)
-
-    # The samples read as a predictive distribution, lower being better.
-    # The score a checkpoint is selected on. Runs from -0.5 to 1.0, so it is no share.
-    energy_score: float = metric(unit=Unit.SCORE, higher_is_better=False)
-
-    # How far apart the samples of a prefix are, and how many of them are distinct sequences.
-    # Both say how much of the prefix's uncertainty z carries, not how good the model is.
-    sample_diversity: float = metric(unit=Unit.SHARE)
-    unique_sample_rate: float = metric(unit=Unit.SHARE)
+    hit_rate_at_1: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
+    hit_rate_at_5: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
+    hit_rate_at_10: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
 
     # Absolute error (AE) between the predicted and true remaining cycle time, in days.
-    remaining_time_ae_mean_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
-    remaining_time_ae_point_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
+    remaining_time_ae_mean_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
+    remaining_time_ae_point_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
 
     # Absolute error (AE) between the predicted and true minutes until each generated event,
     # averaged over the positions the true suffix covers, in days.
-    time_to_next_ae_mean_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
-    time_to_next_ae_point_days: float = metric(unit=Unit.DAYS, higher_is_better=False)
+    time_to_next_ae_mean_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
+    time_to_next_ae_point_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
 
     # Absolute error (AE) between the predicted and true suffix length, in events.
-    length_ae_mean: float = metric(unit=Unit.EVENTS, higher_is_better=False)
-    length_ae_point: float = metric(unit=Unit.EVENTS, higher_is_better=False)
+    length_ae_mean: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
+    length_ae_point: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
 
     # Events left after the cut point: the scale every error above is read against. A property of
     # the prefixes scored rather than of the model, so it is flat across a training run.
@@ -63,8 +54,8 @@ class AccuracyScores(ScalarMetrics):
         Args:
             generation: The model's answer for one prefix, decoded into the log's own units.
         Returns:
-            The prefix's scores. A prefix with no samples scores 0.0 on everything and 1.0 on
-            `energy_score`, the worst it can be, rather than looking like a perfect prediction.
+            The prefix's scores. A prefix with no samples scores 0.0 on everything, the worst it
+            can be, rather than looking like a perfect prediction.
         """
         samples, point, truth = generation.samples, generation.point, generation.truth
 
@@ -72,9 +63,6 @@ class AccuracyScores(ScalarMetrics):
             sequence_similarity(sample.activities, truth.activities) for sample in samples
         ]
         dls_mean = mean(similarities)
-        # Comparing a prefix's samples against each other is what measures the spread
-        # `p(z | prefix)` claims the prefix leaves open.
-        sample_spread = spread([sample.activities for sample in samples])
         sample_activities = [tuple(sample.activities) for sample in samples]
         truth_activities = tuple(truth.activities)
 
@@ -85,11 +73,6 @@ class AccuracyScores(ScalarMetrics):
             hit_rate_at_1=is_hit(samples=sample_activities, truth=truth_activities, k=1),
             hit_rate_at_5=is_hit(samples=sample_activities, truth=truth_activities, k=5),
             hit_rate_at_10=is_hit(samples=sample_activities, truth=truth_activities, k=10),
-            energy_score=(
-                energy_score(dls_mean=dls_mean, sample_diversity=sample_spread) if samples else 1.0
-            ),
-            sample_diversity=sample_spread,
-            unique_sample_rate=len(set(sample_activities)) / len(samples) if samples else 0.0,
             remaining_time_ae_mean_days=mean(
                 [
                     abs(sample.remaining_time_minutes - truth.remaining_time_minutes)
@@ -138,12 +121,6 @@ def time_to_next_ae_minutes(predicted: Sequence[float], true: Sequence[float]) -
         return 0.0
     padded = islice(chain(predicted, repeat(0.0)), len(true))
     return mean([abs(prediction - actual) for prediction, actual in zip(padded, true, strict=True)])
-
-
-def energy_score(dls_mean: float, sample_diversity: float) -> float:
-    """A score balancing how close a prefix's samples are to the truth
-    and how far apart they are from each other."""
-    return (1.0 - dls_mean) - 0.5 * sample_diversity
 
 
 def is_hit(samples: Sequence[tuple[str, ...]], truth: tuple[str, ...], *, k: int) -> float:

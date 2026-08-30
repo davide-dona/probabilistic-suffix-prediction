@@ -8,6 +8,7 @@ import pyarrow.parquet as pq
 from src.evaluation.prefix_scores import read_prefix_scores
 from src.evaluation.scores import METRICS
 from src.identity import RunIdentity, group_by_model, read_run_identity
+from src.scalar_metrics import Direction
 
 # What a difference has to clear to be called real, and how many resamples it is read against.
 # The resolution of an uncorrected p is `1 / RESAMPLES`, so this many leaves room for the
@@ -26,15 +27,31 @@ SEED = 24
 SIGNIFICANCE_COLUMNS = ('dataset', 'model', 'metric', 'p_value', 'best')
 
 # The metrics a difference can be tested on: one with no better direction has no best value to be
-# indistinguishable from.
+# indistinguishable from, which is every spread and every property of the log.
 _TESTED = tuple(
-    key for key, metric in METRICS.entries.items() if metric.higher_is_better is not None
+    key for key, metric in METRICS.entries.items() if metric.direction is not Direction.NONE
 )
-# +1 where higher is better, -1 where lower is, so a comparison is one multiplication whichever
-# way the metric reads. [num_metrics]
-_DIRECTION = np.array(
-    [1.0 if METRICS[key].higher_is_better else -1.0 for key in _TESTED], dtype=np.float64
+# How each metric is turned into one where more is better, so a comparison reads the same way
+# whichever way the metric does. A gap is read on its distance from 0, both of its signs being a
+# way of being wrong, so it is taken absolute and then negated. [num_metrics] each.
+_SIGN = np.array(
+    [1.0 if METRICS[key].direction is Direction.HIGHER else -1.0 for key in _TESTED],
+    dtype=np.float64,
 )
+_ABSOLUTE = np.array([METRICS[key].direction is Direction.ZERO for key in _TESTED], dtype=bool)
+
+
+def _oriented(values: np.ndarray) -> np.ndarray:
+    """Rewrite a set of scores so that more is better on every metric.
+
+    Args:
+        values: Scores whose last axis is the metrics of `_TESTED`, in that order.
+    Returns:
+        The same shape, each metric negated where lower is better and taken absolute first where
+        it is a gap. Applied to a mean rather than to a prefix's own score: the number a table
+        prints is the mean gap, so its distance from 0 is what the test reads.
+    """
+    return _SIGN * np.where(_ABSOLUTE, np.abs(values), values)
 
 
 def _score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
@@ -185,7 +202,7 @@ def _bootstrap_p(case_sums: np.ndarray, case_cuts: np.ndarray, reference: np.nda
         means = ((counts @ flat) / (counts @ cuts)[:, None]).reshape(size, models, metrics)
         # How much better than its metric's reference each model came out, [size, models, metrics].
         against = means[:, reference, columns][:, None, :]  # [size, 1, metrics]
-        better = (means - against) * _DIRECTION
+        better = _oriented(means) - _oriented(against)
         at_least += (better >= 0).sum(axis=0)
         at_most += (better <= 0).sum(axis=0)
         drawn += size
@@ -257,7 +274,7 @@ def test_significance(reports: Sequence[Path]) -> pd.DataFrame:
 
         # The mean the table prints: every prefix weighing the same, so a long case weighs more.
         observed = case_sums.sum(axis=0) / case_cuts.sum()  # [models, metrics]
-        reference = (observed * _DIRECTION).argmax(axis=0)  # [metrics]
+        reference = _oriented(observed).argmax(axis=0)  # [metrics]
 
         uncorrected = _bootstrap_p(case_sums, case_cuts, reference)  # [models, metrics]
         for column, key in enumerate(_TESTED):

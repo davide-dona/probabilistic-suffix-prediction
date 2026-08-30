@@ -47,10 +47,25 @@ class Unit(StrEnum):
         return 0.0, None
 
 
+class Direction(StrEnum):
+    """Which way one of a report's numbers reads: the arrow written after its name, and what the
+    emphasis of a table calls the best of a row.
+
+    A gap has a target rather than a direction, its two signs being two ways of being wrong, so it
+    is read on its distance from 0 instead. A property of the log is not a model's score at all,
+    and neither is a spread whose target is the log's own, so neither is ever emphasized.
+    """
+
+    HIGHER = 'higher'
+    LOWER = 'lower'
+    ZERO = 'zero'  # A gap, best at 0, either sign being a way of being wrong
+    NONE = 'none'  # No better value, e.g. a spread or a property of the log
+
+
 @dataclass(frozen=True)
 class Metric:
     """What one of the numbers a report carries is: the name it goes by, its unit, and which way
-    is better.
+    it reads.
 
     What it is called on a page is not here: a table holding one estimator throughout names a
     metric more shortly than a figure drawing that estimator against another, so the name belongs
@@ -59,25 +74,25 @@ class Metric:
 
     key: str  # The field it was declared on, which is the name it has in a report and a frame
     unit: Unit
-    # `None` for a metric with no best value, e.g. a diversity or a length.
-    higher_is_better: bool | None = None
+    direction: Direction = Direction.NONE
 
 
 # Where a field's declaration is kept. Read through `metrics_of` rather than directly.
 _DECLARATION = 'metric'
 
 
-def metric(*, unit: Unit, higher_is_better: bool | None = None) -> Any:
+def metric(*, unit: Unit, direction: Direction = Direction.NONE) -> Any:
     """Declare a float field as one of the numbers a report carries.
 
     Args:
         unit: What the number is, which gives it both its printed unit and its range.
-        higher_is_better: Which way is better, or `None` for a metric with no best value.
+        direction: Which way it reads, which is both the arrow written after its name and what a
+            table's emphasis calls the best of a row.
     Returns:
         A `dataclasses.field` carrying the declaration. The metric's key is the field's own name,
         so it is never written twice and cannot drift from what a report holds.
     """
-    return field(metadata={_DECLARATION: (unit, higher_is_better)})
+    return field(metadata={_DECLARATION: (unit, direction)})
 
 
 def metrics_of(cls: type) -> tuple[Metric, ...]:
@@ -93,8 +108,8 @@ def metrics_of(cls: type) -> tuple[Metric, ...]:
     for entry in fields(cls):
         if _DECLARATION not in entry.metadata:
             continue
-        unit, higher_is_better = entry.metadata[_DECLARATION]
-        declared.append(Metric(key=entry.name, unit=unit, higher_is_better=higher_is_better))
+        unit, direction = entry.metadata[_DECLARATION]
+        declared.append(Metric(key=entry.name, unit=unit, direction=direction))
     return tuple(declared)
 
 
