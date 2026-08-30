@@ -8,7 +8,7 @@ from scipy.stats import wasserstein_distance
 from src.evaluation.scores.accuracy import MINUTES_PER_DAY
 from src.inference.generation import Generation
 from src.logs.continuations import ContinuationIndex, References
-from src.scalar_metrics import Direction, ScalarMetrics, Unit, mean, metric
+from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
 from src.suffixes import distances, spread
 
 # How many distinct continuations one prefix's transport problem is solved over. A prefix of length
@@ -51,16 +51,11 @@ class DistributionScores(ScalarMetrics):
     # `sample_diversity` is read against: a model matching the log's multimodality spreads its
     # draws about this far apart, no further and no less. A property of the log rather than of the
     # model, so it is the same for every model of a log and is never compared between them.
-    reference_diversity: float = metric(unit=Unit.SHARE)
-
-    # `sample_diversity` read against it. Positive means the model spreads its draws wider than the
-    # process does, which is as wrong as collapsing them onto one mode, so the target is 0 and the
-    # best of a row is the one nearest it.
-    diversity_gap: float = metric(unit=Unit.SCORE, direction=Direction.ZERO)
+    reference_diversity: float = metric(unit=Unit.SHARE, owner=Owner.LOG)
 
     # How many distinct continuations the log took after this prefix. A property of the log rather
     # than of the model, so it is the same for every model of a log.
-    reference_size: float = metric(unit=Unit.COUNT)
+    reference_size: float = metric(unit=Unit.COUNT, owner=Owner.LOG)
 
     @classmethod
     def of(cls, generation: Generation, *, index: ContinuationIndex) -> Self:
@@ -113,9 +108,6 @@ class DistributionScores(ScalarMetrics):
                 else 0.0
             ),
             reference_diversity=references.dispersion,
-            # A mean of differences is the difference of the means, so a gap column and the two
-            # level columns it is read from stay consistent at every granularity.
-            diversity_gap=sample_spread - references.dispersion,
             reference_size=float(len(references.suffixes)),
         )
 

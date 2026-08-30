@@ -4,11 +4,13 @@ import textwrap
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 from src.evaluation.report import Axis
+from src.scalar_metrics import Owner
 from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Plot
 from src.visualization.style import (
@@ -28,7 +30,8 @@ AXIS_LABELS = {Axis.PREFIX: 'Prefix length', Axis.SUFFIX: 'Suffix length'}
 
 
 def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins: int | str) -> int:
-    """Draw one metric onto one set of axes, a line per model, over one log's rows.
+    """Draw one metric onto one set of axes over one log's rows: a line per model, or a single line
+    in the log's own style where the metric is the log's rather than a model's.
 
     Args:
         axes: The panel to draw onto.
@@ -41,19 +44,26 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins:
     """
     # Retrieve the rows of one metric
     values = frame[frame['metric'] == entry.key]
+    drawn = labels.MODELS.ordered(values['model'])
+    # A metric the log owns is the same number for every model of that log, so it is drawn once in
+    # the log's own style rather than as one line per model in each model's colour, which is as
+    # many coincident lines as there are runs.
+    if entry.metric.owner is Owner.LOG:
+        series = [(model, labels.LOG_STYLE) for model in drawn[:1]]
+    else:
+        series = [(model, labels.MODELS[model]) for model in drawn]
+
     longest = 1
-    # For each model, draw its line over the lengths it reports
-    for model in labels.MODELS.ordered(values['model']):
+    for model, style in series:
         line = values[values['model'] == model].sort_values('length')
-        model_style = labels.MODELS[model]
         longest = max(longest, int(line['length'].max()))
         axes.plot(
             line['length'],
             line['value'],
-            label=model_style.label,
-            color=model_style.color,
-            marker=model_style.marker,
-            linestyle=model_style.linestyle,
+            label=style.label,
+            color=style.color,
+            marker=style.marker,
+            linestyle=style.linestyle,
             markevery=max(1, math.ceil(len(line) / MAX_MARKERS)),
         )
     axes.xaxis.set_major_locator(MaxNLocator(nbins=x_bins, integer=True))
@@ -155,6 +165,15 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
             for axes in grid[foot]:
                 axes.set_xlabel(AXIS_LABELS[breakdown])
 
-    if len(labels.MODELS.ordered(frame['model'])) > 1:
-        legend_above(figure, *grid[0][0].get_legend_handles_labels())
+    # Gathered over every panel rather than off the first: a row of a log's own metric draws one
+    # series the model rows do not, so a legend read off one panel would leave it unnamed. Keyed by
+    # label, so the models repeated down the rows contribute one key each.
+    keys: dict[str, Artist] = {}
+    for row in grid:
+        for axes in row:
+            handles, written = axes.get_legend_handles_labels()
+            for label, handle in zip(written, handles, strict=True):
+                keys.setdefault(label, handle)
+    if len(keys) > 1:
+        legend_above(figure, list(keys.values()), list(keys))
     return figure

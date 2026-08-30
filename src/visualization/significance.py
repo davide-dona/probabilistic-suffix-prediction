@@ -3,11 +3,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 
-from src.evaluation.prefix_scores import read_prefix_scores
+from src.evaluation.prefix_scores import read_prefix_scores, score_files
 from src.evaluation.scores import METRICS
-from src.identity import RunIdentity, group_by_model, read_run_identity
 from src.scalar_metrics import Direction
 
 # What a difference has to clear to be called real, and how many resamples it is read against.
@@ -52,38 +50,6 @@ def _oriented(values: np.ndarray) -> np.ndarray:
         prints is the mean gap, so its distance from 0 is what the test reads.
     """
     return _SIGN * np.where(_ABSOLUTE, np.abs(values), values)
-
-
-def _score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
-    """Find the per-prefix scores beside each report and group them by the log they belong to.
-
-    Args:
-        reports: The evaluation reports being tabulated, from `pipelines.evaluate`.
-    Returns:
-        The scores file of each model, keyed by the log's own name.
-    Raises:
-        ValueError: If a report has no scores beside it, if one is not a scores file, or if one log
-            is given two runs of the same model.
-    """
-    files = [(report, report.with_suffix('.parquet')) for report in reports]
-    missing = [str(report) for report, scores in files if not scores.exists()]
-    if missing:
-        raise ValueError(
-            'no per-prefix scores beside these reports, so which differences are real cannot be '
-            'told:\n  ' + '\n  '.join(missing) + '\nScore them again with '
-            '`python -m pipelines.evaluate`, which writes them beside the report.'
-        )
-
-    runs: list[tuple[RunIdentity, Path]] = []
-    for _, scores in files:
-        try:
-            with pq.ParquetFile(scores) as parquet:
-                runs.append((read_run_identity(parquet), scores))
-        except (ValueError, TypeError, KeyError) as error:
-            # An `OSError` is an unreadable disk, a real failure, and is left to surface as itself
-            # rather than being relabelled as the wrong file type.
-            raise ValueError(f'{scores} is not a per-prefix scores file: {error}') from error
-    return group_by_model(runs)
 
 
 def _aligned(dataset: str, files: dict[str, Path]) -> tuple[np.ndarray, pd.MultiIndex]:
@@ -254,7 +220,7 @@ def test_significance(reports: Sequence[Path]) -> pd.DataFrame:
             the same model, or if the models of a log do not score the same prefixes.
     """
     rows: list[dict[str, object]] = []
-    for dataset, files in _score_files(reports).items():
+    for dataset, files in score_files(reports).items():
         models = list(files)
         if len(models) < 2:
             rows.extend(

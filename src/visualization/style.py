@@ -32,6 +32,13 @@ MAX_MARKERS = 12
 # own range. Without it a line approaching the bound reads as clipped against the axis border.
 Y_HEADROOM = 0.05
 
+# How wide a violin is drawn at its densest, against the slot it sits in, and how much of its
+# series' colour is washed into the body. The wash is set as the artist's own `alpha`, which
+# matplotlib takes down the outline with it, so a violin is drawn lighter throughout than the line
+# of the same series in a figure of lines.
+VIOLIN_WIDTH = 0.8
+VIOLIN_ALPHA = 0.28
+
 # The style every figure shares. Set once, before any figure is drawn, by `apply_style()`.
 _PAPER_RC = {
     # The paper sets the body in Times (`\usepackage{times}`); the first of these that resolves

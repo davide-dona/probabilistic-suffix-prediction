@@ -3,13 +3,11 @@ from collections.abc import Container, Sequence
 import pandas as pd
 
 from src.visualization import labels
-from src.visualization.catalogue import Column, Table
+from src.visualization.catalogue import MetricEntry, Table
 
-# What a cell reads where the row has no value for the column: a log-only column on a model's row,
-# or a column with no target on the log's own row.
+# What a cell reads where the run never reported the column's metric, e.g. one scored before that
+# metric existed.
 MISSING = '-'
-# What the log's own row is called in the Model column.
-LOG_ROW = 'Log'
 
 
 def _escape_latex(text: str) -> str:
@@ -19,50 +17,44 @@ def _escape_latex(text: str) -> str:
     return text
 
 
-def _value(frame: pd.DataFrame, key: str | None) -> float | None:
+def _value(frame: pd.DataFrame, key: str) -> float | None:
     """The one value a metric has in a set of rows, or `None` where it has none.
 
     Args:
         frame: The rows of one model and one log, from `read_reports`.
-        key: Which metric to read, or `None` for a column that has none for this row.
+        key: Which metric to read.
     Returns:
-        The metric's value, or `None` where the column names no metric for this row or the run
-        never reported one.
+        The metric's value, or `None` where the run never reported it.
     """
-    if key is None:
-        return None
     rows = frame.loc[frame['metric'] == key, 'value']
     return float(rows.iloc[0]) if len(rows) else None
 
 
 def _row(
-    columns: Sequence[Column],
+    columns: Sequence[MetricEntry],
     frame: pd.DataFrame,
     *,
     label: str,
-    metrics: Sequence[str | None],
     best: Container[str],
 ) -> str:
-    """One row of a dataset's block: its name, then a formatted cell per column.
+    """One row of a dataset's block: the model's name, then a formatted cell per column.
 
     Args:
         columns: The table's columns, in the order it writes them.
         frame: The rows of the run this table row reports, from `read_reports`.
-        label: What the Model column reads, a model's label or `LOG_ROW`.
-        metrics: Which metric each column reads for this row, `None` where it has none.
-        best: The metrics this row is emphasized on, from `test_significance`. Empty for the log's
-            own row, which is a reference rather than a competitor.
+        label: What the Model column reads.
+        best: The metrics this row is emphasized on, from `test_significance`.
     Returns:
         The row as a LaTeX line, its cells `MISSING` wherever there is nothing to write.
     """
     cells = []
-    for column, key in zip(columns, metrics, strict=True):
-        value = _value(frame, key)
+    for entry in columns:
+        value = _value(frame, entry.key)
         if value is None:
             cells.append(MISSING)
             continue
-        written = column.entry.format(value)
-        cells.append(f'\\textbf{{{written}}}' if key in best else written)
+        written = entry.format(value)
+        cells.append(f'\\textbf{{{written}}}' if entry.key in best else written)
     return '   & ' + ' & '.join([_escape_latex(label), *cells]) + ' \\\\'
 
 
@@ -72,7 +64,7 @@ def _block(
     significance: pd.DataFrame,
     models: Sequence[str],
 ) -> list[str]:
-    """One log's block: the log's own row where the table has one, then a row per model.
+    """One log's block: a row per model that reported for it.
 
     Args:
         table: Which table is being rendered.
@@ -83,29 +75,16 @@ def _block(
     Returns:
         The block's lines, the first of them opening the `\\multirow` that names the log.
     """
-    scored = [model for model in models if (frame['model'] == model).any()]
     rows = []
-
-    if table.has_log_row:
-        # Every model of a log carries the same value for a log's metric, so any of them says it.
-        rows.append(
-            _row(
-                table.columns,
-                frame[frame['model'] == scored[0]],
-                label=LOG_ROW,
-                metrics=[column.log.key if column.log else None for column in table.columns],
-                best=(),
-            )
-        )
-
-    for model in scored:
+    for model in models:
+        if not (frame['model'] == model).any():
+            continue
         marked = significance[(significance['model'] == model) & significance['best']]
         rows.append(
             _row(
                 table.columns,
                 frame[frame['model'] == model],
                 label=labels.MODELS[model].label,
-                metrics=[column.models.key if column.models else None for column in table.columns],
                 best=set(marked['metric']),
             )
         )
@@ -123,17 +102,18 @@ def latex_table(frame: pd.DataFrame, table: Table, significance: pd.DataFrame) -
             the same names as `frame`.
     Returns:
         The tabular alone, one column per metric and one block of rows per log, the best value of
-        each column in bold along with every value the test cannot separate from it. Needs the
-        `booktabs`, `multirow` and `tabularx` packages, and belongs inside the paper's own float,
-        which is where its caption and label are written. The wider tables are meant for a
-        full-width float.
+        each column in bold along with every value the test cannot separate from it, under a
+        leading `%` comment carrying `Table.note`. Needs the `booktabs`, `multirow` and `tabularx`
+        packages, and belongs inside the paper's own float, which is where its caption and label
+        are written. The headers carry no unit, so that comment is the sentence the caption has to
+        state; the wider tables are meant for a full-width float.
     """
     overall = frame[frame['axis'] == table.axis]
     # One row per model within one block per log, both in the order they are declared, so two
     # tables of the same runs read the same way.
     models = labels.MODELS.ordered(overall['model'])
     datasets = labels.DATASETS.ordered(overall['dataset'])
-    headers = [column.entry.table_header for column in table.columns]
+    headers = [entry.table_header for entry in table.columns]
 
     lines = ['\\toprule', '  Dataset & Model & ' + ' & '.join(headers) + ' \\\\', '\\midrule']
     for index, dataset in enumerate(datasets):
@@ -154,4 +134,7 @@ def latex_table(frame: pd.DataFrame, table: Table, significance: pd.DataFrame) -
 
     value_columns = f'*{{{len(table.columns)}}}{{>{{\\centering\\arraybackslash}}X}}'
     preamble = f'\\begin{{tabularx}}{{\\linewidth}}{{ll|{value_columns}}}'
-    return '\n'.join((preamble, *lines, '\\end{tabularx}')) + '\n'
+    # The units and what the columns measure, written where the author copies them into the
+    # caption: the headers themselves are unitless, so a two-word name and a name carrying a unit
+    # set to the same height.
+    return '\n'.join((f'% {table.note}', preamble, *lines, '\\end{tabularx}')) + '\n'

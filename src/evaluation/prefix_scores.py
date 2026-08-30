@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 
 from src.evaluation.scores import METRICS
 from src.evaluation.summary import PrefixSummary, flatten_scores
-from src.identity import RunIdentity, stamped
+from src.identity import RunIdentity, group_by_model, read_run_identity, stamped
 from src.inference.generation_store import PrefixKey
 
 # How many prefixes one row group holds. A split of a quarter of a million is then a handful of
@@ -81,13 +81,49 @@ def stream_prefix_scores(
         flush(writer)
 
 
-def read_prefix_scores(path: Path) -> pd.DataFrame:
+def read_prefix_scores(path: Path, *, columns: Sequence[str] | None = None) -> pd.DataFrame:
     """Read a run's per-prefix scores back.
 
     Args:
         path: The file `stream_prefix_scores` wrote, from `paths.prefix_scores_path`.
+        columns: Which columns to read, or `None` for all of them. A reader after a handful of
+            metrics pulls those alone off a file that holds every one of them.
     Returns:
-        One row per prefix, under `PREFIX_SCORE_KEYS` and one float column per metric of
-        `METRICS`.
+        One row per prefix, under `PREFIX_SCORE_KEYS` and one float column per metric of `METRICS`,
+        or the subset `columns` named.
     """
-    return pq.read_table(source=path).to_pandas()
+    wanted = None if columns is None else list(columns)
+    return pq.read_table(source=path, columns=wanted).to_pandas()
+
+
+def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
+    """Find the per-prefix scores beside each report and group them by the log they belong to.
+
+    Args:
+        reports: The evaluation reports being read, from `pipelines.evaluate`.
+    Returns:
+        The scores file of each model, keyed by the log's own name.
+    Raises:
+        ValueError: If a report has no scores beside it, if one is not a scores file, or if one log
+            is given two runs of the same model.
+    """
+    files = [(report, report.with_suffix('.parquet')) for report in reports]
+    missing = [str(report) for report, scores in files if not scores.exists()]
+    if missing:
+        raise ValueError(
+            'no per-prefix scores beside these reports, so the spread of a run cannot be read:\n  '
+            + '\n  '.join(missing)
+            + '\nScore them again with `python -m pipelines.evaluate`, which writes them beside '
+            'the report.'
+        )
+
+    runs: list[tuple[RunIdentity, Path]] = []
+    for _, scores in files:
+        try:
+            with pq.ParquetFile(scores) as parquet:
+                runs.append((read_run_identity(parquet), scores))
+        except (ValueError, TypeError, KeyError) as error:
+            # An `OSError` is an unreadable disk, a real failure, and is left to surface as itself
+            # rather than being relabelled as the wrong file type.
+            raise ValueError(f'{scores} is not a per-prefix scores file: {error}') from error
+    return group_by_model(runs)
