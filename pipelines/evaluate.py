@@ -18,6 +18,7 @@ from src.identity import read_run_identity
 from src.inference.generation_store import read_generation_block, read_prefix_keys
 from src.logs.conformance import ConformanceChecker, discovery_settings
 from src.logs.continuations import ContinuationIndex
+from src.paths import Split
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
     _worker = _Worker(
         parquet=pq.ParquetFile(generations_file),
         checker=ConformanceChecker(dataset),
-        index=ContinuationIndex(dataset),
+        index=ContinuationIndex(dataset=dataset, split=Split.TEST),
     )
 
 
@@ -124,7 +125,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     dataset = run.dataset
     paths.require_dataset(dataset)
     paths.require_declare_model(dataset)
-    paths.require_continuations(dataset)
+    paths.require_continuations(dataset=dataset, split=Split.TEST)
 
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
@@ -146,7 +147,7 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'continuations': paths.continuation_path(dataset),
+            'continuations': paths.continuation_path(dataset=dataset, split=Split.TEST),
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': paths.evaluation_path(run),

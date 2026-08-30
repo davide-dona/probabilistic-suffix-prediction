@@ -43,7 +43,18 @@ FIGURES = (
     Plot(
         name='conformance-mean-by-suffix-length',
         breakdowns=(Axis.SUFFIX,),
-        metrics=(MetricEntry(METRICS['conformance_mean'], 'Conformance (sample mean)'),),
+        metrics=(
+            MetricEntry(METRICS['conformance_mean'], 'Conformance (sample mean)'),
+            MetricEntry(METRICS['conformance_truth'], 'Conformance (ground truth)'),
+        ),
+    ),
+    Plot(
+        name='conformance-gap-by-suffix-length',
+        breakdowns=(Axis.SUFFIX,),
+        metrics=(
+            MetricEntry(METRICS['conformance_gap_mean'], 'Conformance gap (sample mean)'),
+            MetricEntry(METRICS['conformance_gap_point'], 'Conformance gap (point)'),
+        ),
     ),
     Plot(
         name='remaining-time-point-by-prefix-length',
@@ -75,9 +86,9 @@ FIGURES = (
         name='multi-reference-by-prefix-length',
         breakdowns=(Axis.PREFIX,),
         metrics=(
-            MetricEntry(METRICS['reference_energy_score'], 'Energy score (all continuations)'),
-            MetricEntry(METRICS['coverage'], 'Coverage'),
-            MetricEntry(METRICS['precision'], 'Precision'),
+            MetricEntry(METRICS['emsc'], 'EMSC (all continuations)'),
+            MetricEntry(METRICS['continuation_recall'], 'Continuation recall'),
+            MetricEntry(METRICS['continuation_precision'], 'Continuation precision'),
         ),
     ),
     Plot(
@@ -93,7 +104,13 @@ FIGURES = (
         breakdowns=(Axis.PREFIX,),
         metrics=(
             MetricEntry(METRICS['sample_diversity'], 'Sample diversity'),
+            MetricEntry(METRICS['reference_diversity'], 'Observed diversity'),
             MetricEntry(METRICS['unique_sample_rate'], 'Unique sample rate'),
         ),
+    ),
+    Plot(
+        name='diversity-gap-by-prefix-length',
+        breakdowns=(Axis.PREFIX,),
+        metrics=(MetricEntry(METRICS['diversity_gap'], 'Diversity gap'),),
     ),
 )

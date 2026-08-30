@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 
-from src.scalar_metrics import Metric
+from src.scalar_metrics import Direction, Metric
 
 
 @dataclass(frozen=True)
 class MetricEntry:
-    """One metric as it appears in one figure panel or one table row: what that appearance calls
-    it, and how its values are written there.
+    """One metric as it appears in one figure panel or one table column: what that appearance
+    calls it, and how its values are written there.
 
-    The metric itself carries no name, since one is not enough. A table holds a single estimator
-    throughout and so names a metric shortly, where a figure drawing that estimator against
-    another has to say which of them it is drawing. Everything below is that name with what the
-    metric declares about itself appended, so two appearances differ in their wording alone.
+    The metric itself carries no name, since one is not enough. A table naming a single estimator
+    can name a metric shortly, where a figure drawing that estimator against another has to say
+    which of them it is drawing. Everything below is that name with what the metric declares about
+    itself appended, so two appearances differ in their wording alone.
     """
 
     metric: Metric
@@ -45,27 +45,23 @@ class MetricEntry:
 
     @property
     def axis_label(self) -> str:
-        """The label of an axis drawn along this metric, its unit and which way is better
+        """The label of an axis drawn along this metric, its unit and which way it reads
         appended where it has them."""
         return f'{self.label}{self._unit_suffix}{self._arrow}'
 
     @property
     def table_header(self) -> str:
-        """The Metric cell of one of a table's blocks: the name, its unit and which way is better,
-        the arrow written in math mode."""
-        direction = ''
-        if self.metric.higher_is_better is not None:
-            direction = r' $\uparrow$' if self.metric.higher_is_better else r' $\downarrow$'
-        return f'{self.label}{self._unit_suffix}{direction}'
+        """The header of one of a table's columns: the name, its unit and which way it reads, the
+        arrow written in math mode."""
+        return f'{self.label}{self._unit_suffix}{_TABLE_ARROWS[self.metric.direction]}'
 
     @property
     def _arrow(self) -> str:
-        """The arrow marking whether higher or lower is better, or `''` for a metric with no best
-        value. It follows a non-breaking space, so a wrapped label never strands it on its own
-        line."""
-        if self.metric.higher_is_better is None:
-            return ''
-        return '\N{NO-BREAK SPACE}↑' if self.metric.higher_is_better else '\N{NO-BREAK SPACE}↓'
+        """The arrow marking which way the metric reads, or `''` for one with no best value.
+
+        It follows a non-breaking space, so a wrapped label never strands it on its own line.
+        """
+        return _AXIS_ARROWS[self.metric.direction]
 
     def format(self, value: float) -> str:
         """Format one of the metric's values for a table cell.
@@ -77,3 +73,19 @@ class MetricEntry:
             on the decimal point whatever it measures.
         """
         return f'{value:.3f}'
+
+
+# Which way a metric reads, in the two dialects a page writes it in. A gap is best at 0 rather than
+# at either end, so it is marked with the target it is read against rather than with an arrow.
+_AXIS_ARROWS = {
+    Direction.HIGHER: '\N{NO-BREAK SPACE}↑',
+    Direction.LOWER: '\N{NO-BREAK SPACE}↓',
+    Direction.ZERO: '\N{NO-BREAK SPACE}→0',
+    Direction.NONE: '',
+}
+_TABLE_ARROWS = {
+    Direction.HIGHER: r' $\uparrow$',
+    Direction.LOWER: r' $\downarrow$',
+    Direction.ZERO: r' $\rightarrow 0$',
+    Direction.NONE: '',
+}

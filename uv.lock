@@ -368,6 +368,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pm4py" },
+    { name = "pot" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -394,6 +395,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "pm4py", specifier = ">=2.7.23.3" },
+    { name = "pot", specifier = ">=0.9.5" },
     { name = "pyarrow", specifier = ">=25.0.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pyyaml", specifier = ">=6.0.3" },
@@ -1575,6 +1577,36 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/b1/3702af40b3ca898637effdcec0544d66442c6c929ee575dcb3a622c96787/pm4py-2.7.23.3.tar.gz", hash = "sha256:d2c0a335bd497d78ef7a338b161e03dc8ec0e02abca56223e4d60bfe8d747dc9", size = 1169624, upload-time = "2026-07-17T12:14:20.645Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/a7/894944d7e296a0e7e7a2039a21471def58cd3a2d30b790e388054452519a/pm4py-2.7.23.3-py3-none-any.whl", hash = "sha256:4901c145229f2624e0dad305975696d81d71c8173ffde633964c87822206f8fc", size = 2651188, upload-time = "2026-07-17T12:14:14.774Z" },
+]
+
+[[package]]
+name = "pot"
+version = "0.9.7.post1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/e3/61271810cdea79e869531bbfcbc2b5a1d94e88ec5ebdd32ed81aa2ff40cc/pot-0.9.7.post1.tar.gz", hash = "sha256:2edd70845047ac2d378487b980a2bffb5ff58e9b92b7133896ff5753f6300cec", size = 1842013, upload-time = "2026-07-29T09:01:39.843Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/88/7797d99816212e5fdab9b573e1d2bc8110c3dd35433dce63601f059af3f0/pot-0.9.7.post1-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:c7be23e9446487d43bbf46e32c84ecfa66e1bc41b864b7461a1aaf68dad4275f", size = 1529695, upload-time = "2026-07-29T09:00:47.268Z" },
+    { url = "https://files.pythonhosted.org/packages/96/a5/f1b81c61837280ef8d004732bd82bdc388ff8cbee94b0777e6acc44849a3/pot-0.9.7.post1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:83c0da92bc4ef3ee3c7efc7fdbe8258adf43cc06314667514b18f01209204a11", size = 982103, upload-time = "2026-07-29T09:00:49.026Z" },
+    { url = "https://files.pythonhosted.org/packages/06/2a/02b14325a319a69cbcf3fb1e3d69778b5313abfd6a1816d08c843a8bcea8/pot-0.9.7.post1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:130e58407efd718858ba5e4b16a1a2f15dff57438072f57438cb42dcdc818596", size = 923286, upload-time = "2026-07-29T09:00:50.385Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/43/91fae15ab33e6245da9208a1761a6bd545fd5f257766381ffaf8d805efcc/pot-0.9.7.post1-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a9612a6e9cdbecd1a29260440a370104e71a453bcde95a9f1d4f4040692969c0", size = 32253836, upload-time = "2026-07-29T09:00:53.123Z" },
+    { url = "https://files.pythonhosted.org/packages/42/b2/4152b98bb94307fef72de6e6945dae868d8a5577c43f03810fa414fb6fc5/pot-0.9.7.post1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3aa55921c7cec5e2691c23046e3561613b3f62f914360b718670332848c7e969", size = 32907495, upload-time = "2026-07-29T09:00:57.119Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/ce/883338520c1b261206fe0514587a55d6bc6d96f3fd2ba9e3dc9e4d5aceb6/pot-0.9.7.post1-cp313-cp313-win_amd64.whl", hash = "sha256:fd931e1613470a02dcc2e7d5d12e7655b074f96acd0864bcd4f0fcb686653b7f", size = 800270, upload-time = "2026-07-29T09:00:59.197Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/ff/49da40c07874db82ea785b29db96fc12bc23f38dcc3aba6bcc8553bbb0d6/pot-0.9.7.post1-cp314-cp314-macosx_10_13_universal2.whl", hash = "sha256:f46a15affb9233ac97a6d9354b0359e3a1d7488c52a0cd5cfef16973d3a6b439", size = 1530264, upload-time = "2026-07-29T09:01:00.804Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/cb/69bb8c72b03f52d7263e6cc9d0c49db73ec41c45acf848b7c6448a59ceea/pot-0.9.7.post1-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:e490cf59febfddf3147807dd0c6033df4cf50d9d56707305d0569a2e0b7076af", size = 981796, upload-time = "2026-07-29T09:01:02.147Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/1a/7dcbb3884ea8d3bf9e3b25df1ac25711e4151bcfb9f1257aa1be68a9040e/pot-0.9.7.post1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:fc15552029f2769a57064c1eb23c60322308c5dba4b75e507b82e11de856c31f", size = 924071, upload-time = "2026-07-29T09:01:03.39Z" },
+    { url = "https://files.pythonhosted.org/packages/de/2b/48f9ecd91db753d14c78797a82eb55d6acaad24bc74fc8d396c143d93ea4/pot-0.9.7.post1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b5b1a2c7abb3f394a4e07f0bf8b44b4f3d10412f13c614a1444a298d2de82660", size = 32250398, upload-time = "2026-07-29T09:01:05.864Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/8f/94f78ad04639fe24a9860e5b4ab38695bcd83bf57c510f8244d30f65c373/pot-0.9.7.post1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:19767a51178fdc112f6fe2ac974e817d762854e2a52808accb7f516bc1eb139d", size = 32891827, upload-time = "2026-07-29T09:01:09.48Z" },
+    { url = "https://files.pythonhosted.org/packages/22/0b/70fc6426fa66201b4346a748dde1aed1a9ff9f2f463deec197f5588da135/pot-0.9.7.post1-cp314-cp314-win_amd64.whl", hash = "sha256:576322307d4e66d53ec2fcf1fb1ad6f192f5fc3949e0821f28ab50fe301dd527", size = 811991, upload-time = "2026-07-29T09:01:25.232Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/c2/0407880828b0dc52cd52ba23584e2db94335f3cb52469125057261068aa4/pot-0.9.7.post1-cp314-cp314t-macosx_10_13_universal2.whl", hash = "sha256:e98ef4f39f9d22af12759a98b354c35a4a009242971b886b933a9bf29012845f", size = 1551439, upload-time = "2026-07-29T09:01:11.725Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/c1/64f33bb732a169e0c2ed836c782579833480b6f721be7d29e01cbac4d8e0/pot-0.9.7.post1-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:65413e7b67b5d22cb30f2f1f7ef4bdfa5d1a2b4bd3fdc1d456de75e857e6578e", size = 991148, upload-time = "2026-07-29T09:01:13.304Z" },
+    { url = "https://files.pythonhosted.org/packages/72/07/9101561c609c05b3fdcb2091478024642bddce53b8e917b47602806664ad/pot-0.9.7.post1-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:db1fb86d05e771cec2a32582ace133ab91109c31715e08fa950592aa762dab8a", size = 935842, upload-time = "2026-07-29T09:01:14.642Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/51/c55c07b5c7f97d7571cdd713749585177fe8ab0378fee20f401289f6b07f/pot-0.9.7.post1-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3bbe5c434b90551040c39ac11f052ab7fa15ecdd0f8df65933ffe364dcbd320e", size = 32355096, upload-time = "2026-07-29T09:01:17.465Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/85/29e587f65f2ea116e551fa41a1e4a98673a99fc258bc6056e33ff2f4ccd8/pot-0.9.7.post1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1c131c77b8d00650a2055bf8ff506d3bf0b58a3c4da61bd5e938923d0f31ccf9", size = 32943963, upload-time = "2026-07-29T09:01:21.009Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/3f/805de7599bbb4ad1cb61e5060623a8481ca51a7d538b75db553d3452f2c1/pot-0.9.7.post1-cp314-cp314t-win_amd64.whl", hash = "sha256:45f0e17026331ad4d415e7925164958d07f7cc37600b08f93485d5fb35f04bd0", size = 822385, upload-time = "2026-07-29T09:01:23.579Z" },
 ]
 
 [[package]]

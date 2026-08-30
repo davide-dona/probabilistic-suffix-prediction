@@ -12,7 +12,9 @@ from src.configs.schema import (
 )
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
+from src.logs.continuations import ContinuationIndex
 from src.model import TransformerCVAE, save_checkpoint
+from src.paths import Split
 from src.training.early_stopping import EarlyStopper
 from src.training.kl import linear_warmup_weight
 from src.training.loss import Loss, compute_loss
@@ -75,6 +77,7 @@ def train(
     generation_loader: DataLoader,
     generation_samples: int,
     codec: DatasetCodec,
+    dataset: str,
     run: RunIdentity,
     experiment_config: dict,
     generator: torch.Generator,
@@ -103,6 +106,8 @@ def train(
             over steps rather than against a report's numbers.
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
+        dataset: The log being trained on, naming the validation split's continuation index the
+            selection score is read against.
         run: What every file this run writes is named after (see `src/paths.py`). One
             TensorBoard directory is one run, so an identity reused across runs overlays their
             curves instead of listing them side by side; what makes its tag unique is the
@@ -120,6 +125,11 @@ def train(
         early_stopping_config: When to give up.
     """
     device = torch.device(training.device)
+
+    # The validation split's continuations, which the selection score is measured against. Read
+    # once here rather than per validation, and never the test split's: selecting against those
+    # would fold the held-out set into which checkpoint is kept.
+    continuations = ContinuationIndex(dataset=dataset, split=Split.VAL)
 
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_config.lr, weight_decay=optimizer_config.weight_decay
@@ -208,9 +218,11 @@ def train(
                         generation_loader,
                         num_samples=generation_samples,
                         codec=codec,
+                        index=continuations,
                         device=device,
                     )
-                    gen_metrics.log(writer, step, prefix='gen')
+                    gen_metrics.accuracy.log(writer, step, prefix='gen')
+                    gen_metrics.distribution.log(writer, step, prefix='gen')
 
                     writer.add_scalar('kl_weight', kl_weight, step)
 
@@ -219,12 +231,14 @@ def train(
                         f'Step {step:>{len(str(training.max_steps))}}/{training.max_steps}  '
                         f'kl {kl_weight:.2f}  train {train_metrics.loss:.4f}  '
                         f'val {val_metrics.loss:.4f}  '
-                        f'gen_dls {gen_metrics.dls_mean:.4f} mean / '
-                        f'{gen_metrics.dls_point:.4f} point  '
-                        f'energy {gen_metrics.energy_score:.4f}',
+                        f'gen_dls {gen_metrics.accuracy.dls_mean:.4f} mean / '
+                        f'{gen_metrics.accuracy.dls_point:.4f} point  '
+                        f'emsc {gen_metrics.distribution.emsc:.4f}',
                         flush=True,
                     )
-                    selection_score = gen_metrics.energy_score
+                    # The early stopper minimizes, and EMSC is a similarity, so it is the distance
+                    # that is tracked.
+                    selection_score = 1.0 - gen_metrics.distribution.emsc
 
                     # Read before `update` folds this score into it, since afterwards it can
                     # no longer tell an improvement from a step that just matched the best.

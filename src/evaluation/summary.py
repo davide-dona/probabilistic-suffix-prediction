@@ -149,7 +149,7 @@ class EvaluationSummary:
         )
 
 
-# The three granularities that hold the two families side by side, and so the three a reader can
+# The three granularities that hold the three families side by side, and so the three a reader can
 # ask for every score of at once.
 type Summarized = PrefixSummary | LengthSummary | EvaluationSummary
 
@@ -170,6 +170,10 @@ def flatten_scores(summary: Summarized) -> dict[str, float]:
     """
     return {
         name: getattr(family, name)
-        for family in (summary.accuracy, summary.conformance, summary.distribution)
+        for family in (
+            summary.accuracy,
+            summary.conformance,
+            summary.distribution,
+        )
         for name in _FIELD_NAMES[type(family)]
     }
