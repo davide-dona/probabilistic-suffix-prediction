@@ -15,22 +15,22 @@ model:
   name: cvae
 
   # The size of the embedding space
-  d_model: 128
+  d_model: 32
 
   # Activity/resource lookup widths, concatenated with the time delta, the data section's
   # event_features and their present flags, and projected to d_model.
   embeddings:
     activity_dim: 16
-    resource_dim: 32  
+    resource_dim: 32
     feature_dim: 8  # per categorical event feature; each one widens the projection's input
 
   # Reads both sequences: the prefix, whose CLS summary feeds the prior and whose events the
   # decoder cross-attends over, and, during training only, the ground-truth suffix, whose
   # summary feeds the posterior.
   encoder:
-    num_layers: 2
-    num_heads: 4
-    feedforward_dim: 512  # 4x d_model ratio
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
     dropout: 0.1
 
   # MLP mapping the prefix summary to p(z|prefix), sampled from at inference.
@@ -43,9 +43,9 @@ model:
 
   # Causal self-attention over the suffix, cross-attention over the encoded prefix.
   decoder:
-    num_layers: 2
-    num_heads: 4
-    feedforward_dim: 512
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
     dropout: 0.1
     activity_dropout: 0.3  # teacher-forced activities blanked in training, so the decoder must lean on z
     head_hidden_dim: 128
