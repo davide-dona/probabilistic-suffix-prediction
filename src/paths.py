@@ -114,8 +114,7 @@ def require_dataset(dataset: str) -> None:
 
 
 def require_continuations(dataset: str, split: Split) -> None:
-    """Check that a dataset's continuation index for one split is on disk, since it is one of the
-    artifacts `--skip-evaluation` leaves unwritten.
+    """Check that a dataset's continuation index for one split is on disk.
 
     Args:
         dataset: The dataset to check.
@@ -127,14 +126,13 @@ def require_continuations(dataset: str, split: Split) -> None:
     if not path.exists():
         raise FileNotFoundError(
             f'"{dataset}" has no {split} continuation index at {path}. Run '
-            f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
-            'without --skip-evaluation first.'
+            f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" first.'
         )
 
 
 def require_declare_model(dataset: str) -> None:
-    """Check that a dataset's declarative model is on disk, since it is one of the two artifacts
-    `--skip-evaluation` leaves unwritten and evaluation is the only reader.
+    """Check that a dataset's declarative model is on disk, since it is the one artifact
+    `--skip-declare` leaves unwritten and evaluation is its only reader.
 
     Args:
         dataset: The dataset to check.
@@ -146,7 +144,7 @@ def require_declare_model(dataset: str) -> None:
         raise FileNotFoundError(
             f'"{dataset}" has no declarative model at {path}. Run '
             f'"uv run python -m pipelines.preprocess -c config/datasets/{dataset}.yaml" '
-            'without --skip-evaluation first.'
+            'without --skip-declare first.'
         )
 
 

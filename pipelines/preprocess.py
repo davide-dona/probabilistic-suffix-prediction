@@ -148,7 +148,7 @@ def run(
     data_config: DataConfig,
     declare_config: DeclareConfig,
     *,
-    skip_evaluation: bool,
+    skip_declare: bool,
 ) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
@@ -161,18 +161,18 @@ def run(
     The vocabularies and normalization statistics the model is built against are fit here too,
     on the train split alone, and written beside it as `dataset.json`.
 
-    Two more artifacts follow, both skipped together under `skip_evaluation`: the continuations
-    each held-out split takes after each of its prefixes, indexed beside the splits, and the
-    declarative model discovered from the train split. Both held-out splits are indexed because
-    evaluation scores against the test split's continuations while training selects checkpoints
-    against the validation split's. Discovery is the slowest step here by a wide margin, which is
-    what skipping the pair is worth doing for.
+    The continuations each held-out split takes after each of its prefixes are indexed next, one
+    index per split, beside the splits: training selects checkpoints against the validation
+    split's and evaluation scores against the test split's, so both are always built. The
+    declarative model discovered from the train split follows, and is the one artifact
+    `skip_declare` leaves unwritten: evaluation is its only reader, and discovery is the slowest
+    step here by a wide margin.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
         declare_config: The `declare` section, driving the discovery of the declarative model.
-        skip_evaluation: Whether to skip the artifacts training's selection and evaluation read.
-            Both will fail until preprocessing is rerun without this flag.
+        skip_declare: Whether to skip discovering the declarative model. Evaluation will fail
+            until preprocessing is rerun without this flag.
     """
     dataset = data_config.name
 
@@ -184,11 +184,9 @@ def run(
             f'{data_config.test_split:.0%} test, out of time',
             'splits': paths.split_path(dataset=dataset, split=Split.TRAIN).parent,
             'codec': paths.codec_path(dataset),
-            'continuations': 'skipped (--skip-evaluation)'
-            if skip_evaluation
-            else paths.continuation_path(dataset=dataset, split=Split.VAL).parent,
-            'declarative model': 'skipped (--skip-evaluation)'
-            if skip_evaluation
+            'continuations': paths.continuation_path(dataset=dataset, split=Split.VAL).parent,
+            'declarative model': 'skipped (--skip-declare)'
+            if skip_declare
             else paths.declare_model_path(dataset),
         },
     )
@@ -244,23 +242,23 @@ def run(
         codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
         codec.save()
 
-    if skip_evaluation:
-        evaluation_summary = 'nothing evaluation reads'
-    else:
-        # Both held-out splits, since training selects on the validation split's continuations and
-        # evaluation scores against the test split's.
-        indexed = {}
-        for split, rows in ((Split.VAL, val), (Split.TEST, test)):
-            with step(f'Indexing the continuations of the {split} split'):
-                prefixes, occurrences = build_index(
-                    rows, dataset=dataset, split=split, vocabulary=codec.activity.vocab
-                )
-                indexed[split] = prefixes
-                print(
-                    f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
-                    flush=True,
-                )
+    # Both held-out splits, since training selects on the validation split's continuations and
+    # evaluation scores against the test split's.
+    indexed = {}
+    for split, rows in ((Split.VAL, val), (Split.TEST, test)):
+        with step(f'Indexing the continuations of the {split} split'):
+            prefixes, occurrences = build_index(
+                rows, dataset=dataset, split=split, vocabulary=codec.activity.vocab
+            )
+            indexed[split] = prefixes
+            print(
+                f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
+                flush=True,
+            )
 
+    if skip_declare:
+        declare_summary = 'declarative model skipped (--skip-declare)'
+    else:
         # The slowest step of the pipeline by a wide margin, and pm4py reports its own progress.
         with step('Discovering the declarative model'):
             constraints = discover_declare_model(
@@ -268,11 +266,7 @@ def run(
                 dataset=dataset,
                 declare_config=declare_config,
             )
-
-        evaluation_summary = (
-            f'{indexed[Split.VAL]:,} val and {indexed[Split.TEST]:,} test indexed prefixes, '
-            f'{constraints} declarative constraints'
-        )
+        declare_summary = f'{constraints} declarative constraints'
 
     print(
         f'Preprocessed "{dataset}": {len(train):,} train, {len(val):,} val, {len(test):,} test '
@@ -280,7 +274,8 @@ def run(
         f'{len(codec.resource.vocab)} resources, '
         f'{len(codec.categorical_features)} categorical and '
         f'{len(codec.numeric_features)} numeric feature channels, '
-        f'{evaluation_summary}',
+        f'{indexed[Split.VAL]:,} val and {indexed[Split.TEST]:,} test indexed prefixes, '
+        f'{declare_summary}',
         flush=True,
     )
 
@@ -291,11 +286,10 @@ def main() -> None:
     )
     add_config_argument(parser, required=True)
     parser.add_argument(
-        '--skip-evaluation',
+        '--skip-declare',
         action='store_true',
-        help='Skip the continuation indices and the declarative model. Training selects '
-        'checkpoints on the validation index and evaluation reads both, so rerun without this '
-        'flag before either.',
+        help='Skip discovering the declarative model, the slowest step here by a wide margin. '
+        'Evaluation is its only reader, so rerun without this flag before evaluating.',
     )
     args = parser.parse_args()
 
@@ -303,7 +297,7 @@ def main() -> None:
     run(
         data_config=config.data,
         declare_config=config.declare,
-        skip_evaluation=args.skip_evaluation,
+        skip_declare=args.skip_declare,
     )
 
 
