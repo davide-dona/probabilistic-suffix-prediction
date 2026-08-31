@@ -2,8 +2,11 @@
 __pycache__/
 *.py[oc]
 outputs/
-CLAUDE.md
 *DS_Store
+
+# The local doc set: CLAUDE.md and the topic docs it points at
+CLAUDE.md
+.claude/docs/
 
 # Published models, fetched from the Hugging Face repo rather than committed
 pretrained/
