@@ -8,17 +8,33 @@ from matplotlib.figure import Figure
 
 from src import paths
 from src.cli import banner, existing_directory, existing_file, step, swept
-from src.evaluation.report import read_reports
+from src.evaluation.report import Axis, read_reports
+from src.evaluation.spreads import read_spreads
 from src.visualization import (
     FIGURES,
     TABLES,
+    VIOLINS,
     apply_style,
     compose_figure,
+    compose_violins,
     distribution_grid,
     embed_suffixes,
     latex_table,
     reported_models,
     test_significance,
+)
+
+# Which metrics the violin figures draw, so the per-prefix scores are read for those alone. Named
+# off the catalogue rather than listed, so a metric added to a figure reaches the read with no
+# change here.
+_SPREAD_METRICS = tuple(
+    dict.fromkeys(
+        key
+        for violin in VIOLINS
+        for column in violin.columns
+        for key in (column.models.key, column.log.key if column.log else None)
+        if key is not None
+    )
 )
 
 
@@ -53,6 +69,22 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     return written
 
 
+def _draw_violins(frame: pd.DataFrame) -> int:
+    """Draw every violin figure of the catalogue, each covering every log at once.
+
+    Args:
+        frame: The overall spreads of every run, from `read_spreads`.
+    Returns:
+        How many figures were written, under `outputs/visual/figures/`.
+    """
+    for violin in VIOLINS:
+        _save_figure(
+            figure=compose_violins(frame, violin),
+            path=paths.combined_figure_path(violin.name),
+        )
+    return len(VIOLINS)
+
+
 def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
     """Write every comparison table, over every log at once, under `outputs/visual/tables/`.
 
@@ -75,7 +107,8 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw
             the metric figures and the comparison tables, and the per-prefix scores beside each of
-            them are what the tables' emphasis is tested on.
+            them are what the box figures are drawn from and what the tables' emphasis is tested
+            on.
         generation_files: The generations of the same runs, from `python -m pipelines.generate`,
             or none. These draw the distribution figure, which costs minutes per log.
     Raises:
@@ -101,6 +134,18 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
     logs = sorted(set(reports['dataset']))
     with step(f'Drawing {", ".join(logs)}'):
         drawn = _draw_figures(reports)
+
+    # Over the per-prefix scores beside each report, like the test below: a report holds the mean
+    # of each metric and says nothing about how much of the split sits with it, and the log's own
+    # value is a series of these figures rather than a row of the tables. Only the overall
+    # breakdown is asked for, that being the one the catalogue draws; a figure of a spread by
+    # length is another `Axis` here and nothing else.
+    with step('Reading how widely each run is spread'):
+        spreads = reported_models(
+            read_spreads(evaluation_files, metrics=_SPREAD_METRICS, axes=(Axis.OVERALL,))
+        )
+    with step('Drawing the spreads'):
+        drawn += _draw_violins(spreads)
 
     # Over the per-prefix scores beside each report, since a mean cannot say whether two models
     # differ. A paired bootstrap over the cases of each log, which is seconds per log.

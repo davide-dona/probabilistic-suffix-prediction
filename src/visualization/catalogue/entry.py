@@ -51,9 +51,16 @@ class MetricEntry:
 
     @property
     def table_header(self) -> str:
-        """The header of one of a table's columns: the name, its unit and which way it reads, the
-        arrow written in math mode."""
-        return f'{self.label}{self._unit_suffix}{_TABLE_ARROWS[self.metric.direction]}'
+        """The header of one of a table's columns: the name and which way it reads, the arrow
+        written in math mode after a `~` so a wrapped name never strands it on its own line.
+
+        The unit is not written here. A table's headers are unitless and the units are stated in
+        its caption, which is what keeps a two-word name and a name carrying `[days]` the same
+        height; `Table.note` is the sentence that caption has to carry. The name itself is a plain
+        string the column wraps as it needs to, so a header is one line of LaTeX with nothing to
+        read past.
+        """
+        return f'{self.label}{_TABLE_ARROWS[self.metric.direction]}'
 
     @property
     def _arrow(self) -> str:
@@ -77,6 +84,8 @@ class MetricEntry:
 
 # Which way a metric reads, in the two dialects a page writes it in. A gap is best at 0 rather than
 # at either end, so it is marked with the target it is read against rather than with an arrow.
+# Both dialects tie the mark to the name it follows: a non-breaking space in matplotlib's, a `~` in
+# LaTeX's, so neither ever strands the mark on a line of its own.
 _AXIS_ARROWS = {
     Direction.HIGHER: '\N{NO-BREAK SPACE}↑',
     Direction.LOWER: '\N{NO-BREAK SPACE}↓',
@@ -84,8 +93,8 @@ _AXIS_ARROWS = {
     Direction.NONE: '',
 }
 _TABLE_ARROWS = {
-    Direction.HIGHER: r' $\uparrow$',
-    Direction.LOWER: r' $\downarrow$',
-    Direction.ZERO: r' $\rightarrow 0$',
+    Direction.HIGHER: r'~$\uparrow$',
+    Direction.LOWER: r'~$\downarrow$',
+    Direction.ZERO: r'~$\rightarrow 0$',
     Direction.NONE: '',
 }

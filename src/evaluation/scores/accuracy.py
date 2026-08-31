@@ -4,7 +4,7 @@ from itertools import chain, islice, repeat
 from typing import Self
 
 from src.inference.generation import Generation
-from src.scalar_metrics import Direction, ScalarMetrics, Unit, mean, metric
+from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
 from src.suffixes import sequence_similarity
 
 MINUTES_PER_DAY = 1440.0
@@ -45,7 +45,7 @@ class AccuracyScores(ScalarMetrics):
 
     # Events left after the cut point: the scale every error above is read against. A property of
     # the prefixes scored rather than of the model, so it is flat across a training run.
-    suffix_length: float = metric(unit=Unit.EVENTS)
+    suffix_length: float = metric(unit=Unit.EVENTS, owner=Owner.LOG)
 
     @classmethod
     def of(cls, generation: Generation) -> Self:

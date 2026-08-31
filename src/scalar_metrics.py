@@ -62,6 +62,20 @@ class Direction(StrEnum):
     NONE = 'none'  # No better value, e.g. a spread or a property of the log
 
 
+class Owner(StrEnum):
+    """Whose number one of a report's metrics is: the model that was run, or the log it was run
+    against.
+
+    Every model of a log carries the same value for a log's metric, so the two are drawn and
+    written differently. A log's own value is one series in its own style rather than one per
+    model in each model's colour, and it is never a row of a table comparing models, being the
+    target they are read against rather than a competitor.
+    """
+
+    MODEL = 'model'
+    LOG = 'log'
+
+
 @dataclass(frozen=True)
 class Metric:
     """What one of the numbers a report carries is: the name it goes by, its unit, and which way
@@ -75,24 +89,27 @@ class Metric:
     key: str  # The field it was declared on, which is the name it has in a report and a frame
     unit: Unit
     direction: Direction = Direction.NONE
+    owner: Owner = Owner.MODEL
 
 
 # Where a field's declaration is kept. Read through `metrics_of` rather than directly.
 _DECLARATION = 'metric'
 
 
-def metric(*, unit: Unit, direction: Direction = Direction.NONE) -> Any:
+def metric(*, unit: Unit, direction: Direction = Direction.NONE, owner: Owner = Owner.MODEL) -> Any:
     """Declare a float field as one of the numbers a report carries.
 
     Args:
         unit: What the number is, which gives it both its printed unit and its range.
         direction: Which way it reads, which is both the arrow written after its name and what a
             table's emphasis calls the best of a row.
+        owner: Whose number it is, which is the series it is drawn as and whether it is ever
+            written as a model's row.
     Returns:
         A `dataclasses.field` carrying the declaration. The metric's key is the field's own name,
         so it is never written twice and cannot drift from what a report holds.
     """
-    return field(metadata={_DECLARATION: (unit, direction)})
+    return field(metadata={_DECLARATION: (unit, direction, owner)})
 
 
 def metrics_of(cls: type) -> tuple[Metric, ...]:
@@ -108,8 +125,8 @@ def metrics_of(cls: type) -> tuple[Metric, ...]:
     for entry in fields(cls):
         if _DECLARATION not in entry.metadata:
             continue
-        unit, direction = entry.metadata[_DECLARATION]
-        declared.append(Metric(key=entry.name, unit=unit, direction=direction))
+        unit, direction, owner = entry.metadata[_DECLARATION]
+        declared.append(Metric(key=entry.name, unit=unit, direction=direction, owner=owner))
     return tuple(declared)
 
 
