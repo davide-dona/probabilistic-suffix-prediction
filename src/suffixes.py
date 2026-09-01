@@ -85,18 +85,17 @@ def distances(
     queries: Sequence[Sequence[Hashable]],
     choices: Sequence[Sequence[Hashable]],
     *,
-    workers: int = 1,
     dtype: type[np.floating] = np.float32,
 ) -> np.ndarray:
     """Measure every sequence of one set against every sequence of another.
+
+    Every caller is already inside the evaluation's process pool, so the pairs are walked on the
+    calling thread: a thread per core per process would oversubscribe the machine.
 
     Args:
         queries: The sequences to measure, one row each. Either encoded suffixes, where a sequence
             is a string, or raw activity names, where it is a list of them.
         choices: The sequences to measure them against, one column each.
-        workers: How many threads to spread the pairs over, or -1 for one per core. Left at 1 by a
-            caller that is already inside a process pool, where a thread per core per process would
-            oversubscribe the machine.
         dtype: What to accumulate in. The default halves a matrix that can run to hundreds of
             megabytes; a caller measuring a handful of sequences has no such matrix and may ask for
             `np.float64` instead.
@@ -109,7 +108,6 @@ def distances(
         choices=choices,
         scorer=OSA.normalized_similarity,
         dtype=dtype,
-        workers=workers,
     )
     # In place: the matrix is already the largest thing here, and a second copy of it is what a
     # blocked walk exists to avoid.

@@ -80,7 +80,7 @@ _PAPER_RC = {
     'legend.borderpad': 0.3,
     'legend.handlelength': 2.2,
     'legend.columnspacing': 1.2,
-    # What a rasterized scatter is written at; the vector parts of a figure are unaffected.
+    # What anything rasterized is written at; a figure drawn as vectors alone is unaffected.
     'savefig.dpi': 400,
     'savefig.bbox': 'tight',
     'savefig.pad_inches': 0.01,
@@ -93,11 +93,9 @@ _PAPER_RC = {
 def apply_style() -> None:
     """Set the shared look every figure shares. Called before anything is drawn."""
     # Declare4Py turns the root logger up to DEBUG when it is imported, which makes matplotlib
-    # narrate the font subsetting of every figure it writes and numba the bytecode of every
-    # function UMAP compiles.
+    # narrate the font subsetting of every figure it writes.
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('fontTools').setLevel(logging.WARNING)
-    logging.getLogger('numba').setLevel(logging.WARNING)
     # Every figure is written to a file and none is shown, so the file backend is the right one
     # whether or not a display happens to be attached.
     mpl.use('Agg')
@@ -109,7 +107,7 @@ def legend_above(figure: Figure, handles: Sequence[Artist], keys: Sequence[str])
 
     Args:
         figure: The figure, laid out by `constrained_layout` and with its panels already drawn.
-        handles: What the legend draws a key for, one per model or per cloud.
+        handles: What the legend draws a key for, one per model.
         keys: What each of them is called, in the same order.
     """
     figure.legend(handles, keys, loc='outside upper center', ncols=len(keys))

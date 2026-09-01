@@ -50,7 +50,7 @@ def reported_models(frame: pd.DataFrame) -> pd.DataFrame:
     column rather than two drawn alike.
 
     Args:
-        frame: What a figure or a table is drawn from, from `read_reports` or `embed_suffixes`.
+        frame: What a figure or a table is drawn from, from `read_reports`.
     Returns:
         A copy holding reported names alone.
     """
