@@ -4,20 +4,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.evaluation.bootstrap import SEED, resample_counts
 from src.evaluation.prefix_scores import read_prefix_scores, score_files
 from src.evaluation.scores import METRICS
 from src.scalar_metrics import Direction
 
 # What a difference has to clear to be called real, and how many resamples it is read against.
 # The resolution of an uncorrected p is `1 / RESAMPLES`, so this many leaves room for the
-# correction to divide it by the handful of models a row compares.
+# correction to divide it by the handful of models a row compares. More than a band is bounded by
+# in `src.evaluation.bootstrap` for exactly that reason.
 ALPHA = 0.05
 RESAMPLES = 10_000
-# How many resamples are drawn at once. One draw is a row of `[b, cases]`, so this trades the
-# memory that matrix takes against the number of passes over the per-case sums.
-CHUNK = 250
-# What the resampling is reproducible under, so two runs of the pipeline emphasize the same cells.
-SEED = 24
 
 # What `test_significance` returns, and what a table's emphasis is read from. One row per model per
 # metric per log. `p_value` is the corrected p against that row's reference and is NaN for the
@@ -25,7 +22,7 @@ SEED = 24
 SIGNIFICANCE_COLUMNS = ('dataset', 'model', 'metric', 'p_value', 'best')
 
 # The metrics a difference can be tested on: one with no better direction has no best value to be
-# indistinguishable from, which is every spread and every property of the log.
+# indistinguishable from, which is every property of the log and every diagnostic of a run.
 _TESTED = tuple(
     key for key, metric in METRICS.entries.items() if metric.direction is not Direction.NONE
 )
@@ -149,21 +146,11 @@ def _bootstrap_p(case_sums: np.ndarray, case_cuts: np.ndarray, reference: np.nda
     generator = np.random.default_rng(SEED)
     at_least, at_most = np.zeros((models, metrics)), np.zeros((models, metrics))
 
-    drawn = 0
-    while drawn < RESAMPLES:
-        size = min(CHUNK, RESAMPLES - drawn)
-        # Which case each of `cases` draws landed on, offset so that a resample's draws fall in
-        # its own stretch of one flat count: `[size, cases]` counted in a single `bincount`, which
-        # is an order of magnitude cheaper than a multinomial over this many cases.
-        picks = generator.integers(low=0, high=cases, size=(size, cases))
-        picks += (np.arange(size) * cases)[:, None]
-        # How many times each case was drawn, [size, cases]. Drawing `cases` of them with
-        # replacement is what a cluster bootstrap resamples.
-        counts = (
-            np.bincount(picks.ravel(), minlength=size * cases)
-            .reshape(size, cases)
-            .astype(np.float64)
-        )
+    # The unit drawn is the whole case rather than the prefix, which is what makes this the cluster
+    # bootstrap and not the ordinary one a band is bounded by: over the whole split a case
+    # contributes one prefix per cut point, so its cuts are not independent of each other.
+    for counts in resample_counts(cases, RESAMPLES, generator=generator):
+        size = len(counts)
         # [size, models, metrics]
         means = ((counts @ flat) / (counts @ cuts)[:, None]).reshape(size, models, metrics)
         # How much better than its metric's reference each model came out, [size, models, metrics].
@@ -171,7 +158,6 @@ def _bootstrap_p(case_sums: np.ndarray, case_cuts: np.ndarray, reference: np.nda
         better = _oriented(means) - _oriented(against)
         at_least += (better >= 0).sum(axis=0)
         at_most += (better <= 0).sum(axis=0)
-        drawn += size
 
     # Two-sided, by inverting the bootstrap interval of the difference: a model that lands on both
     # sides of the reference is one the resamples cannot separate from it.

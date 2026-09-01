@@ -32,12 +32,13 @@ MAX_MARKERS = 12
 # own range. Without it a line approaching the bound reads as clipped against the axis border.
 Y_HEADROOM = 0.05
 
-# How wide a violin is drawn at its densest, against the slot it sits in, and how much of its
-# series' colour is washed into the body. The wash is set as the artist's own `alpha`, which
-# matplotlib takes down the outline with it, so a violin is drawn lighter throughout than the line
-# of the same series in a figure of lines.
-VIOLIN_WIDTH = 0.8
-VIOLIN_ALPHA = 0.28
+# How much of its series' colour a confidence band carries. Light enough that three of them
+# overlapping still read as uncertainty behind the lines rather than as filled areas of their own.
+BAND_ALPHA = 0.18
+# Where a band and a line sit against each other. Every band of a panel is drawn under every line
+# of it, so the last series never covers the first series' line.
+BAND_Z = 1.8
+LINE_Z = 2.2
 
 # The style every figure shares. Set once, before any figure is drawn, by `apply_style()`.
 _PAPER_RC = {

@@ -32,29 +32,26 @@ class Table:
         if undirected:
             raise ValueError(
                 f'the {self.name} table holds {", ".join(undirected)}, which have no better value '
-                f'and so no cell a reader could rank or the emphasis could mark. A spread and a '
-                f'property of the log are drawn in VIOLINS rather than tabulated.'
+                f'and so no cell a reader could rank or the emphasis could mark. A property of the '
+                f"log is drawn in FIGURES as the log's own series rather than tabulated."
             )
 
 
-# One table per question a mean can answer. Fidelity is one of the three goals stated for the
-# model; the accuracy table is none of them, but is the comparison against a deterministic baseline
-# on the ground the literature already reads it on.
+# One table per question a mean can answer. Fidelity is one of the two goals stated for the model;
+# the accuracy table is neither of them, but is the comparison against a deterministic baseline on
+# the ground the literature already reads it on.
 #
-# Neither of the other two goals is tabulated. Conformance is not because every model of every log
-# sits between 0.93 and 0.99, where a mean says nothing a reader can act on. Diversity is not for a
-# different reason: the question is whether a model spreads as widely as the log does, so the number
-# only means something beside the log's own spread, and a column of means carries no such
-# comparison. It is read from the `spreads` violin, which draws `sample_diversity` against
-# `reference_diversity`, and from `diversity-by-prefix-length`, which draws the same pair as the
-# prefix grows.
+# Conformance, the other goal, is not tabulated: every model of every log sits within a few points
+# of the log's own conformance, where a mean over the whole split says nothing a reader can act on.
+# It is drawn by `conformance-by-suffix-length` against that log's own line instead, where the
+# lengths and the bands say where a model really parts from the process.
 #
 # A point estimate beats the mean of ten stochastic draws almost by construction, so the two never
 # share a column; where a table holds both, each column says which of them it is.
 #
 # Every column names a metric with a direction. One without has no best value, so its cell is a
-# number a reader cannot rank and the emphasis can never mark; those are the log's own values and
-# the models' spreads, which `VIOLINS` draws instead.
+# number a reader cannot rank and the emphasis can never mark; those are the log's own values,
+# which `FIGURES` draws as the log's own series, and the diagnostics of a run, which no page draws.
 TABLES = (
     # The single suffix each model writes from the mean of `p(z | prefix)`, against the one the log
     # actually took.
@@ -82,8 +79,8 @@ TABLES = (
     # of what actually happens that the model reproduces.
     #
     # The sampled DLS is in no table for now. It is the expected accuracy of one draw, which a
-    # model collapsed onto a mode maximizes, so it answers neither this question nor the diversity
-    # one; `dls-by-length` still draws it against the point estimate.
+    # model collapsed onto a mode maximizes, so it does not settle this question either;
+    # `dls-by-length` still draws it against the point estimate.
     Table(
         name='fidelity',
         axis=Axis.OVERALL,

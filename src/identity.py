@@ -100,10 +100,6 @@ def read_run_identity(parquet: pq.ParquetFile) -> RunIdentity:
 def group_by_model(runs: Iterable[tuple[RunIdentity, Path]]) -> dict[str, dict[str, Path]]:
     """Group a set of run artifacts by the log they belong to, one run of each model per log.
 
-    What a figure or a table is built from is a set of files nobody necessarily typed one by one,
-    since a directory can be swept for them, and a log holding two runs of one model would draw one
-    line, panel or column over another without saying so.
-
     Args:
         runs: Which run wrote each file, in the order they were named. How that was read is the
             caller's: a report says so in its JSON, a generations file in its Parquet footer.
