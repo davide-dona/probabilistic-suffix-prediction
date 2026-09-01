@@ -37,12 +37,17 @@ class Table:
             )
 
 
-# One table per question a mean can answer. Fidelity and diversity are two of the three goals
-# stated for the model; the accuracy table is none of them, but is the comparison against a
-# deterministic baseline on the ground the literature already reads it on. Conformance is the
-# third goal and has no table: every model of every log sits between 0.93 and 0.99, where a mean
-# says nothing a reader can act on, so it is drawn by `spreads` against the log's own conformance
-# and by `conformance-by-suffix-length` against the length of what was generated.
+# One table per question a mean can answer. Fidelity is one of the three goals stated for the
+# model; the accuracy table is none of them, but is the comparison against a deterministic baseline
+# on the ground the literature already reads it on.
+#
+# Neither of the other two goals is tabulated. Conformance is not because every model of every log
+# sits between 0.93 and 0.99, where a mean says nothing a reader can act on. Diversity is not for a
+# different reason: the question is whether a model spreads as widely as the log does, so the number
+# only means something beside the log's own spread, and a column of means carries no such
+# comparison. It is read from the `spreads` violin, which draws `sample_diversity` against
+# `reference_diversity`, and from `diversity-by-prefix-length`, which draws the same pair as the
+# prefix grows.
 #
 # A point estimate beats the mean of ten stochastic draws almost by construction, so the two never
 # share a column; where a table holds both, each column says which of them it is.
@@ -65,11 +70,20 @@ TABLES = (
         ),
     ),
     # Fidelity: how close the distribution a model draws from is to the one the log continued with.
-    # EMSC compares the two as stochastic languages; precision asks whether a draw is a
-    # continuation the log ever took; the two W1 columns compare the marginals a suffix carries
-    # beyond its activities. All four are properties of the distribution a model draws from, which
-    # is why the sampled DLS is not among them: it is the expected accuracy of one draw and is
-    # maximized by collapsing onto a mode, so it belongs where that collapse is being measured.
+    # EMSC compares the two as stochastic languages; the three W1 columns compare the marginals
+    # a suffix carries beyond its activities. The event-time column groups the waits by the
+    # activity they precede, where its counterpart in `accuracy-point` reads them by position:
+    # a position only means something once the control flow is right, which EMSC already asks.
+    #
+    # Precision and recall are the same comparison read in either direction and are deliberately
+    # asymmetric, as `scores/distribution.py` sets them out: precision asks whether a draw is a
+    # continuation the log ever took, counting a hit whether the log took it once or five hundred
+    # times, where recall is weighted by how often each continuation occurred and so is the share
+    # of what actually happens that the model reproduces.
+    #
+    # The sampled DLS is in no table for now. It is the expected accuracy of one draw, which a
+    # model collapsed onto a mode maximizes, so it answers neither this question nor the diversity
+    # one; `dls-by-length` still draws it against the point estimate.
     Table(
         name='fidelity',
         axis=Axis.OVERALL,
@@ -77,23 +91,10 @@ TABLES = (
         columns=(
             MetricEntry(METRICS['emsc'], 'EMSC'),
             MetricEntry(METRICS['continuation_precision'], 'Precision'),
+            MetricEntry(METRICS['continuation_recall'], 'Recall'),
             MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
             MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Rem. time W1'),
-        ),
-    ),
-    # Diversity: whether a model reproduces the spread of continuations the log leaves open, rather
-    # than collapsing onto one of them. Recall is the share of what happens the model can produce
-    # at all; the mean and the best of a prefix's draws are what that spread buys, one draw against
-    # the closest of k, and the distance between the two is the multimodality being useful. What
-    # each model's spread actually is, against the log's own, is drawn by `spreads`.
-    Table(
-        name='diversity',
-        axis=Axis.OVERALL,
-        note='DLS over k stochastic draws per prefix.',
-        columns=(
-            MetricEntry(METRICS['continuation_recall'], 'Recall'),
-            MetricEntry(METRICS['dls_mean'], 'DLS (mean)'),
-            MetricEntry(METRICS['dls_best'], 'DLS (best-of-k)'),
+            MetricEntry(METRICS['activity_time_wasserstein_days'], 'Event time W1'),
         ),
     ),
 )

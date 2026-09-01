@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Self
 
@@ -10,13 +11,6 @@ from src.inference.generation import Generation
 from src.logs.continuations import ContinuationIndex, References
 from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
 from src.suffixes import distances, spread
-
-# How many distinct continuations one prefix's transport problem is solved over. A prefix of length
-# one on a large log is followed by tens of thousands of them, and the exact solver is superlinear
-# in that count, so beyond this the heaviest are kept and their mass renormalized. Set well above
-# the mean reference size of every log here, so it is a guard against the tail rather than an
-# approximation the usual case runs through.
-_MAX_REFERENCES = 2048
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +31,13 @@ class DistributionScores(ScalarMetrics):
     continuation_recall: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     continuation_precision: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
 
-    # The comparison on the two marginals a suffix carries beyond its activities.
+    # The comparison on the three marginals a suffix carries beyond its activities. The waits
+    # are grouped by the activity they precede rather than by the position they fell at: a process
+    # constrains how long an activity takes, where a position only means something once the
+    # control flow is already right, which the three columns above are what answer.
     length_wasserstein: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
     remaining_time_wasserstein_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
+    activity_time_wasserstein_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
 
     # How far apart the samples of a prefix are, and how many of them are distinct sequences.
     # Neither has a best value of its own: the spread a model should have is the spread the log's
@@ -84,6 +82,14 @@ class DistributionScores(ScalarMetrics):
         lengths = [float(len(sample)) for sample in generation.samples] or [0.0]
         remaining = [sample.remaining_time_minutes for sample in generation.samples] or [0.0]
 
+        # A wait belongs to the activity it precedes, so the suffixes encoded above are read a
+        # character at a time against the waits the same draw was written with. `_decode` cuts a
+        # run's activities and its waits to one length, so the two always pair up.
+        drawn: dict[str, list[float]] = {}
+        for suffix, sample in zip(suffixes, generation.samples, strict=True):
+            for activity, wait in zip(suffix, sample.time_to_next_minutes, strict=True):
+                drawn.setdefault(activity, []).append(wait)
+
         return cls(
             emsc=emsc(suffixes=suffixes, references=references),
             continuation_recall=covered / references.occurrences,
@@ -98,6 +104,10 @@ class DistributionScores(ScalarMetrics):
             remaining_time_wasserstein_days=wasserstein_distance(
                 u_values=remaining,
                 v_values=references.remaining_times,
+            )
+            / MINUTES_PER_DAY,
+            activity_time_wasserstein_days=activity_time_wasserstein_minutes(
+                generated=drawn, observed=references.waits
             )
             / MINUTES_PER_DAY,
             sample_diversity=sample_spread,
@@ -121,6 +131,11 @@ def emsc(suffixes: tuple[str, ...], references: References) -> float:
     Damerau-Levenshtein distance. Reported as a similarity so it reads the way every other share
     here does.
 
+    Solved over every continuation the prefix was observed to take. The short prefixes of a large
+    log run to a few thousand of them, which the exact solver handles in tens of milliseconds, and
+    dropping the light tail is not free: those prefixes are the ones a log revisits most, so an
+    approximation there would move the mean of a tenth of the split.
+
     Args:
         suffixes: The generated suffixes, encoded onto the index's scale, one per draw.
         references: The prefix's observed continuations, their weights and their remaining times.
@@ -132,24 +147,56 @@ def emsc(suffixes: tuple[str, ...], references: References) -> float:
     if not suffixes:
         return 0.0
 
-    choices, weights = _heaviest(references)
-    # `[len(suffixes), len(choices)]`, one row per draw and one column per distinct continuation.
-    cost = distances(queries=suffixes, choices=choices, dtype=np.float64)
+    # `[len(suffixes), len(references.suffixes)]`, one row per draw and one column per distinct
+    # continuation.
+    cost = distances(queries=suffixes, choices=references.suffixes, dtype=np.float64)
     draws = np.full(len(suffixes), 1.0 / len(suffixes))
-    return 1.0 - float(ot.emd2(a=draws, b=weights / weights.sum(), M=cost))
+    weights = references.weights / references.occurrences
+    return 1.0 - float(ot.emd2(a=draws, b=weights, M=cost))
 
 
-def _heaviest(references: References) -> tuple[tuple[str, ...], np.ndarray]:
-    """The continuations one transport problem is solved over, and how often each was observed.
+def activity_time_wasserstein_minutes(
+    generated: Mapping[str, Sequence[float]], observed: Mapping[str, np.ndarray]
+) -> float:
+    """How far the waits a model puts before each activity are from the ones the log put there.
+
+    One 1-Wasserstein distance per activity, between the waits pooled over every draw and the ones
+    pooled over every occurrence of the prefix, averaged with each activity weighed by how often
+    the log ran it. Grouping by the activity is what makes each of them a comparison of two
+    conditional distributions, so a draw running longer or shorter than an occurrence normalizes
+    away rather than leaking into the timing. Read by position instead, one inserted event shifts
+    every wait after it and the number reports as a timing error what the activities were wrong
+    about.
+
+    An activity only one side ran is skipped. Writing an activity the log never took after this
+    prefix, or never writing one it did, is a control-flow error, and `emsc`,
+    `continuation_precision` and `continuation_recall` are what charge for it; counting it here
+    would restate it as a timing error, which is the same mistake reading the waits by position
+    makes.
+
+    Both sides are small, so this is biased upward the way `length_wasserstein` and
+    `remaining_time_wasserstein_days` are. The bias follows the draw count and the prefix's
+    occurrence count, both of which every model of a log shares, so it is a number to compare
+    models on rather than a distance to quote on its own.
 
     Args:
-        references: The prefix's observed continuations.
+        generated: The waits of every draw, pooled under the activity each of them precedes.
+        observed: The same over every continuation the prefix was observed to take.
     Returns:
-        Every continuation and its weight where the prefix has no more than `_MAX_REFERENCES` of
-        them, and otherwise the most frequent `_MAX_REFERENCES`, which carry the bulk of the mass.
+        The weighted mean distance, in minutes. Where the two share no activity the pools are
+        compared unconditioned instead, since 0.0 would read as a perfect match on a score that
+        has no worst value of its own.
     """
-    if len(references.suffixes) <= _MAX_REFERENCES:
-        return references.suffixes, references.weights
-
-    kept = np.argsort(references.weights)[-_MAX_REFERENCES:]
-    return tuple(references.suffixes[row] for row in kept), references.weights[kept]
+    scored = [
+        (float(len(waits)), wasserstein_distance(u_values=generated[activity], v_values=waits))
+        for activity, waits in observed.items()
+        if activity in generated
+    ]
+    if scored:
+        return sum(weight * distance for weight, distance in scored) / sum(
+            weight for weight, _ in scored
+        )
+    return wasserstein_distance(
+        u_values=[wait for waits in generated.values() for wait in waits] or [0.0],
+        v_values=[wait for waits in observed.values() for wait in waits],
+    )
