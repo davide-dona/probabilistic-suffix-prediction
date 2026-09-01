@@ -28,6 +28,10 @@ class Plot:
 # A quantity a model answers both ways is one figure with a row each rather than two files: the
 # point estimate and the sample mean are read against each other, and two figures of one quantity
 # carry two legends and two sets of lengths to say it.
+#
+# Every line drawn here carries the confidence interval `src.evaluation.bootstrap` bounds that
+# length's mean by, so a panel says not only where each model sits but whether the models are
+# really apart there and whether one is really below the log's own line.
 FIGURES = (
     Plot(
         name='dls-by-length',
@@ -78,16 +82,6 @@ FIGURES = (
             MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
             MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Remaining time W1'),
             MetricEntry(METRICS['activity_time_wasserstein_days'], 'Event time W1'),
-        ),
-    ),
-    # The spread a model draws at against the spread the log's own continuations have, as the
-    # prefix grows. The same comparison `spreads` draws over the whole split, read by length.
-    Plot(
-        name='diversity-by-prefix-length',
-        breakdowns=(Axis.PREFIX,),
-        metrics=(
-            MetricEntry(METRICS['sample_diversity'], 'Sample diversity'),
-            MetricEntry(METRICS['reference_diversity'], 'Observed diversity'),
         ),
     ),
 )

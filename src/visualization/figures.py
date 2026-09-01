@@ -15,8 +15,11 @@ from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Plot
 from src.visualization.style import (
     ASPECT,
+    BAND_ALPHA,
+    BAND_Z,
     COLUMN_WIDTH,
     LEGEND_HEIGHT,
+    LINE_Z,
     MAX_MARKERS,
     PAGE_WIDTH,
     PANEL_X_BINS,
@@ -31,11 +34,14 @@ AXIS_LABELS = {Axis.PREFIX: 'Prefix length', Axis.SUFFIX: 'Suffix length'}
 
 def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins: int | str) -> int:
     """Draw one metric onto one set of axes over one log's rows: a line per model, or a single line
-    in the log's own style where the metric is the log's rather than a model's.
+    in the log's own style where the metric is the log's rather than a model's. Every line carries
+    the confidence interval its length's mean is pinned down to.
 
     Args:
         axes: The panel to draw onto.
-        frame: The rows of one log and one breakdown, from `read_reports`.
+        frame: The rows of one log and one breakdown, from `read_reports` with the bounds of
+            `read_intervals` joined onto it. A row whose bounds are null keeps its line and loses
+            only its band.
         entry: The metric to draw, and what this figure calls it.
         x_bins: How many ticks the x-axis is allowed.
     Returns:
@@ -53,9 +59,27 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins:
     else:
         series = [(model, labels.MODELS[model]) for model in drawn]
 
+    lines = [
+        (values[values['model'] == model].sort_values('length'), style) for model, style in series
+    ]
+
+    # Every band first, so the last series drawn never covers the first series' line. A band is the
+    # interval that length's mean could be off by, which is what settles whether two lines are
+    # really apart at a length and whether a model's line is really below the log's own.
+    for line, style in lines:
+        bounded = line.dropna(subset=['low', 'high'])
+        axes.fill_between(
+            bounded['length'],
+            bounded['low'],
+            bounded['high'],
+            color=style.color,
+            alpha=BAND_ALPHA,
+            linewidth=0.0,
+            zorder=BAND_Z,
+        )
+
     longest = 1
-    for model, style in series:
-        line = values[values['model'] == model].sort_values('length')
+    for line, style in lines:
         longest = max(longest, int(line['length'].max()))
         axes.plot(
             line['length'],
@@ -65,6 +89,7 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry, *, x_bins:
             marker=style.marker,
             linestyle=style.linestyle,
             markevery=max(1, math.ceil(len(line) / MAX_MARKERS)),
+            zorder=LINE_Z,
         )
     axes.xaxis.set_major_locator(MaxNLocator(nbins=x_bins, integer=True))
     # Either end the metric leaves open is left to the data, matplotlib scaling it as it would.

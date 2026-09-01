@@ -41,10 +41,6 @@ def stream_prefix_scores(
 ) -> Iterator[PrefixSummary]:
     """Write each prefix's scores as they pass through, and yield them on unchanged.
 
-    A tee rather than a second pass: the pool hands its scores back once, and both the summary
-    they are averaged into and this file are written from that single stream, so no list of a
-    quarter of a million summaries is ever held.
-
     Args:
         summaries: Each prefix's scores, in the order the generations file holds them.
         keys: Which prefix each of them answers, in that same order, from `read_prefix_keys`.
@@ -112,7 +108,8 @@ def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
     missing = [str(report) for report, scores in files if not scores.exists()]
     if missing:
         raise ValueError(
-            'no per-prefix scores beside these reports, so the spread of a run cannot be read:\n  '
+            'no per-prefix scores beside these reports, so how far a run’s means could be off '
+            'cannot be read:\n  '
             + '\n  '.join(missing)
             + '\nScore them again with `python -m pipelines.evaluate`, which writes them beside '
             'the report.'
