@@ -13,7 +13,7 @@ from src.inference.generation_store import (
     read_prefix_keys,
     read_samples,
 )
-from src.suffixes import ActivityCodes, distances
+from src.suffixes import distances
 
 # How many prefixes an embedding is built from. It costs a pairwise distance per pair of distinct
 # suffixes, so this is what bounds it to seconds rather than minutes.
@@ -110,32 +110,37 @@ class _Answer:
     generated: tuple[str, ...]
 
 
-def _read_cloud(file: Path, keys: set[PrefixKey], codes: ActivityCodes) -> dict[PrefixKey, _Answer]:
+def _read_cloud(file: Path, keys: set[PrefixKey]) -> dict[PrefixKey, _Answer]:
     """Read what one run answered, out of its generations.
 
     Keyed by prefix rather than returned as two lists, so the caller can hold every run to the
     prefixes all of them answered: a run that wrote nothing for a prefix simply has no entry for
     it here.
 
+    Every generations file of a log spells an activity with the same character, both being seeded
+    from that dataset's `codec.activity.names`, so the suffixes come back comparable across runs
+    with nothing encoded here.
+
     Args:
         file: The generations of one run, from `pipelines.generate`.
         keys: Which prefixes to read, from `_shared_prefixes`.
-        codes: The log's codes, shared with every other cloud of it so that one activity is one
-            character throughout.
     Returns:
         What this run answered for each of `keys` it wrote at least one suffix for.
     """
     generator = np.random.default_rng(SEED)
     answers: dict[PrefixKey, _Answer] = {}
-    for key, true_activities, samples in read_samples(file):
-        if key not in keys or not samples:
+    for key, truth, suffixes, taken in read_samples(file):
+        if key not in keys or not taken:
             continue
+        # Drawn out of the draws rather than out of the distinct suffixes: a suffix the model
+        # produced forty times should be forty times as likely to stand for this prefix, which is
+        # the cloud's whole point.
         drawn = generator.choice(
-            a=len(samples), size=min(SAMPLES_PER_PREFIX, len(samples)), replace=False
+            a=len(taken), size=min(SAMPLES_PER_PREFIX, len(taken)), replace=False
         )
         answers[key] = _Answer(
-            truth=codes.encode(true_activities),
-            generated=tuple(codes.encode(samples[index]) for index in drawn),
+            truth=truth,
+            generated=tuple(suffixes[taken[index]] for index in drawn),
         )
     return answers
 
@@ -200,12 +205,10 @@ def embed_suffixes(files: Sequence[Path]) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for dataset, runs in _group_runs(files).items():
         keys = _shared_prefixes(dataset=dataset, files=runs.values())
-        # One instance for the whole log, so one activity means one character across the truth and
-        # every cloud, which is what lets them share an embedding.
-        codes = ActivityCodes()
-        clouds = {
-            model: _read_cloud(file=file, keys=keys, codes=codes) for model, file in runs.items()
-        }
+        # Every run of a log spells an activity with the same character, each file being written on
+        # the codebook seeded from that dataset's `codec.activity.names`, which is what lets the
+        # truth and every cloud share an embedding.
+        clouds = {model: _read_cloud(file=file, keys=keys) for model, file in runs.items()}
 
         # Narrowed once more, to the prefixes every run actually wrote a suffix for: a run that
         # wrote nothing for one is the only reason a cloud can come up short of `keys`, and a panel

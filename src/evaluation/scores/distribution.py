@@ -9,7 +9,7 @@ from scipy.stats import wasserstein_distance
 from src.evaluation.scores.accuracy import MINUTES_PER_DAY
 from src.inference.generation import Generation
 from src.logs.continuations import ContinuationIndex, References
-from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
+from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, metric
 from src.suffixes import distances, spread
 
 
@@ -65,12 +65,19 @@ class DistributionScores(ScalarMetrics):
         Returns:
             The prefix's scores.
         """
+        samples = generation.samples
         references = index.references(generation.prefix_activities)
-        suffixes = tuple(index.encode(sample.activities) for sample in generation.samples)
+
+        # The distinct suffixes and how many draws each stands for. The generations are written on
+        # the index's own scale, so nothing is encoded here.
+        suffixes, counts = samples.suffixes, samples.counts
+        draws = len(samples)
 
         # Comparing a prefix's samples against each other is what measures the spread
-        # `p(z | prefix)` claims the prefix leaves open.
-        sample_spread = spread([sample.activities for sample in generation.samples])
+        # `p(z | prefix)` claims the prefix leaves open. A suffix drawn twice is twice as likely to
+        # be picked and the pair it makes with itself sits at distance 0, which is exactly what
+        # `spread` weighs.
+        sample_spread = spread(suffixes, weights=counts)
 
         observed, generated = set(references.suffixes), set(suffixes)
         covered = sum(
@@ -79,25 +86,32 @@ class DistributionScores(ScalarMetrics):
             if suffix in generated
         )
 
-        lengths = [float(len(sample)) for sample in generation.samples] or [0.0]
-        remaining = [sample.remaining_time_minutes for sample in generation.samples] or [0.0]
+        lengths = [float(len(suffix)) for suffix in suffixes] or [0.0]
+        remaining = [events.remaining_time_minutes for events in samples.events] or [0.0]
 
-        # A wait belongs to the activity it precedes, so the suffixes encoded above are read a
-        # character at a time against the waits the same draw was written with. `_decode` cuts a
-        # run's activities and its waits to one length, so the two always pair up.
+        # A wait belongs to the activity it precedes, so a draw's suffix is read a character at a
+        # time against the waits that draw was written with. `_decode` cuts a run's activities and
+        # its waits to one length, so the two always pair up. Read per draw rather than per distinct
+        # suffix: two draws of one suffix came from different `z` and carry different waits.
         drawn: dict[str, list[float]] = {}
-        for suffix, sample in zip(suffixes, generation.samples, strict=True):
-            for activity, wait in zip(suffix, sample.time_to_next_minutes, strict=True):
+        for events in samples.events:
+            for activity, wait in zip(events.activities, events.time_to_next_minutes, strict=True):
                 drawn.setdefault(activity, []).append(wait)
 
         return cls(
-            emsc=emsc(suffixes=suffixes, references=references),
+            emsc=emsc(suffixes=suffixes, counts=counts, references=references),
             continuation_recall=covered / references.occurrences,
-            continuation_precision=mean([float(suffix in observed) for suffix in suffixes]),
+            continuation_precision=(
+                float(counts @ [float(suffix in observed) for suffix in suffixes]) / draws
+                if len(suffixes) and draws
+                else 0.0
+            ),
             # A continuation's length is fixed by its activities, so the distinct suffixes weighed
-            # by their counts are the same distribution as one length per occurrence.
+            # by their counts are the same distribution as one length per occurrence. That holds on
+            # the generated side too, which is why the draws are weighed rather than unfolded.
             length_wasserstein=wasserstein_distance(
                 u_values=lengths,
+                u_weights=counts if len(suffixes) else None,
                 v_values=[float(len(suffix)) for suffix in references.suffixes],
                 v_weights=references.weights,
             ),
@@ -111,18 +125,13 @@ class DistributionScores(ScalarMetrics):
             )
             / MINUTES_PER_DAY,
             sample_diversity=sample_spread,
-            unique_sample_rate=(
-                len({tuple(sample.activities) for sample in generation.samples})
-                / len(generation.samples)
-                if generation.samples
-                else 0.0
-            ),
+            unique_sample_rate=len(suffixes) / draws if draws else 0.0,
             reference_diversity=references.dispersion,
             reference_size=float(len(references.suffixes)),
         )
 
 
-def emsc(suffixes: tuple[str, ...], references: References) -> float:
+def emsc(suffixes: tuple[str, ...], counts: np.ndarray, references: References) -> float:
     """Earth Movers' Stochastic Conformance between generated and observed continuations.
 
     The two sets of suffixes are read as stochastic languages, the generated one uniform over the
@@ -136,8 +145,14 @@ def emsc(suffixes: tuple[str, ...], references: References) -> float:
     dropping the light tail is not free: those prefixes are the ones a log revisits most, so an
     approximation there would move the mean of a tenth of the split.
 
+    Both sides are held as distinct sequences carrying the mass of the draws or occurrences they
+    stand for, which is the same stochastic language a row per draw would spell out and a smaller
+    problem to solve: a run whose draws collapse onto a handful of suffixes gets a matrix that many
+    rows tall rather than one row per draw.
+
     Args:
-        suffixes: The generated suffixes, encoded onto the index's scale, one per draw.
+        suffixes: The distinct generated suffixes, on the index's scale.
+        counts: How many draws took each of them, in the same order.
         references: The prefix's observed continuations, their weights and their remaining times.
     Returns:
         `1 - cost` in `[0, 1]`, 1.0 where the model reproduces the prefix's continuations exactly
@@ -147,12 +162,12 @@ def emsc(suffixes: tuple[str, ...], references: References) -> float:
     if not suffixes:
         return 0.0
 
-    # `[len(suffixes), len(references.suffixes)]`, one row per draw and one column per distinct
-    # continuation.
+    # `[len(suffixes), len(references.suffixes)]`, one row per distinct draw and one column per
+    # distinct continuation.
     cost = distances(queries=suffixes, choices=references.suffixes, dtype=np.float64)
-    draws = np.full(len(suffixes), 1.0 / len(suffixes))
+    drawn = counts / counts.sum()
     weights = references.weights / references.occurrences
-    return 1.0 - float(ot.emd2(a=draws, b=weights, M=cost))
+    return 1.0 - float(ot.emd2(a=drawn, b=weights, M=cost))
 
 
 def activity_time_wasserstein_minutes(

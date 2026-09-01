@@ -98,16 +98,22 @@ class ContinuationIndex:
         self._waits = table.column('waits').to_pylist()
         self._dispersion = table.column('dispersion').to_numpy()
 
-    def encode(self, activities: Sequence[str]) -> str:
-        """Encode one generated suffix onto the scale this index's references are held on."""
-        return self._codes.encode(activities)
+    @property
+    def vocabulary(self) -> tuple[str, ...]:
+        """The activity names this index codes through, in code order.
 
-    def references(self, prefix_activities: Sequence[str]) -> References:
+        Both this and the generations file are seeded from `codec.activity.names`, so the two agree
+        by construction and a caller compares them to catch a file built against an older
+        preprocessing before it scores a single prefix.
+        """
+        return self._codes.vocabulary
+
+    def references(self, prefix: str) -> References:
         """Every continuation observed after one prefix.
 
         Args:
-            prefix_activities: The prefix's activity names, in order, as the generations file
-                carries them.
+            prefix: The prefix's activities, one character each, in order, as the generations file
+                carries them and on the same scale this index is held on.
         Returns:
             The prefix's observed continuations, their weights, the minutes left at each of its
             occurrences and the spread of the set.
@@ -115,10 +121,10 @@ class ContinuationIndex:
             KeyError: If the split never ran that prefix, which means the generations were written
                 against a different preprocessing of this dataset than the index was built from.
         """
-        row = self._rows.get(self.encode(prefix_activities))
+        row = self._rows.get(prefix)
         if row is None:
             raise KeyError(
-                f'prefix {list(prefix_activities)} is in the generations but not in the '
+                f'a prefix of {len(prefix)} events is in the generations but not in the '
                 'continuation index: the two were built from different preprocessings of this '
                 'dataset. Rerun pipelines.preprocess, then pipelines.generate.'
             )
@@ -137,7 +143,12 @@ class ContinuationIndex:
 
 
 def build_index(
-    rows: pd.DataFrame, *, dataset: str, split: Split, vocabulary: Collection[str]
+    rows: pd.DataFrame,
+    *,
+    dataset: str,
+    split: Split,
+    vocabulary: Collection[str],
+    names: Sequence[str],
 ) -> tuple[int, int]:
     """Index every continuation one held-out split takes, and write it beside the splits.
 
@@ -164,6 +175,9 @@ def build_index(
         dataset: The dataset the split came from, naming where the index goes.
         split: Which split `rows` is, naming the file written.
         vocabulary: The activity names the train split holds, from `codec.activity.vocab`.
+        names: Every name the activity channel can decode to, in row order, from
+            `codec.activity.names`. Seeds the codebook, so a suffix is spelled here exactly as a
+            generations file spells it and neither side ever codes a name on the fly.
     Returns:
         How many distinct prefixes were indexed, and how many occurrences they cover.
     """
@@ -176,7 +190,7 @@ def build_index(
         }
     )
 
-    codes = ActivityCodes()
+    codes = ActivityCodes.of(names)
     cases = [
         (
             codes.encode(events[ACTIVITY_KEY]),
