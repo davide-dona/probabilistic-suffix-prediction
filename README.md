@@ -26,6 +26,12 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv sync                     # installs the locked dependencies into .venv
 ```
 
+Training logs metrics and checkpoints to [W&B](https://wandb.ai). Sign in once per machine:
+
+```bash
+uv run wandb login
+```
+
 ---
 
 ## Reproducibility
@@ -62,7 +68,7 @@ python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting
 
 Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. `-w`/`--hardware` is required alongside `-c`, and rejected with `-r`. 
 
-A resumed run also keeps its original name, so it continues writing to the same TensorBoard directory and the same files.
+A resumed run also keeps its original name, so it continues writing to the same W&B run and the same files.
 
 #### Running a batch on every GPU at once
 
@@ -98,15 +104,12 @@ dropping the suffix once the log has been read. See [`queue/README.md`](queue/RE
 > ```
 > There is one file per model per log, at `pretrained/<name>/<model>.pt`. They are trimmed to what generation reads, so they can be generated from but not resumed from.
 
-The training logs are written to `outputs/tensorboard/<name>/<model>/<timestamp>/`. To see the training curves, point TensorBoard at the root:
-
-```bash
-tensorboard --logdir outputs/tensorboard
-```
+Training curves are logged live to the `suffix-generation` W&B project; the run prints its URL as
+soon as logging starts, so watching a VM's training needs no tunnel or synced files.
 
 Model checkpoints are written to two places:
- - `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time the selection score improves
- - `outputs/checkpoints/last/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off.
+ - `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time the selection score improves. Each improvement is also pushed to W&B as a new version of a `<name>-<model>-<timestamp>` Artifact, its `best` alias always pointing at the newest; fetch one with `wandb artifact get <name>-<model>-<timestamp>:best`.
+ - `outputs/checkpoints/last/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off. It stays local to the machine training runs on.
 
 ### 3. Inference
 

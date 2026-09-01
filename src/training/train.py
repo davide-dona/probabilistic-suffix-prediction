@@ -1,7 +1,9 @@
+from dataclasses import asdict
+
 import torch
+import wandb
 from torch import optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
 from src import paths
 from src.configs.schema import (
@@ -11,7 +13,8 @@ from src.configs.schema import (
     TrainingConfig,
 )
 from src.datasets.codec import DatasetCodec
-from src.identity import RunIdentity
+from src.git import current_git_state
+from src.identity import WANDB_PROJECT, RunIdentity, wandb_id
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
 from src.model import TransformerCVAE, save_checkpoint
@@ -88,7 +91,7 @@ def train(
     early_stopping_config: EarlyStoppingConfig,
 ) -> None:
     """
-    Train a model on a dataset, logging to TensorBoard and saving checkpoints.
+    Train a model on a dataset, logging to W&B and saving checkpoints.
 
     Every validation writes a checkpoint to `paths.LAST_CHECKPOINT`, whether or not the step is
     the best one, and a validation that improves on the best writes a second copy to
@@ -108,10 +111,10 @@ def train(
             generation pass so its remaining times are scored in minutes.
         dataset: The log being trained on, naming the validation split's continuation index the
             selection score is read against.
-        run: What every file this run writes is named after (see `src/paths.py`). One
-            TensorBoard directory is one run, so an identity reused across runs overlays their
-            curves instead of listing them side by side; what makes its tag unique is the
-            caller's business.
+        run: What every file this run writes is named after (see `src/paths.py`), and what its
+            W&B run is identified by (`src.tracking.wandb_id`). One W&B run is one identity, so
+            an identity reused across runs overlays their curves instead of listing them side by
+            side; what makes its tag unique is the caller's business.
         experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into
             every checkpoint so the run can be rebuilt and carried on from the file alone.
         generator: The generator the training loader shuffles with, whose state is saved and
@@ -153,12 +156,25 @@ def train(
         step = resume['step']
         print(f'Resuming {run} from step {step}, best score {resume["selection_score"]:.4f}')
 
-    # Overwrite the TensorBoard logs after the step we resumed from, so that a resumed run's
-    # curves are continuous with the original.
-    writer = SummaryWriter(
-        log_dir=paths.TENSORBOARD.path(run), purge_step=step if resume is not None else None
+    # The commit training runs under, carried into the W&B config and every checkpoint, so a set
+    # of weights never leaves anyone guessing what code produced it.
+    git_state = current_git_state()
+
+    # `resume='allow'` picks the W&B run back up if `wandb_id(run)` already exists (a carried-on
+    # run) and starts a fresh one otherwise. Unlike TensorBoard's `purge_step`, W&B has no way to
+    # truncate history that ran ahead of the last checkpoint: a crash between two validations,
+    # followed by resume, can leave a few stray, overlapping points on the step axis until the
+    # next validation. Cosmetic only, not a data-loss risk.
+    wandb.init(
+        project=WANDB_PROJECT,
+        id=wandb_id(run),
+        name=str(run),
+        group=run.dataset,
+        job_type=run.model,
+        resume='allow',
+        config=experiment_config | {'git_commit': git_state.commit, 'git_dirty': git_state.dirty},
     )
-    print(f'Logging to {writer.log_dir}')
+    print(f'Logging to {wandb.run.url}')
 
     try:
         while step < training.max_steps and not should_stop:
@@ -189,13 +205,13 @@ def train(
                     torch.nn.utils.clip_grad_norm_(model.parameters(), training.grad_clip_norm)
                 optimizer.step()
 
-                # Update the running totals and log to TensorBoard
+                # Update the running totals and log to W&B
                 batch_size = batch.suffix.activities.size(0)
                 interval_totals += metrics
                 seen += batch_size
                 step += 1
-                (metrics / batch_size).log(writer, step, prefix='train')
-                (latent / batch_size).log(writer, step, prefix='train')
+                (metrics / batch_size).log(step, prefix='train')
+                (latent / batch_size).log(step, prefix='train')
 
                 if step % training.val_every_n_steps == 0 or step >= training.max_steps:
                     train_metrics = interval_totals / seen
@@ -210,8 +226,8 @@ def train(
                         free_bits=loss_config.free_bits,
                         device=device,
                     )
-                    val_metrics.log(writer, step, prefix='val')
-                    val_latent.log(writer, step, prefix='val')
+                    val_metrics.log(step, prefix='val')
+                    val_latent.log(step, prefix='val')
 
                     gen_metrics = validate_generation(
                         model,
@@ -221,10 +237,10 @@ def train(
                         index=continuations,
                         device=device,
                     )
-                    gen_metrics.accuracy.log(writer, step, prefix='gen')
-                    gen_metrics.distribution.log(writer, step, prefix='gen')
+                    gen_metrics.accuracy.log(step, prefix='gen')
+                    gen_metrics.distribution.log(step, prefix='gen')
 
-                    writer.add_scalar('kl_weight', kl_weight, step)
+                    wandb.log({'kl_weight': kl_weight}, step=step)
 
                     # The one line of live feedback: enough to see a run is alive and heading down
                     print(
@@ -255,14 +271,23 @@ def train(
                         optimizer_state=optimizer.state_dict(),
                         early_stopping_state=early_stopper.state_dict(),
                         rng_state=rng_state(generator, device),
+                        git=asdict(git_state),
                     )
                     save_checkpoint(model, **checkpoint, path=paths.LAST_CHECKPOINT.prepare(run))
                     # If this validation improved on the best, save a second copy to the
-                    # best-model directory.
+                    # best-model directory, and version it as a W&B Artifact: `best` always
+                    # points at the newest version of this run's own lineage.
                     if is_best:
                         path = save_checkpoint(
                             model, **checkpoint, path=paths.BEST_CHECKPOINT.prepare(run)
                         )
+                        artifact = wandb.Artifact(
+                            name=wandb_id(run),
+                            type='checkpoint',
+                            metadata={'step': step, 'selection_score': selection_score},
+                        )
+                        artifact.add_file(str(path))
+                        wandb.log_artifact(artifact, aliases=['best'])
                         print(
                             f'New best model (step {step}, score {selection_score:.4f}) '
                             f'saved at {path}'
@@ -270,12 +295,15 @@ def train(
 
                 if should_stop or step >= training.max_steps:
                     break
-    finally:
-        writer.close()
 
-    reason = (
-        f'no validation improvement for {early_stopping_config.patience} validations'
-        if should_stop
-        else 'reached max_steps'
-    )
-    print(f'Finished training after {step} steps ({reason})')
+        # Only reached on a normal finish, not a crash, and while the W&B run is still open, so
+        # the alert is one nobody has to be watching a terminal to get.
+        reason = (
+            f'no validation improvement for {early_stopping_config.patience} validations'
+            if should_stop
+            else 'reached max_steps'
+        )
+        print(f'Finished training after {step} steps ({reason})')
+        wandb.alert(title=f'Training finished: {run}', text=f'{step} steps, {reason}.')
+    finally:
+        wandb.finish()
