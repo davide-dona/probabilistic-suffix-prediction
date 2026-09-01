@@ -2,6 +2,7 @@ import argparse
 
 from huggingface_hub import snapshot_download
 
+from scripts.hub import HF_REPO_ID
 from src import paths
 
 
@@ -13,7 +14,7 @@ def run() -> None:
     what generation reads, so they cannot be resumed from. A run's own checkpoints live under
     `outputs/checkpoints/` instead.
     """
-    snapshot_download(repo_id=paths.HF_REPO_ID, repo_type='model', local_dir=paths.PRETRAINED_DIR)
+    snapshot_download(repo_id=HF_REPO_ID, repo_type='model', local_dir=paths.PRETRAINED_DIR)
 
 
 def main() -> None:

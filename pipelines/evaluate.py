@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src import paths
-from src.cli import banner, duration, existing_file, step
+from src.cli import banner, duration, step
 from src.evaluation.prefix_scores import stream_prefix_scores
 from src.evaluation.report import EvaluationReport
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
@@ -18,7 +18,7 @@ from src.identity import read_run_identity
 from src.inference.generation_store import read_generation_block, read_prefix_keys
 from src.logs.conformance import ConformanceChecker, discovery_settings
 from src.logs.continuations import ContinuationIndex
-from src.paths import Split
+from src.logs.keys import Split
 
 
 @dataclass(frozen=True)
@@ -123,16 +123,15 @@ def run(generations_file: Path, workers: int | None) -> None:
         blocks, prefixes = parquet.num_row_groups, parquet.metadata.num_rows
 
     dataset = run.dataset
-    paths.require_dataset(dataset)
-    paths.require_declare_model(dataset)
-    paths.require_continuations(dataset=dataset, split=Split.TEST)
+    paths.require_preprocessed(dataset)
+    paths.CONTINUATIONS.require(dataset=dataset, split=Split.TEST)
 
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
 
     # What the model being checked against was mined under, so a report is never read without
     # knowing which constraints it holds.
-    model_path = paths.declare_model_path(dataset)
+    model_path = paths.DECLARE_MODEL.require(dataset)
     mined = discovery_settings(model_path)
     mined_under = (
         f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
@@ -147,11 +146,11 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'continuations': paths.continuation_path(dataset=dataset, split=Split.TEST),
+            'continuations': paths.CONTINUATIONS.path(dataset=dataset, split=Split.TEST),
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
-            'report': paths.evaluation_path(run),
-            'prefix scores': paths.prefix_scores_path(run),
+            'report': paths.EVALUATION.path(run),
+            'prefix scores': paths.PREFIX_SCORES.path(run),
         },
     )
 
@@ -160,7 +159,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # Which prefix each row answers, in the order the file holds them, which is the order the pool
     # scores them in. Two columns, so this is cheap even on a quarter of a million rows.
     keys = read_prefix_keys(generations_file)
-    scores_path = paths.prefix_scores_path(run)
+    scores_path = paths.PREFIX_SCORES.prepare(run)
 
     # Summarize the generation, folding each prefix's scores in as the pool hands them back and
     # writing them out on the way past. One stream, so the per-prefix file costs a write rather
@@ -187,7 +186,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # The report is named after the run the generations carry, so it sits under `outputs/eval/`
     # exactly where they sit under `outputs/generations/`.
     report = EvaluationReport(run=run, summary=summary)
-    path = report.write(paths.evaluation_path(run))
+    path = report.write(paths.EVALUATION.prepare(run))
     print(
         f'Scored {summary.prefixes:,} prefixes in {duration(time.perf_counter() - started)}. '
         f'Wrote evaluation report to {path} and its per-prefix scores to {scores_path}'
@@ -201,7 +200,7 @@ def main() -> None:
     parser.add_argument(
         '-g',
         '--generations',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='GENERATIONS',
         required=True,
         help='Path to the generations file to score, from `pipelines.generate`.',

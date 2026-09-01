@@ -13,8 +13,8 @@ from src.configs.schema import (
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.logs.continuations import ContinuationIndex
+from src.logs.keys import Split
 from src.model import TransformerCVAE, save_checkpoint
-from src.paths import Split
 from src.training.early_stopping import EarlyStopper
 from src.training.kl import linear_warmup_weight
 from src.training.loss import Loss, compute_loss
@@ -90,9 +90,9 @@ def train(
     """
     Train a model on a dataset, logging to TensorBoard and saving checkpoints.
 
-    Every validation writes a checkpoint to `paths.checkpoint_path`, whether or not the step is
+    Every validation writes a checkpoint to `paths.LAST_CHECKPOINT`, whether or not the step is
     the best one, and a validation that improves on the best writes a second copy to
-    `paths.best_model_path`. Either file can be handed back as `resume`.
+    `paths.BEST_CHECKPOINT`. Either file can be handed back as `resume`.
 
     Args:
         model: The model to train, already on `training.device`.
@@ -156,7 +156,7 @@ def train(
     # Overwrite the TensorBoard logs after the step we resumed from, so that a resumed run's
     # curves are continuous with the original.
     writer = SummaryWriter(
-        log_dir=paths.tensorboard_dir(run), purge_step=step if resume is not None else None
+        log_dir=paths.TENSORBOARD.path(run), purge_step=step if resume is not None else None
     )
     print(f'Logging to {writer.log_dir}')
 
@@ -256,11 +256,13 @@ def train(
                         early_stopping_state=early_stopper.state_dict(),
                         rng_state=rng_state(generator, device),
                     )
-                    save_checkpoint(model, **checkpoint, path=paths.checkpoint_path(run))
+                    save_checkpoint(model, **checkpoint, path=paths.LAST_CHECKPOINT.prepare(run))
                     # If this validation improved on the best, save a second copy to the
                     # best-model directory.
                     if is_best:
-                        path = save_checkpoint(model, **checkpoint, path=paths.best_model_path(run))
+                        path = save_checkpoint(
+                            model, **checkpoint, path=paths.BEST_CHECKPOINT.prepare(run)
+                        )
                         print(
                             f'New best model (step {step}, score {selection_score:.4f}) '
                             f'saved at {path}'

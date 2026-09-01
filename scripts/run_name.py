@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from src.cli import existing_file
+from src import paths
 from src.identity import RunIdentity
 from src.model import load_checkpoint
 
@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument(
         '-m',
         '--checkpoint',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='CHECKPOINT',
         required=True,
         help='Path to the checkpoint to read.',

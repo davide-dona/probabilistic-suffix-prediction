@@ -25,7 +25,7 @@ class RunIdentity:
     def __str__(self) -> str:
         """What a message calls this run, e.g. `sepsis/cvae/20260809-143043`.
 
-        Its directories mirror this, but they are `src/paths.py`'s to lay out: this is a name.
+        Its directories mirror this, but they are `src/paths/`'s to lay out: this is a name.
         """
         return f'{self.dataset}/{self.model}/{self.tag}'
 

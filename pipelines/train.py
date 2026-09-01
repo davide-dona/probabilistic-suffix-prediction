@@ -6,20 +6,14 @@ import torch
 from torch.utils.data import DataLoader
 
 from src import paths
-from src.cli import (
-    add_config_argument,
-    add_hardware_argument,
-    banner,
-    existing_file,
-    step,
-)
+from src.cli import banner, step
 from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
+from src.logs.keys import Split
 from src.model import RESUME_KEYS, TransformerCVAE, load_checkpoint, require_keys
-from src.paths import Split
 from src.training.train import train
 
 
@@ -55,10 +49,10 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             new run. The run keeps the identity the checkpoint carries, so it writes to the
             TensorBoard directory and the files the interrupted run was writing to.
     """
-    paths.require_dataset(config.data.name)
+    paths.require_preprocessed(config.data.name)
     # Checkpoints are selected on EMSC against the validation split's continuations, so the index
     # is as much a precondition of training as the splits are.
-    paths.require_continuations(dataset=config.data.name, split=Split.VAL)
+    paths.CONTINUATIONS.require(dataset=config.data.name, split=Split.VAL)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.
     torch.manual_seed(config.seed)
@@ -89,9 +83,9 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             f'{config.dataloader.num_workers} loader workers',
             'optimizer': f'Adam, lr {config.optimizer.lr}, '
             f'weight decay {config.optimizer.weight_decay}',
-            'continuations': paths.continuation_path(dataset=config.data.name, split=Split.VAL),
-            'checkpoints': paths.checkpoint_path(run),
-            'tensorboard': paths.tensorboard_dir(run),
+            'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
+            'checkpoints': paths.LAST_CHECKPOINT.path(run),
+            'tensorboard': paths.TENSORBOARD.path(run),
         },
     )
 
@@ -179,17 +173,29 @@ def main() -> None:
     # A run is either started from a config or carried on from a checkpoint, which already
     # describes the run that wrote it. Two descriptions of one run could only disagree.
     source = parser.add_mutually_exclusive_group(required=True)
-    add_config_argument(source, required=False)
+    source.add_argument(
+        '-c',
+        '--config',
+        type=paths.existing_file,
+        metavar='CONFIG',
+        help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
+    )
     source.add_argument(
         '-r',
         '--resume',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='CHECKPOINT',
         help='Path to a checkpoint to carry on from, its config included. The '
         'run keeps its name, so it writes to the same TensorBoard directory '
         'and the same files.',
     )
-    add_hardware_argument(parser, required=False)
+    parser.add_argument(
+        '-w',
+        '--hardware',
+        type=paths.existing_file,
+        metavar='HARDWARE',
+        help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
+    )
     args = parser.parse_args()
 
     if args.resume is not None:

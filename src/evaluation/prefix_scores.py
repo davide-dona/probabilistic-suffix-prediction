@@ -5,6 +5,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from src import paths
 from src.evaluation.scores import METRICS
 from src.evaluation.summary import PrefixSummary, flatten_scores
 from src.identity import RunIdentity, group_by_model, read_run_identity, stamped
@@ -49,7 +50,8 @@ def stream_prefix_scores(
         keys: Which prefix each of them answers, in that same order, from `read_prefix_keys`.
             Paired positionally rather than carried on a `PrefixSummary`, which holds floats alone
             so that a worker never sends the log's own strings back.
-        path: Where to write, from `paths.prefix_scores_path`. Overwritten if it already exists.
+        path: Where to write, its directory already made, from `paths.PREFIX_SCORES.prepare`.
+            Overwritten if it already exists.
         run: The run these scores belong to, stamped into the file so a reader knows what it holds
             rather than guessing at it from the path.
     Yields:
@@ -58,7 +60,6 @@ def stream_prefix_scores(
         ValueError: If the scores and the keys are of different lengths, which would pair a
             prefix's scores to another prefix.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     columns: dict[str, list] = {name: [] for name in _SCHEMA.names}
 
     def flush(writer: pq.ParquetWriter) -> None:
@@ -85,7 +86,7 @@ def read_prefix_scores(path: Path, *, columns: Sequence[str] | None = None) -> p
     """Read a run's per-prefix scores back.
 
     Args:
-        path: The file `stream_prefix_scores` wrote, from `paths.prefix_scores_path`.
+        path: The file `stream_prefix_scores` wrote, from `paths.PREFIX_SCORES`.
         columns: Which columns to read, or `None` for all of them. A reader after a handful of
             metrics pulls those alone off a file that holds every one of them.
     Returns:
@@ -107,7 +108,7 @@ def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
         ValueError: If a report has no scores beside it, if one is not a scores file, or if one log
             is given two runs of the same model.
     """
-    files = [(report, report.with_suffix('.parquet')) for report in reports]
+    files = [(report, paths.PREFIX_SCORES.beside(report)) for report in reports]
     missing = [str(report) for report, scores in files if not scores.exists()]
     if missing:
         raise ValueError(

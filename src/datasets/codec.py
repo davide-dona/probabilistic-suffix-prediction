@@ -20,8 +20,8 @@ from src.logs.keys import (
     RESOURCE_KEY,
     SOS_TOKEN,
     UNK_TOKEN,
+    Split,
 )
-from src.paths import Split
 
 # The special tokens every channel carries, in the order they are indexed. They come before the
 # vocabulary, so PAD is row 0 of the activity and resource channels, which start at offset 0.
@@ -328,17 +328,12 @@ class DatasetCodec(StrictModel):
             FileNotFoundError: If the dataset has not been preprocessed.
         """
         name = data_config.name
-        path = paths.codec_path(name)
-        if not path.exists():
-            raise FileNotFoundError(
-                f'no dataset codec at {path}. Run `python -m pipelines.preprocess` first.'
-            )
+        path = paths.CODEC.require(name)
         return cls.model_validate(json.loads(path.read_text()) | {'dataset': name})
 
     def save(self) -> Path:
         """Write this codec to its own directory, and return where it went."""
-        path = paths.codec_path(self.dataset)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = paths.CODEC.prepare(self.dataset)
         path.write_text(self.model_dump_json(indent=2))
         return path
 
@@ -350,7 +345,7 @@ class DatasetCodec(StrictModel):
         Returns:
             The path to that split's file.
         """
-        return paths.split_path(dataset=self.dataset, split=split)
+        return paths.PROCESSED_SPLIT.path(dataset=self.dataset, split=split)
 
 
 def _fit_event_features(

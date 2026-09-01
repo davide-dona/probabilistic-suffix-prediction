@@ -1,3 +1,18 @@
+from enum import StrEnum
+
+
+class Split(StrEnum):
+    """The three splits preprocessing cuts a log into, named as their files on disk are.
+
+    Iterating the members is what says a dataset has been preprocessed and what a pipeline
+    reads, so the three names are written down here and nowhere else.
+    """
+
+    TRAIN = 'train'
+    VAL = 'val'
+    TEST = 'test'
+
+
 # Canonical column names used throughout preprocessing, training and the
 # baseline methods, following the pm4py naming convention.
 CASE_KEY = 'case:concept:name'
