@@ -1,6 +1,4 @@
 from src.visualization.catalogue import FIGURES, TABLES
-from src.visualization.distribution import distribution_grid
-from src.visualization.embedding import embed_suffixes
 from src.visualization.figures import compose_figure
 from src.visualization.labels import reported_models
 from src.visualization.significance import test_significance
@@ -12,8 +10,6 @@ __all__ = [
     'TABLES',
     'apply_style',
     'compose_figure',
-    'distribution_grid',
-    'embed_suffixes',
     'latex_table',
     'reported_models',
     'test_significance',

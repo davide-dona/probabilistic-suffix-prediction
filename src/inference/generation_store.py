@@ -1,5 +1,5 @@
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 import pyarrow as pa
@@ -187,38 +187,6 @@ def read_prefix_keys(path: Path) -> list[PrefixKey]:
             strict=True,
         )
     )
-
-
-def read_samples(path: Path) -> Iterator[tuple[PrefixKey, str, tuple[str, ...], tuple[int, ...]]]:
-    """Walk a generations file for the prefix, the true suffix and the draws of each row.
-
-    Args:
-        path: The generations file, opened and closed here.
-    Yields:
-        Which prefix each row answers, the suffix that truly followed it, the distinct suffixes
-        generated for it and which of them each draw took, in the order the file holds them, as
-        coded strings on the file's own scale. The draws come back folded, so a caller drawing one
-        of them at random picks an index of `taken` rather than one of the distinct suffixes: those
-        two are different distributions wherever the model repeated itself.
-    """
-    columns = ['case_id', 'prefix_len', 'true_activities', 'generated_suffixes', 'generated_draws']
-    with pq.ParquetFile(path) as parquet:
-        for batch in parquet.iter_batches(columns=columns):
-            keys = zip(
-                batch.column('case_id').to_pylist(),
-                batch.column('prefix_len').to_pylist(),
-                strict=True,
-            )
-            truths = batch.column('true_activities').to_pylist()
-            samples = batch.column('generated_suffixes').to_pylist()
-            taken = batch.column('generated_draws').to_pylist()
-            yield from zip(
-                keys,
-                truths,
-                (tuple(row) for row in samples),
-                (tuple(row) for row in taken),
-                strict=True,
-            )
 
 
 def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generation]:

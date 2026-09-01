@@ -160,14 +160,12 @@ Once a dataset has been evaluated, the scores of one or more runs can be plotted
 ```bash
 python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
 python -m pipelines.visualize -E outputs/eval
-python -m pipelines.visualize -E outputs/eval -G outputs/generations
 ```
 
 - `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared.
 - `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset.
-- `-g`/`--generations` and `-G`/`--generations-dir` add the distribution figure.
 
-The figures are written to `outputs/visual/figures/<dataset>/` as PDF, which is what the paper takes, and the comparison tables to `outputs/visual/tables/` as `tex`. With generations, each dataset also gets `distribution.pdf`, a UMAP of the suffixes each model generates against the ground truth, one panel per model over one shared embedding.
+The figures are written to `outputs/visual/figures/` as PDF, which is what the paper takes, and the comparison tables to `outputs/visual/tables/` as `tex`. Each figure covers every dataset and model at once, so it is named after what it holds rather than after a run.
 
 ---
 

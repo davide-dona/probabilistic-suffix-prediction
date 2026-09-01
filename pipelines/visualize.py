@@ -15,8 +15,6 @@ from src.visualization import (
     TABLES,
     apply_style,
     compose_figure,
-    distribution_grid,
-    embed_suffixes,
     latex_table,
     reported_models,
     test_significance,
@@ -77,7 +75,7 @@ def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
     return len(TABLES)
 
 
-def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> None:
+def run(evaluation_files: Sequence[Path]) -> None:
     """Draw a set of evaluation reports and tabulate them, under `outputs/visual/`.
 
     Args:
@@ -85,19 +83,16 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
             the metric figures and the comparison tables, and the per-prefix scores beside each of
             them are what the figures' bands are bounded by and what the tables' emphasis is tested
             on.
-        generation_files: The generations of the same runs, from `python -m pipelines.generate`,
-            or none. These draw the distribution figure, which costs minutes per log.
     Raises:
-        ValueError: If a file is not what it should be, if a report has no per-prefix scores beside
-            it, if a model has no look declared in `src.visualization.labels`, or if one log is
-            given two runs of the same model.
+        ValueError: If a file is not a report, if a report has no per-prefix scores beside it, if a
+            model has no look declared in `src.visualization.labels`, or if one log is given two
+            runs of the same model.
     """
     apply_style()
     banner(
         'Drawing the figures and tables',
         {
             'reports': f'{len(evaluation_files)} file(s), with their per-prefix scores beside them',
-            'generations': f'{len(generation_files)} file(s)' if generation_files else 'none',
             'figures': paths.FIGURES_DIR,
             'tables': paths.TABLES_DIR,
         },
@@ -128,19 +123,6 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
 
     with step('Writing the comparison tables'):
         tables = _write_tables(reports, significance)
-
-    # Opt-in, since this reads the generations rather than the reports and costs a minute or two
-    # per log. Drawn from its own frame rather than through the catalogue above, since it reads
-    # embeddings rather than report rows.
-    if generation_files:
-        with step(f'Embedding the suffixes of {len(generation_files)} run(s)'):
-            embedding = reported_models(embed_suffixes(generation_files))
-        with step('Drawing the generated distributions'):
-            _save_figure(
-                figure=distribution_grid(embedding),
-                path=paths.FIGURE.prepare('distribution'),
-            )
-            drawn += 1
 
     print(
         f'\nWrote {drawn} figures in pdf to {paths.FIGURES_DIR} '
@@ -178,38 +160,13 @@ def main() -> None:
         'to.',
     )
 
-    generations = parser.add_mutually_exclusive_group()
-    generations.add_argument(
-        '-g',
-        '--generations',
-        type=paths.existing_file,
-        metavar='GENERATIONS',
-        nargs='+',
-        help='Paths to the generations of the same runs, from `pipelines.generate`. These draw '
-        'the UMAP figure of what each model generates against the ground truth, which costs a '
-        'minute or two per log. Left out, every other figure is still drawn.',
-    )
-    generations.add_argument(
-        '-G',
-        '--generations-dir',
-        type=paths.existing_directory,
-        metavar='DIR',
-        nargs='+',
-        help='Path(s) to a directory to draw every generations file under, at any depth, e.g. '
-        '`outputs/generations` for all of them or `outputs/generations/bpic17` for one log. '
-        'Several directories are swept together, e.g. `outputs/generations pinned/generations`.',
-    )
     args = parser.parse_args()
 
     evaluations = args.evaluations or []
     if args.evaluations_dir is not None:
         evaluations = paths.EVALUATION.sweep(args.evaluations_dir)
 
-    generated = args.generations or []
-    if args.generations_dir is not None:
-        generated = paths.GENERATIONS.sweep(args.generations_dir)
-
-    run(evaluations, generated)
+    run(evaluations)
 
 
 if __name__ == '__main__':

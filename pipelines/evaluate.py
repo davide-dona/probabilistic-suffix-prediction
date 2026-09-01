@@ -50,14 +50,11 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
             observed continuations the generated ones are compared with.
     """
     global _worker
-    parquet = pq.ParquetFile(generations_file)
-
-    # The scale this file spells its suffixes on. The index is seeded from the same
-    # `codec.activity.names`, so the two agree by construction, and comparing them here turns a
-    # file written against an older preprocessing into one clear error before a prefix is scored
-    # rather than a lookup that silently misses.
+    generation_parquet = pq.ParquetFile(generations_file)
     index = ContinuationIndex(dataset=dataset, split=Split.TEST)
-    vocabulary = read_vocabulary(parquet)
+    vocabulary = read_vocabulary(generation_parquet)
+    # Check that the the vocabulary the generations were written under is the same
+    # as the one of the dataset's continuation
     if vocabulary != index.vocabulary:
         raise ValueError(
             f'{generations_file} spells its activities on a different scale than the continuation '
@@ -66,7 +63,7 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
         )
 
     _worker = _Worker(
-        parquet=parquet,
+        parquet=generation_parquet,
         checker=ConformanceChecker(dataset, ActivityCodes.of(vocabulary)),
         index=index,
     )
@@ -138,10 +135,11 @@ def run(generations_file: Path, workers: int | None) -> None:
             declarative model is looked up under that dataset.
         workers: How many processes to score with, or `None` for one per available CPU.
     """
-    with pq.ParquetFile(generations_file) as parquet:
-        run = read_run_identity(parquet)
-        blocks, prefixes = parquet.num_row_groups, parquet.metadata.num_rows
+    with pq.ParquetFile(generations_file) as generation_parquet:
+        run = read_run_identity(generation_parquet)
+        blocks, prefixes = generation_parquet.num_row_groups, generation_parquet.metadata.num_rows
 
+    # Check that the dataset was preprocessed and that the test-split continuations were written
     dataset = run.dataset
     paths.require_preprocessed(dataset)
     paths.CONTINUATIONS.require(dataset=dataset, split=Split.TEST)
