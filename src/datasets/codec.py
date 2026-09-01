@@ -91,6 +91,16 @@ class CategoricalColumn(StrictModel):
         }
 
     @property
+    def names(self) -> tuple[str, ...]:
+        """Every value `decode` can name, in row order, the special tokens included.
+
+        The one order a dataset's activities are coded in wherever a suffix is written as a string:
+        seeding `ActivityCodes` from this is what makes the generations and the continuation index
+        spell one suffix the same way, and it covers every row so no name is ever coded on the fly.
+        """
+        return tuple(self.from_index[row] for row in sorted(self.from_index))
+
+    @property
     def eot_index(self) -> int:
         """The row marking the end of a trace."""
         return self._index_of(EOT_TOKEN)

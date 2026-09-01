@@ -1,11 +1,12 @@
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
 from src import paths
 from src.configs import DeclareConfig
+from src.suffixes import ActivityCodes
 
 # Parse the declarative model written by `discover_declare_model` back into the constraints it
 # holds. Read here rather than through `DeclareModel.parse_from_file`, whose grammar rejects the
@@ -23,14 +24,24 @@ SETTINGS_LINE = '# settings: '
 # prefixes; caching previously computed scores avoids redundant conformance checks.
 _TRACE_CACHE_SIZE = 100_000
 
-# Where each activity of a trace occurs, in order, keyed by its name. Built once per trace, so a
-# template answers over the occurrences of the activities it names rather than over the trace.
+# Where each activity of a trace occurs, in order, keyed by the character it is spelled with.
+# Built once per trace, so a template answers over the occurrences of the activities it names
+# rather than over the trace.
 Positions = dict[str, list[int]]
+
+# Stands in for an activity a constraint names that the dataset's codebook does not hold. Outside
+# the private use area the codes are drawn from, so it matches nothing a trace can spell.
+_UNMATCHABLE = '\x00'
 
 
 @dataclass(frozen=True, slots=True)
 class Constraint:
-    """One constraint of a model: the template it follows and the activities it is about."""
+    """One constraint of a model: the template it follows and the activities it is about.
+
+    `read_constraints` names those activities the way the model file does; `ConformanceChecker`
+    translates them onto the dataset's codebook, so the constraints it holds spell an activity the
+    same way a trace handed to `rate` does.
+    """
 
     template: '_Template'
     # The first activity named, which is what activates every template but the precedence family
@@ -40,11 +51,11 @@ class Constraint:
     # How many occurrences of `first` a counting template asks for, and 1 for the rest
     n: int
 
-    def holds(self, trace: tuple[str, ...], positions: Positions) -> bool:
+    def holds(self, trace: str, positions: Positions) -> bool:
         """Whether one finished trace satisfies this constraint.
 
         Args:
-            trace: The trace's activity names, in order.
+            trace: The trace's activities, one character each, in order.
             positions: Where each of them occurs, from `ConformanceChecker.rate`.
         Returns:
             True if the trace both activates the constraint and does not violate it.
@@ -52,7 +63,7 @@ class Constraint:
         return self.template.holds(self, trace, positions)
 
 
-_Predicate = Callable[[Constraint, tuple[str, ...], Positions], bool]
+_Predicate = Callable[[Constraint, str, Positions], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,67 +75,65 @@ class _Template:
     supports_cardinality: bool
 
 
-def _existence(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _existence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs at least `n` times."""
     return len(positions.get(constraint.first, ())) >= constraint.n
 
 
-def _absence(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _absence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs fewer than `n` times, never running it included."""
     return len(positions.get(constraint.first, ())) < constraint.n
 
 
-def _exactly(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _exactly(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs exactly `n` times."""
     return len(positions.get(constraint.first, ())) == constraint.n
 
 
-def _init(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _init(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` is the first event of the trace."""
     return bool(trace) and trace[0] == constraint.first
 
 
-def _choice(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _choice(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` or `b` occurs."""
     return constraint.first in positions or constraint.second in positions
 
 
-def _responded_existence(
-    constraint: Constraint, trace: tuple[str, ...], positions: Positions
-) -> bool:
+def _responded_existence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and so does `b`."""
     return constraint.first in positions and constraint.second in positions
 
 
-def _response(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _response(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and every occurrence of it is followed by a `b`."""
     activations = positions.get(constraint.first)
     targets = positions.get(constraint.second)
     return bool(activations) and bool(targets) and activations[-1] < targets[-1]
 
 
-def _precedence(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _precedence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`b` occurs, and every occurrence of it is preceded by an `a`."""
     activations = positions.get(constraint.second)
     earlier = positions.get(constraint.first)
     return bool(activations) and bool(earlier) and earlier[0] < activations[0]
 
 
-def _not_response(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _not_response(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and no occurrence of it is followed by a `b`."""
     activations = positions.get(constraint.first)
     targets = positions.get(constraint.second)
     return bool(activations) and (not targets or activations[0] > targets[-1])
 
 
-def _not_precedence(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _not_precedence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`b` occurs, and no occurrence of it is preceded by an `a`."""
     activations = positions.get(constraint.second)
     earlier = positions.get(constraint.first)
     return bool(activations) and (not earlier or earlier[0] > activations[-1])
 
 
-def _chain_response(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _chain_response(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and a `b` follows it immediately every time."""
     activations = positions.get(constraint.first)
     last = len(trace) - 1
@@ -133,7 +142,7 @@ def _chain_response(constraint: Constraint, trace: tuple[str, ...], positions: P
     )
 
 
-def _chain_precedence(constraint: Constraint, trace: tuple[str, ...], positions: Positions) -> bool:
+def _chain_precedence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`b` occurs, and an `a` precedes it immediately every time."""
     activations = positions.get(constraint.second)
     return bool(activations) and all(
@@ -141,9 +150,7 @@ def _chain_precedence(constraint: Constraint, trace: tuple[str, ...], positions:
     )
 
 
-def _not_chain_response(
-    constraint: Constraint, trace: tuple[str, ...], positions: Positions
-) -> bool:
+def _not_chain_response(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and a `b` never follows it immediately."""
     activations = positions.get(constraint.first)
     last = len(trace) - 1
@@ -152,9 +159,7 @@ def _not_chain_response(
     )
 
 
-def _not_chain_precedence(
-    constraint: Constraint, trace: tuple[str, ...], positions: Positions
-) -> bool:
+def _not_chain_precedence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`b` occurs, and an `a` never precedes it immediately."""
     activations = positions.get(constraint.second)
     return bool(activations) and not any(
@@ -162,9 +167,7 @@ def _not_chain_precedence(
     )
 
 
-def _alternate_response(
-    constraint: Constraint, trace: tuple[str, ...], positions: Positions
-) -> bool:
+def _alternate_response(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and a `b` follows each occurrence of it before `a` recurs."""
     activations = fulfillments = 0
     pending = False
@@ -178,9 +181,7 @@ def _alternate_response(
     return activations > 0 and activations == fulfillments
 
 
-def _alternate_precedence(
-    constraint: Constraint, trace: tuple[str, ...], positions: Positions
-) -> bool:
+def _alternate_precedence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`b` occurs, and an `a` precedes each occurrence of it since the previous `b`."""
     activations = fulfillments = 0
     preceding = 0
@@ -317,23 +318,38 @@ class ConformanceChecker:
     Reads nothing off disk per check, so a scoring pool builds one per worker and reuses it.
     """
 
-    def __init__(self, dataset: str) -> None:
+    def __init__(self, dataset: str, codes: ActivityCodes) -> None:
         """
         Args:
             dataset: The dataset whose model to check against, read from where preprocessing
                 wrote it.
+            codes: The dataset's codebook, which the constraints are translated onto so a trace is
+                checked as the string the generations already hold it as, with nothing decoded per
+                check. An activity the codebook does not know is given a character no trace can
+                contain, leaving its constraint unactivated rather than growing the codebook.
         """
-        self._constraints = tuple(read_constraints(paths.DECLARE_MODEL.require(dataset)))
+        self._constraints = tuple(
+            replace(
+                constraint,
+                first=codes.codes.get(constraint.first, _UNMATCHABLE),
+                second=(
+                    None
+                    if constraint.second is None
+                    else codes.codes.get(constraint.second, _UNMATCHABLE)
+                ),
+            )
+            for constraint in read_constraints(paths.DECLARE_MODEL.require(dataset))
+        )
 
     @lru_cache(maxsize=_TRACE_CACHE_SIZE)  # noqa: B019 -- one checker per scoring process
-    def rate(self, trace: tuple[str, ...]) -> float:
+    def rate(self, trace: str) -> float:
         """
         The fraction of the model's constraints one trace satisfies.
 
         Args:
-            trace: The trace's activity names, in order. A whole case, prefix included: a
-                constraint like `Init` or `Precedence` is about the trace, not about a run of
-                events inside it.
+            trace: The trace's activities, one character each, in order, on the dataset's own
+                scale. A whole case, prefix included: a constraint like `Init` or `Precedence` is
+                about the trace, not about a run of events inside it.
         Returns:
             The satisfied share, in `[0, 1]`, or 0.0 for a model that checks nothing.
         """

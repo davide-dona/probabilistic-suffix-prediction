@@ -1,5 +1,6 @@
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 import numpy as np
 from rapidfuzz import process
@@ -40,6 +41,17 @@ class ActivityCodes:
     def vocabulary(self) -> tuple[str, ...]:
         """The activity names in code order, which is what seeds `of` back into this codebook."""
         return tuple(self._codes)
+
+    @property
+    def codes(self) -> Mapping[str, str]:
+        """Each activity name to the character it is spelled with, read-only.
+
+        For a caller that has to look a name up without handing out a code to one it has never
+        seen, which `encode` would: a constraint naming an activity the log never ran must stay
+        unmatchable rather than quietly joining the codebook and desyncing it from the file it was
+        seeded from.
+        """
+        return MappingProxyType(self._codes)
 
     def encode(self, activities: Sequence[str]) -> str:
         """Encode one suffix, giving each activity not seen before the next code point.

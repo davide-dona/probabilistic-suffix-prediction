@@ -15,6 +15,7 @@ from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
 from src.logs.keys import Split
 from src.model import TransformerCVAE, load_checkpoint
+from src.suffixes import ActivityCodes
 
 
 def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> None:
@@ -97,14 +98,20 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
         flush=True,
     )
 
+    # The one codebook this run spells its suffixes on, seeded from every name the activity channel
+    # can decode to so no name is ever coded on the fly. The continuation index is seeded from the
+    # same list, which is what lets evaluation compare the two without translating either.
+    codes = ActivityCodes.of(codec.activity.names)
+
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
-    with open_generations(path, run) as parquet_writer:
+    with open_generations(path, run, vocabulary=codes.vocabulary) as parquet_writer:
         for batch in tqdm(iterable=test_loader, desc='Generating', unit='batch'):
             generations = generate_batch(
                 model=model,
                 batch=batch.to(device),
                 num_samples=config.inference.evaluation_samples,
                 codec=codec,
+                codes=codes,
             )
             # Write the generations to the Parquet file in a single table, one row per prefix.
             parquet_writer.write_table(table=table_from_generations(generations))

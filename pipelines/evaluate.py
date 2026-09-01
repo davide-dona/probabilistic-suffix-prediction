@@ -15,10 +15,15 @@ from src.evaluation.prefix_scores import stream_prefix_scores
 from src.evaluation.report import EvaluationReport
 from src.evaluation.summary import EvaluationSummary, PrefixSummary
 from src.identity import read_run_identity
-from src.inference.generation_store import read_generation_block, read_prefix_keys
+from src.inference.generation_store import (
+    read_generation_block,
+    read_prefix_keys,
+    read_vocabulary,
+)
 from src.logs.conformance import ConformanceChecker, discovery_settings
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
+from src.suffixes import ActivityCodes
 
 
 @dataclass(frozen=True)
@@ -45,10 +50,25 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
             observed continuations the generated ones are compared with.
     """
     global _worker
+    parquet = pq.ParquetFile(generations_file)
+
+    # The scale this file spells its suffixes on. The index is seeded from the same
+    # `codec.activity.names`, so the two agree by construction, and comparing them here turns a
+    # file written against an older preprocessing into one clear error before a prefix is scored
+    # rather than a lookup that silently misses.
+    index = ContinuationIndex(dataset=dataset, split=Split.TEST)
+    vocabulary = read_vocabulary(parquet)
+    if vocabulary != index.vocabulary:
+        raise ValueError(
+            f'{generations_file} spells its activities on a different scale than the continuation '
+            f'index of {dataset}: the two were built from different preprocessings. Rerun '
+            'pipelines.preprocess, then pipelines.generate.'
+        )
+
     _worker = _Worker(
-        parquet=pq.ParquetFile(generations_file),
-        checker=ConformanceChecker(dataset),
-        index=ContinuationIndex(dataset=dataset, split=Split.TEST),
+        parquet=parquet,
+        checker=ConformanceChecker(dataset, ActivityCodes.of(vocabulary)),
+        index=index,
     )
 
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from itertools import chain, islice, repeat
 from typing import Self
 
-from src.inference.generation import Generation
+from src.inference.generation import Draws, Generation
 from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
 from src.suffixes import sequence_similarity
 
@@ -59,24 +59,27 @@ class AccuracyScores(ScalarMetrics):
         """
         samples, point, truth = generation.samples, generation.point, generation.truth
 
+        # One similarity per distinct suffix, weighed by how many draws took it: a draw repeated is
+        # the same distance from the truth every time, so this is the mean over the draws with the
+        # edit distance solved once instead of once per draw.
         similarities = [
-            sequence_similarity(sample.activities, truth.activities) for sample in samples
+            sequence_similarity(suffix, truth.activities) for suffix in samples.suffixes
         ]
-        dls_mean = mean(similarities)
-        sample_activities = [tuple(sample.activities) for sample in samples]
-        truth_activities = tuple(truth.activities)
+        draws = len(samples)
 
         return cls(
-            dls_mean=dls_mean,
+            dls_mean=(
+                float(samples.counts @ similarities) / draws if similarities and draws else 0.0
+            ),
             dls_point=sequence_similarity(point.activities, truth.activities),
             dls_best=max(similarities, default=0.0),
-            hit_rate_at_1=is_hit(samples=sample_activities, truth=truth_activities, k=1),
-            hit_rate_at_5=is_hit(samples=sample_activities, truth=truth_activities, k=5),
-            hit_rate_at_10=is_hit(samples=sample_activities, truth=truth_activities, k=10),
+            hit_rate_at_1=is_hit(samples=samples, truth=truth.activities, k=1),
+            hit_rate_at_5=is_hit(samples=samples, truth=truth.activities, k=5),
+            hit_rate_at_10=is_hit(samples=samples, truth=truth.activities, k=10),
             remaining_time_ae_mean_days=mean(
                 [
-                    abs(sample.remaining_time_minutes - truth.remaining_time_minutes)
-                    for sample in samples
+                    abs(events.remaining_time_minutes - truth.remaining_time_minutes)
+                    for events in samples.events
                 ]
             )
             / MINUTES_PER_DAY,
@@ -87,10 +90,10 @@ class AccuracyScores(ScalarMetrics):
             time_to_next_ae_mean_days=mean(
                 [
                     time_to_next_ae_minutes(
-                        predicted=sample.time_to_next_minutes,
+                        predicted=events.time_to_next_minutes,
                         true=truth.time_to_next_minutes,
                     )
-                    for sample in samples
+                    for events in samples.events
                 ]
             )
             / MINUTES_PER_DAY,
@@ -99,7 +102,9 @@ class AccuracyScores(ScalarMetrics):
                 true=truth.time_to_next_minutes,
             )
             / MINUTES_PER_DAY,
-            length_ae_mean=mean([float(abs(len(sample) - len(truth))) for sample in samples]),
+            length_ae_mean=mean(
+                [float(abs(len(events) - len(truth))) for events in samples.events]
+            ),
             length_ae_point=float(abs(len(point) - len(truth))),
             suffix_length=float(len(truth)),
         )
@@ -123,17 +128,17 @@ def time_to_next_ae_minutes(predicted: Sequence[float], true: Sequence[float]) -
     return mean([abs(prediction - actual) for prediction, actual in zip(padded, true, strict=True)])
 
 
-def is_hit(samples: Sequence[tuple[str, ...]], truth: tuple[str, ...], *, k: int) -> float:
+def is_hit(samples: Draws, truth: str, *, k: int) -> float:
     """
     Whether the true sequence is among the first `k` samples, exactly.
 
     Args:
-        samples: The activity sequences generated for one prefix, in the order they were drawn.
-            A draw is independent of the ones before it, so the first `k` of them are as good a
-            sample of `k` as any other choice.
-        truth: The ground-truth activity sequence.
+        samples: The suffixes drawn for one prefix. Read through `taken`, which is in the order the
+            draws were taken: a draw is independent of the ones before it, so the first `k` of them
+            are as good a sample of `k` as any other choice.
+        truth: The ground-truth suffix, coded.
         k: How many samples to look at.
     Returns:
         1.0 if one of the first `k` samples is the true sequence, 0.0 otherwise.
     """
-    return float(truth in samples[:k])
+    return float(any(samples.suffixes[index] == truth for index in samples.taken[:k]))
