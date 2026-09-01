@@ -79,8 +79,7 @@ def discover_declare_model(
         # added back here.
         lines.append(f'{serialized} |' if constraint['template'].is_binary else serialized)
 
-    path = paths.declare_model_path(dataset)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = paths.DECLARE_MODEL.prepare(dataset)
     path.write_text('\n'.join(lines) + '\n')
 
     return len(model.constraints)

@@ -7,7 +7,7 @@ import pandas as pd
 from matplotlib.figure import Figure
 
 from src import paths
-from src.cli import banner, existing_directory, existing_file, step, swept
+from src.cli import banner, step
 from src.evaluation.report import Axis, read_reports
 from src.evaluation.spreads import read_spreads
 from src.visualization import (
@@ -39,14 +39,13 @@ _SPREAD_METRICS = tuple(
 
 
 def _save_figure(figure: Figure, path: Path) -> None:
-    """Write one finished figure and close it, creating its parent directories.
+    """Write one finished figure and close it.
 
     Args:
         figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
             all open.
-        path: Where to write it, from `paths.combined_figure_path`.
+        path: Where to write it, from `paths.FIGURE.prepare`.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path)
     plt.close(figure)
 
@@ -63,7 +62,7 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     for plot in FIGURES:
         _save_figure(
             figure=compose_figure(frame[frame['axis'].isin(plot.breakdowns)], plot),
-            path=paths.combined_figure_path(plot.name),
+            path=paths.FIGURE.prepare(plot.name),
         )
         written += 1
     return written
@@ -80,7 +79,7 @@ def _draw_violins(frame: pd.DataFrame) -> int:
     for violin in VIOLINS:
         _save_figure(
             figure=compose_violins(frame, violin),
-            path=paths.combined_figure_path(violin.name),
+            path=paths.FIGURE.prepare(violin.name),
         )
     return len(VIOLINS)
 
@@ -95,9 +94,7 @@ def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
         How many tables were written.
     """
     for table in TABLES:
-        path = paths.comparison_table_path(table.name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(latex_table(frame, table, significance))
+        paths.TABLE.prepare(table.name).write_text(latex_table(frame, table, significance))
     return len(TABLES)
 
 
@@ -164,7 +161,7 @@ def run(evaluation_files: Sequence[Path], generation_files: Sequence[Path]) -> N
         with step('Drawing the generated distributions'):
             _save_figure(
                 figure=distribution_grid(embedding),
-                path=paths.combined_figure_path('distribution'),
+                path=paths.FIGURE.prepare('distribution'),
             )
             drawn += 1
 
@@ -184,7 +181,7 @@ def main() -> None:
     reports.add_argument(
         '-e',
         '--evaluations',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='REPORT',
         nargs='+',
         help='Paths to the evaluation reports to compare, from `pipelines.evaluate`. These draw '
@@ -194,7 +191,7 @@ def main() -> None:
     reports.add_argument(
         '-E',
         '--evaluations-dir',
-        type=existing_directory,
+        type=paths.existing_directory,
         metavar='DIR',
         nargs='+',
         help='Path(s) to a directory to compare every evaluation report under, at any depth, '
@@ -208,7 +205,7 @@ def main() -> None:
     generations.add_argument(
         '-g',
         '--generations',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='GENERATIONS',
         nargs='+',
         help='Paths to the generations of the same runs, from `pipelines.generate`. These draw '
@@ -218,7 +215,7 @@ def main() -> None:
     generations.add_argument(
         '-G',
         '--generations-dir',
-        type=existing_directory,
+        type=paths.existing_directory,
         metavar='DIR',
         nargs='+',
         help='Path(s) to a directory to draw every generations file under, at any depth, e.g. '
@@ -229,13 +226,11 @@ def main() -> None:
 
     evaluations = args.evaluations or []
     if args.evaluations_dir is not None:
-        evaluations = swept(
-            args.evaluations_dir, '.json', 'evaluation reports', 'pipelines.evaluate'
-        )
+        evaluations = paths.EVALUATION.sweep(args.evaluations_dir)
 
     generated = args.generations or []
     if args.generations_dir is not None:
-        generated = swept(args.generations_dir, '.parquet', 'generations', 'pipelines.generate')
+        generated = paths.GENERATIONS.sweep(args.generations_dir)
 
     run(evaluations, generated)
 

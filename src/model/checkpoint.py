@@ -93,12 +93,12 @@ def save_checkpoint(
         early_stopping_state: The `EarlyStopper`'s `state_dict`, which carries the best score
             seen as well as the patience count.
         rng_state: The random streams, as captured by `training/train.py`'s `rng_state`.
-        path: Where to write, parent directories included.
+        path: Where to write, its directory already made, from `paths.LAST_CHECKPOINT.prepare`
+            or `paths.BEST_CHECKPOINT.prepare`.
     Returns:
         The path written to.
     """
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
 
     # Written aside and moved into place, so a run interrupted mid-save leaves the last good
     # checkpoint intact rather than a truncated file where one is expected.

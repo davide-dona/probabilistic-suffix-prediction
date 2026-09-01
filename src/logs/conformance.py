@@ -238,7 +238,7 @@ def discovery_settings(path: Path) -> DeclareConfig | None:
     than the checker reading it as its own.
 
     Args:
-        path: The model file, from `paths.declare_model_path`.
+        path: The model file, from `paths.DECLARE_MODEL`.
     Returns:
         The settings its header records, or `None` for a model written before the header existed,
         which says nothing about how it was mined.
@@ -323,7 +323,7 @@ class ConformanceChecker:
             dataset: The dataset whose model to check against, read from where preprocessing
                 wrote it.
         """
-        self._constraints = tuple(read_constraints(paths.declare_model_path(dataset)))
+        self._constraints = tuple(read_constraints(paths.DECLARE_MODEL.require(dataset)))
 
     @lru_cache(maxsize=_TRACE_CACHE_SIZE)  # noqa: B019 -- one checker per scoring process
     def rate(self, trace: tuple[str, ...]) -> float:

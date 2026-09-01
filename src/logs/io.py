@@ -59,7 +59,7 @@ def read_original_log(data_config: DataConfig) -> pd.DataFrame:
         The raw log as a DataFrame, one row per event, with no derived column added yet.
     """
     return read_log(
-        paths.original_log(data_config.name),
+        paths.ORIGINAL_LOG.path(data_config.name),
         column_mapping={
             data_config.case_key: CASE_KEY,
             data_config.activity_key: ACTIVITY_KEY,

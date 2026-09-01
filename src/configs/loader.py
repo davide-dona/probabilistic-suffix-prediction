@@ -38,12 +38,12 @@ def _read(path: Path) -> dict:
 
 
 def load_config(config: Path, hardware: Path) -> ExperimentConfig:
-    """Load and validate an experiment config, merging the base config, 
+    """Load and validate an experiment config, merging the base config,
     the hardware profile, and the dataset config in that order.
 
     Args:
         config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
-        hardware: Path to the hardware profile YAML, e.g. config/hardware/mps.yaml.
+        hardware: Path to the hardware profile YAML, e.g. config/hardware/cuda-a6000.yaml.
     Returns:
         The validated config.
     """

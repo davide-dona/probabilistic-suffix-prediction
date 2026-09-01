@@ -6,15 +6,15 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.cli import add_hardware_argument, banner, existing_file, step
+from src.cli import banner, step
 from src.configs import load_generation_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
 from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
+from src.logs.keys import Split
 from src.model import TransformerCVAE, load_checkpoint
-from src.paths import Split
 
 
 def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> None:
@@ -39,12 +39,12 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
         checkpoint['experiment_config'], hardware=hardware, num_samples=num_samples
     )
 
-    paths.require_dataset(config.data.name)
+    paths.require_preprocessed(config.data.name)
     torch.manual_seed(config.seed)
 
     # The output file is named after the run the checkpoint carries, not after the file it was
     # read from, so the generations land under the run that produced them whatever it is called.
-    path = paths.generations_path(run)
+    path = paths.GENERATIONS.prepare(run)
     device = torch.device(config.training.device)
     batch_size = generation_batch_size(
         inference=config.inference,
@@ -119,14 +119,21 @@ def main() -> None:
     parser.add_argument(
         '-m',
         '--checkpoint',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='CHECKPOINT',
         required=True,
         help='Path to the checkpoint to generate with, from `pretrained/`, '
         '`outputs/checkpoints/best/` or `outputs/checkpoints/last/`. Its own config is what '
         'the model and the dataset are read from.',
     )
-    add_hardware_argument(parser, required=True)
+    parser.add_argument(
+        '-w',
+        '--hardware',
+        type=paths.existing_file,
+        metavar='HARDWARE',
+        required=True,
+        help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
+    )
     parser.add_argument(
         '-n',
         '--num-samples',

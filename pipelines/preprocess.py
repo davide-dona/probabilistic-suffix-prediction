@@ -5,7 +5,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 from src import paths
-from src.cli import add_config_argument, banner, step
+from src.cli import banner, step
 from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
 from src.logs.continuations import build_index
@@ -29,6 +29,7 @@ from src.logs.keys import (
     SECONDS_COS_KEY,
     SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
+    Split,
 )
 from src.logs.split import out_of_time_split
 from src.logs.temporal import (
@@ -37,7 +38,6 @@ from src.logs.temporal import (
     add_event_delta,
     add_remaining_time,
 )
-from src.paths import Split
 
 
 def case_length_cutoff(log: pd.DataFrame, *, data_config: DataConfig) -> int:
@@ -179,15 +179,15 @@ def run(
     banner(
         f'Preprocessing "{dataset}"',
         {
-            'original log': paths.original_log(dataset),
+            'original log': paths.ORIGINAL_LOG.path(dataset),
             'split': f'{data_config.train_split:.0%} train, {data_config.val_split:.0%} val, '
             f'{data_config.test_split:.0%} test, out of time',
-            'splits': paths.split_path(dataset=dataset, split=Split.TRAIN).parent,
-            'codec': paths.codec_path(dataset),
-            'continuations': paths.continuation_path(dataset=dataset, split=Split.VAL).parent,
+            'splits': paths.PROCESSED_SPLIT.directory(dataset),
+            'codec': paths.CODEC.path(dataset),
+            'continuations': paths.CONTINUATIONS.directory(dataset),
             'declarative model': 'skipped (--skip-declare)'
             if skip_declare
-            else paths.declare_model_path(dataset),
+            else paths.DECLARE_MODEL.path(dataset),
         },
     )
 
@@ -234,7 +234,7 @@ def run(
 
     with step('Writing the splits'):
         for split, rows in ((Split.TRAIN, train), (Split.VAL, val), (Split.TEST, test)):
-            write_log(rows, paths.split_path(dataset=dataset, split=split))
+            write_log(rows, paths.PROCESSED_SPLIT.path(dataset=dataset, split=split))
 
     # Fit the vocabularies and normalization statistics on the train split, writng them out to
     # `dataset.json`. The generated values can be decoded back using the same codec.
@@ -284,7 +284,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description='Turn a raw event log into the train/val/test CSVs the model consumes.'
     )
-    add_config_argument(parser, required=True)
+    parser.add_argument(
+        '-c',
+        '--config',
+        type=paths.existing_file,
+        metavar='CONFIG',
+        required=True,
+        help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
+    )
     parser.add_argument(
         '--skip-declare',
         action='store_true',

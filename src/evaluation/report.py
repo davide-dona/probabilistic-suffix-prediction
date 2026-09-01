@@ -24,7 +24,7 @@ class EvaluationReport:
         """Read a report back from the JSON `write` produced.
 
         Args:
-            path: The report to read, e.g. from `paths.evaluation_path`.
+            path: The report to read, e.g. from `paths.EVALUATION`.
         Returns:
             The report, validated against the current schema so a report written before a metric
             was added or renamed fails here rather than on a missing key further down.
@@ -33,15 +33,14 @@ class EvaluationReport:
 
     def write(self, path: str | Path) -> Path:
         """
-        Write the report as JSON, creating parent directories.
+        Write the report as JSON.
 
         Args:
-            path: Where to write, e.g. the generations file's own path with a `.json` suffix.
+            path: Where to write, its directory already made, from `paths.EVALUATION.prepare`.
         Returns:
             The path written to.
         """
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(asdict(self), indent=4))
         return path
 

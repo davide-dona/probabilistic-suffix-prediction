@@ -6,8 +6,8 @@ import torch
 from huggingface_hub import CommitOperationAdd, create_commit, file_exists, whoami
 from huggingface_hub.errors import HfHubHTTPError, LocalTokenNotFoundError
 
+from scripts.hub import HF_REPO_ID
 from src import paths
-from src.cli import existing_file
 from src.identity import RunIdentity
 from src.model import inference_payload, load_checkpoint
 
@@ -64,9 +64,9 @@ def run(model_paths: list[Path]) -> None:
             run = RunIdentity.from_dict(checkpoint['run'])
             payload = inference_payload(checkpoint)
 
-            fetched_to = paths.pretrained_path(run.dataset, run.model)
+            fetched_to = paths.PRETRAINED.path(dataset=run.dataset, model=run.model)
             path_in_repo = fetched_to.relative_to(paths.PRETRAINED_DIR).as_posix()
-            replaces = file_exists(paths.HF_REPO_ID, path_in_repo, repo_type='model')
+            replaces = file_exists(HF_REPO_ID, path_in_repo, repo_type='model')
 
             # Prefixed with the run's dataset/model so files from different runs sharing a model
             # name don't collide once they land together in this one temporary directory.
@@ -77,7 +77,7 @@ def run(model_paths: list[Path]) -> None:
                 f'\nRun:     {run}\n'
                 f'Step:    {payload["step"]} (selection score {payload["selection_score"]:.4f})\n'
                 f'Size:    {_mebibytes(model_path)} -> {_mebibytes(published)} (inference-only)\n'
-                f'Target:  {path_in_repo} on {paths.HF_REPO_ID}\n'
+                f'Target:  {path_in_repo} on {HF_REPO_ID}\n'
                 f'         {"replaces an existing file" if replaces else "adds a new file"}\n'
             )
 
@@ -101,7 +101,7 @@ def run(model_paths: list[Path]) -> None:
             f'Publish {run}' if len(model_paths) == 1 else f'Publish {len(model_paths)} models'
         )
         commit = create_commit(
-            repo_id=paths.HF_REPO_ID,
+            repo_id=HF_REPO_ID,
             repo_type='model',
             operations=operations,
             commit_message=commit_message,
@@ -120,7 +120,7 @@ def main() -> None:
     parser.add_argument(
         '-m',
         '--checkpoint',
-        type=existing_file,
+        type=paths.existing_file,
         metavar='CHECKPOINT',
         nargs='+',
         required=True,

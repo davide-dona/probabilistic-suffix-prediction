@@ -14,8 +14,8 @@ from src.logs.keys import (
     EVENT_DELTA_KEY,
     REMAINING_TIME_KEY,
     UNK_TOKEN,
+    Split,
 )
-from src.paths import Split
 from src.suffixes import ActivityCodes, spread
 
 # The activity names the encoded prefixes and suffixes are read back through, in code order.
@@ -87,8 +87,7 @@ class ContinuationIndex:
             split: Which split's continuations to read. Evaluation scores against `TEST`, and
                 training selects checkpoints against `VAL`.
         """
-        paths.require_continuations(dataset=dataset, split=split)
-        table = pq.read_table(paths.continuation_path(dataset=dataset, split=split))
+        table = pq.read_table(paths.CONTINUATIONS.require(dataset=dataset, split=split))
 
         self._codes = ActivityCodes.of(json.loads(table.schema.metadata[_VOCABULARY]))
         self._rows = {prefix: row for row, prefix in enumerate(table.column('prefix').to_pylist())}
@@ -218,7 +217,6 @@ def build_index(
         schema=_SCHEMA.with_metadata({_VOCABULARY: json.dumps(codes.vocabulary)}),
     )
 
-    path = paths.continuation_path(dataset=dataset, split=split)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = paths.CONTINUATIONS.prepare(dataset=dataset, split=split)
     pq.write_table(table, path, compression=_COMPRESSION)
     return len(grouped), sum(len(minutes) for _, minutes, _ in grouped.values())

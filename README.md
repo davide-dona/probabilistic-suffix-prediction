@@ -34,7 +34,7 @@ The four pipelines below run in sequence, each reading what the previous one wro
 
 Preprocessing and training take `-c`/`--config`, the dataset's experiment config YAML (e.g. `config/datasets/bpic17.yaml`). 
 
-Training and generation, which build a model and a `DataLoader`, take `-w`/`--hardware`, a hardware profile YAML (e.g. `config/hardware/mps.yaml`). 
+Training and generation, which build a model and a `DataLoader`, take `-w`/`--hardware`, a hardware profile YAML (e.g. `config/hardware/cuda-a6000.yaml`). 
 
 ### 1. Preprocessing
 
@@ -180,5 +180,5 @@ A dataset config declares everything a run needs: where to find the raw log and 
 Fields can be overridden between files. Three layers are deep-merged in order, each taking precedence over the last:
 
 1. `config/base.yaml` — default config, independent of any dataset or hardware.
-2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/mps.yaml`. Owns everything that varies with the machine a run executes on.
+2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/cuda-a6000.yaml`. Owns everything that varies with the machine a run executes on.
 3. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.

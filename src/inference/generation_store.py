@@ -47,17 +47,17 @@ _SCHEMA = pa.schema(
 
 
 def open_generations(path: Path, run: RunIdentity) -> pq.ParquetWriter:
-    """Open a Parquet file for writing generations, creating its parent directories if needed.
+    """Open a Parquet file for writing generations.
 
     Args:
-        path: The file to write, from `paths.generations_path`. Overwritten if it already exists.
+        path: The file to write, its directory already made, from `paths.GENERATIONS.prepare`.
+            Overwritten if it already exists.
         run: The run these generations come from, stamped into the file so evaluation can read it
             back instead of guessing at it.
     Returns:
         A writer bound to the generations schema, to be used as a context manager: closing it is
         what writes the file's footer.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     return pq.ParquetWriter(where=path, schema=stamped(_SCHEMA, run))
 
 

@@ -10,8 +10,7 @@ from torch.utils.data import Dataset, Subset
 
 from src.datasets.codec import DatasetCodec
 from src.logs.io import read_log
-from src.logs.keys import CASE_KEY, MIN_PREFIX_KEY
-from src.paths import Split
+from src.logs.keys import CASE_KEY, MIN_PREFIX_KEY, Split
 
 
 class Events(NamedTuple):
