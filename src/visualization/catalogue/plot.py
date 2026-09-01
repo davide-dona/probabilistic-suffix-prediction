@@ -77,6 +77,7 @@ FIGURES = (
         metrics=(
             MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
             MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Remaining time W1'),
+            MetricEntry(METRICS['activity_time_wasserstein_days'], 'Event time W1'),
         ),
     ),
     # The spread a model draws at against the spread the log's own continuations have, as the

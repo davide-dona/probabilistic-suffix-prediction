@@ -8,7 +8,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from src import paths
-from src.logs.keys import ACTIVITY_KEY, CASE_KEY, REMAINING_TIME_KEY, UNK_TOKEN
+from src.logs.keys import (
+    ACTIVITY_KEY,
+    CASE_KEY,
+    EVENT_DELTA_KEY,
+    REMAINING_TIME_KEY,
+    UNK_TOKEN,
+)
 from src.paths import Split
 from src.suffixes import ActivityCodes, spread
 
@@ -23,6 +29,12 @@ _SCHEMA = pa.schema(
         ('weights', pa.list_(pa.int32())),
         ('remaining_times', pa.list_(pa.float32())),
         ('dispersion', pa.float32()),
+        # The waits observed before each activity, pooled over every occurrence of the prefix:
+        # one character of `wait_activities` per distinct activity, on the scale `suffixes` is
+        # held on, and its waits in `waits`. Reduced here rather than kept per occurrence because
+        # the pool is what a score reads, the way `dispersion` is already reduced at index time.
+        ('wait_activities', pa.large_string()),
+        ('waits', pa.list_(pa.list_(pa.float32()))),
     ]
 )
 
@@ -46,6 +58,10 @@ class References:
     weights: np.ndarray
     # Minutes left at the cut, one per occurrence
     remaining_times: np.ndarray
+    # The waits observed before each activity, keyed by the character `suffixes` spells it with.
+    # A wait belongs to the activity it precedes rather than to the position it fell at, so the
+    # occurrences are pooled under their activities instead of being kept as runs.
+    waits: dict[str, np.ndarray]
     # How far apart two of the occurrences are, the term an energy score subtracts for the
     # reference set's own spread
     dispersion: float
@@ -79,6 +95,8 @@ class ContinuationIndex:
         self._suffixes = table.column('suffixes').to_pylist()
         self._weights = table.column('weights').to_pylist()
         self._remaining_times = table.column('remaining_times').to_pylist()
+        self._wait_activities = table.column('wait_activities').to_pylist()
+        self._waits = table.column('waits').to_pylist()
         self._dispersion = table.column('dispersion').to_numpy()
 
     def encode(self, activities: Sequence[str]) -> str:
@@ -109,6 +127,12 @@ class ContinuationIndex:
             suffixes=tuple(self._suffixes[row]),
             weights=np.asarray(self._weights[row], dtype=np.float64),
             remaining_times=np.asarray(self._remaining_times[row], dtype=np.float64),
+            waits={
+                activity: np.asarray(observed, dtype=np.float64)
+                for activity, observed in zip(
+                    self._wait_activities[row], self._waits[row], strict=True
+                )
+            },
             dispersion=float(self._dispersion[row]),
         )
 
@@ -155,31 +179,41 @@ def build_index(
 
     codes = ActivityCodes()
     cases = [
-        (codes.encode(events[ACTIVITY_KEY]), events[REMAINING_TIME_KEY].tolist())
+        (
+            codes.encode(events[ACTIVITY_KEY]),
+            events[REMAINING_TIME_KEY].tolist(),
+            events[EVENT_DELTA_KEY].tolist(),
+        )
         for _, events in seen.groupby(CASE_KEY, sort=False)
     ]
 
     # Every cut point of every case, grouped under the prefix it leaves behind. A prefix's
     # continuations are counted as they arrive, so a suffix the log took twice is one entry
-    # weighing two; its remaining times are kept one per occurrence.
-    grouped: dict[str, tuple[dict[str, int], list[float]]] = {}
-    for activities, remaining_times in cases:
+    # weighing two; its remaining times are kept one per occurrence, and the wait before each of
+    # its events is pooled under that event's own activity. The first event of a case carries no
+    # wait, and it is never in a suffix either, since a cut leaves at least one event behind it.
+    grouped: dict[str, tuple[dict[str, int], list[float], dict[str, list[float]]]] = {}
+    for activities, remaining_times, deltas in cases:
         for cut in range(1, len(activities)):
-            observed, minutes = grouped.setdefault(activities[:cut], ({}, []))
+            observed, minutes, waits = grouped.setdefault(activities[:cut], ({}, [], {}))
             suffix = activities[cut:]
             observed[suffix] = observed.get(suffix, 0) + 1
             minutes.append(remaining_times[cut - 1])
+            for activity, wait in zip(suffix, deltas[cut:], strict=True):
+                waits.setdefault(activity, []).append(wait)
 
     table = pa.table(
         {
             'prefix': list(grouped),
-            'suffixes': [list(observed) for observed, _ in grouped.values()],
-            'weights': [list(observed.values()) for observed, _ in grouped.values()],
-            'remaining_times': [minutes for _, minutes in grouped.values()],
+            'suffixes': [list(observed) for observed, _, _ in grouped.values()],
+            'weights': [list(observed.values()) for observed, _, _ in grouped.values()],
+            'remaining_times': [minutes for _, minutes, _ in grouped.values()],
             'dispersion': [
                 spread(tuple(observed), weights=list(observed.values()))
-                for observed, _ in grouped.values()
+                for observed, _, _ in grouped.values()
             ],
+            'wait_activities': [''.join(waits) for _, _, waits in grouped.values()],
+            'waits': [list(waits.values()) for _, _, waits in grouped.values()],
         },
         schema=_SCHEMA.with_metadata({_VOCABULARY: json.dumps(codes.vocabulary)}),
     )
@@ -187,4 +221,4 @@ def build_index(
     path = paths.continuation_path(dataset=dataset, split=split)
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path, compression=_COMPRESSION)
-    return len(grouped), sum(len(minutes) for _, minutes in grouped.values())
+    return len(grouped), sum(len(minutes) for _, minutes, _ in grouped.values())
