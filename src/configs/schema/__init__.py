@@ -1,7 +1,3 @@
-"""Every config section, one module per concern, re-exported here so a caller imports from
-`src.configs.schema` without knowing which module a class lives in.
-"""
-
 from .base import StrictModel
 from .data import DataConfig, DeclareConfig
 from .experiment import DatasetConfig, ExperimentConfig

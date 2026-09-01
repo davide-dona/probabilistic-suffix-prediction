@@ -10,17 +10,12 @@ from .base import NAME_PATTERN, StrictModel
 class DataConfig(StrictModel):
     """How the raw log is read, preprocessed and split into train/val/test."""
 
-    name: str = Field(
-        ...,
-        pattern=NAME_PATTERN,
-        description='The log this config describes, e.g. `sepsis`. Names its preprocessed '
-        'splits, codec, declarative model and figures',
-    )
+    name: str = Field(..., pattern=NAME_PATTERN)
 
-    case_key: str = Field(..., description='Raw column identifying the case each event belongs to')
-    activity_key: str = Field(..., description='Raw column identifying the activity label')
-    resource_key: str = Field(..., description='Raw column identifying the resource')
-    timestamp_key: str = Field(..., description='Raw column holding the event timestamp')
+    case_key: str
+    activity_key: str
+    resource_key: str
+    timestamp_key: str
 
     train_split: float = Field(..., gt=0.0, lt=1.0)
     val_split: float = Field(..., gt=0.0, lt=1.0)
@@ -30,54 +25,32 @@ class DataConfig(StrictModel):
         ...,
         gt=0.0,
         le=100.0,
-        description='Cases longer than this percentile of case length are dropped at '
-        'preprocessing time. The cutoff is what sequence tensors are padded to',
+        description='Longer cases are dropped; the cutoff is what sequence tensors are padded to',
     )
-
     max_case_duration_percentile: float = Field(
         ...,
         gt=0.0,
         le=100.0,
-        description='Cases running longer than this percentile of case duration are dropped at '
-        'preprocessing time, before the log is split. A handful of broken timestamps otherwise '
-        'set the statistics every duration channel is standardized against',
+        description='Longer-running cases are dropped before the split, so that a handful of '
+        'broken timestamps does not set the statistics every duration channel is standardized '
+        'against',
     )
 
     string_features: list[str] = Field(
-        ...,
-        description='Columns read as strings rather than by whatever dtype pandas infers, for '
-        'the identifiers and flags that would otherwise become numeric channels',
+        ..., description='Columns read as strings rather than by the dtype pandas infers'
     )
-
     event_features: list[str] = Field(
         ...,
-        description='Every per-event column the encoders read beside the activity and the '
-        'resource. Names either a raw column of the log or one preprocessing derives from the '
-        'timestamp (`ts_start`, `day_sin`, `day_cos`, `seconds_sin`, `seconds_cos`; see '
-        '`src/logs/keys.py`). A numeric one becomes a value and a present flag, anything '
-        'else a vocabulary. Changing this list requires re-preprocessing the dataset',
+        description='Per-event columns the encoders read beside the activity and the resource, '
+        'either raw or derived from the timestamp (see `src/logs/keys.py`). A numeric one becomes '
+        'a value and a present flag, anything else a vocabulary. Changing this list requires '
+        're-preprocessing',
     )
-
     log_scaled_features: list[str] = Field(
-        ...,
-        description='Which `event_features` take a log1p before being standardized, for columns '
-        'spanning several orders of magnitude. Empty matches the baselines, which standardize '
-        'every numeric column raw',
+        ..., description='Which `event_features` take a log1p before being standardized'
     )
-
-    log_scaled_remaining_time: bool = Field(
-        ...,
-        description='Whether the remaining-time target takes a log1p before being standardized. '
-        'Off matches the baselines, which standardize durations raw. `ts_start` is scaled '
-        'through `log_scaled_features` instead',
-    )
-
-    log_scaled_time_to_next: bool = Field(
-        ...,
-        description='Whether the time-to-next-event target takes a log1p before being '
-        'standardized. It is the more skewed of the two, a few long waits behind a mass of '
-        'same-day events',
-    )
+    log_scaled_remaining_time: bool
+    log_scaled_time_to_next: bool
 
     @model_validator(mode='after')
     def _splits_sum_to_one(self) -> DataConfig:
@@ -109,9 +82,7 @@ class DataConfig(StrictModel):
 
 
 class DeclareConfig(StrictModel):
-    """Declarative-model discovery, run once per dataset at preprocessing time on the train
-    split only.
-    """
+    """Declarative-model discovery, run once per dataset on the train split."""
 
     consider_vacuity: bool = Field(
         ..., description='Whether a trace that never activates a constraint counts as satisfying it'
@@ -126,8 +97,7 @@ class DeclareConfig(StrictModel):
         ...,
         gt=0.0,
         le=1.0,
-        description='Support floor for the frequent activity itemsets candidate constraints '
-        'are built from',
+        description='Support floor for the frequent itemsets candidate constraints are built from',
     )
     max_cardinality: int = Field(
         ..., gt=0, description='Highest n tried for the templates that take one (`Existence3[A]`)'

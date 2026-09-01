@@ -8,8 +8,7 @@ from .schema import DatasetConfig, ExperimentConfig
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """
-    Recursively merge two dicts, with override taking precedence.
+    """Recursively merge two dicts, with override taking precedence.
     Recursion allows nested dicts to be merged rather than replaced, so a config can override
     just one field of a nested section.
     Args:
@@ -39,8 +38,8 @@ def _read(path: Path) -> dict:
 
 
 def load_config(config: Path, hardware: Path) -> ExperimentConfig:
-    """Load and validate an experiment config.
-    Merges with the base config and the selected hardware profile.
+    """Load and validate an experiment config, merging the base config, 
+    the hardware profile, and the dataset config in that order.
 
     Args:
         config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
@@ -55,10 +54,7 @@ def load_config(config: Path, hardware: Path) -> ExperimentConfig:
 
 
 def load_dataset_config(config: Path) -> DatasetConfig:
-    """Load and validate the hardware-independent parts of an experiment config: `data` and
-    `declare`, merged over `paths.BASE_CONFIG` alone. For pipelines that never read a
-    hardware-dependent value, so they never need a hardware profile.
-
+    """Load and validate the hardware-independent parts of an experiment config.
     Args:
         config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
     Returns:
@@ -72,15 +68,6 @@ def load_generation_config(
     experiment_config: dict, *, hardware: Path, num_samples: int | None
 ) -> ExperimentConfig:
     """Load and validate the config a checkpoint is generated from, under the hardware in hand.
-
-    The run's own config travels inside the checkpoint, so generating needs no dataset config: the
-    model, the data and the sampling it was trained under are already settled. Only the profile
-    changes, since a run trained on one machine is routinely generated from on another.
-
-    The profile carries training-only values too - `training.max_steps`, `optimizer.lr`,
-    `loss.kl_annealing_ramp_steps` - and merging brings them along. Nothing generation reads
-    touches them and the merged config is never written back out, so they go no further than here.
-
     Args:
         experiment_config: The run's config as the checkpoint stores it, from
             `checkpoint['experiment_config']`.

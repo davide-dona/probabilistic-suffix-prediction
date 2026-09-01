@@ -11,10 +11,7 @@ class EmbeddingConfig(StrictModel):
     activity_dim: int = Field(..., gt=0)
     resource_dim: int = Field(..., gt=0)
     feature_dim: int = Field(
-        ...,
-        gt=0,
-        description="Width of each categorical event feature's embedding table, shared across "
-        'all of them: the more features, the more a bigger value widens the projection input',
+        ..., gt=0, description='Width of every categorical event feature table, shared across them'
     )
 
 
@@ -23,25 +20,19 @@ class TraceEncoderConfig(StrictModel):
 
     One stack reads both sequences: the prefix, whose summary conditions the prior and whose
     events the decoder cross-attends over, and, on the training path only, the ground-truth
-    suffix, whose summary feeds the posterior. Runs at `ModelConfig.d_model`.
+    suffix, whose summary feeds the posterior.
     """
 
     num_layers: int = Field(..., gt=0)
-    num_heads: int = Field(
-        ..., gt=0, description='Attention heads per layer; must divide `d_model`'
-    )
-    feedforward_dim: int = Field(
-        ..., gt=0, description='Width of the feed-forward block inside a layer'
-    )
+    num_heads: int = Field(..., gt=0)
+    feedforward_dim: int = Field(..., gt=0)
     dropout: float = Field(..., ge=0.0, lt=1.0)
 
 
 class PriorConfig(StrictModel):
-    """MLP mapping the prefix summary to p(z | prefix), in place of the fixed N(0, I) prior of
-    an unconditional VAE.
-    """
+    """MLP mapping the prefix summary to p(z | prefix)."""
 
-    hidden_dims: list[int] = Field(..., description='Hidden layer widths; empty for a linear prior')
+    hidden_dims: list[int] = Field(..., description='Empty for a linear prior')
     dropout: float = Field(..., ge=0.0, lt=1.0)
 
 
@@ -51,23 +42,19 @@ class LatentConfig(StrictModel):
 
 class DecoderConfig(StrictModel):
     """Transformer decoder writing the suffix: causal self-attention plus cross-attention over
-    the encoded prefix. Runs at `ModelConfig.d_model`.
+    the encoded prefix.
     """
 
     num_layers: int = Field(..., gt=0)
-    num_heads: int = Field(
-        ..., gt=0, description='Attention heads per layer; must divide `d_model`'
-    )
-    feedforward_dim: int = Field(
-        ..., gt=0, description='Width of the feed-forward block inside a layer'
-    )
+    num_heads: int = Field(..., gt=0)
+    feedforward_dim: int = Field(..., gt=0)
     dropout: float = Field(..., ge=0.0, lt=1.0)
     activity_dropout: float = Field(
         ...,
         ge=0.0,
         lt=1.0,
         description='Fraction of teacher-forced activities blanked to PAD during training, '
-        'forcing information into z instead. 0.0 disables it',
+        'forcing information into z instead',
     )
     head_hidden_dim: int = Field(
         ..., gt=0, description='Width of the layer shared by the two output heads'
@@ -81,13 +68,7 @@ class ModelConfig(StrictModel):
     absent: they come from `DatasetCodec` at build time.
     """
 
-    name: str = Field(
-        ...,
-        pattern=NAME_PATTERN,
-        description='What this architecture is called, e.g. `cvae`. Names the runs it produces, '
-        'and is what a figure tells two models apart by',
-    )
-
+    name: str = Field(..., pattern=NAME_PATTERN)
     d_model: int = Field(
         ..., gt=0, description='Shared width for the embeddings, the encoder and the decoder'
     )

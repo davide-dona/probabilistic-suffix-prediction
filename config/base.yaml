@@ -54,14 +54,12 @@ model:
 # so that they are independent of the dataset size and batch size.
 loss:
   # KL annealing: the KL term is ramped up from 0 to full weight over the first
-  # `kl_annealing_ramp_steps` steps, set per hardware profile, then held there for the rest of the
-  # run. This helps prevent posterior collapse early in training.
+  # `kl_annealing_ramp_steps` steps, set per hardware profile.
   kl_annealing_start_weight: 0.0
-  # Plain ELBO. The bpic17 sweep over 0.25/0.5/1.0/2.0/4.0 put the energy score's optimum here:
-  # below it z carries more nats and the samples drift off what the prior can produce, above it the
-  # KL squeezes the latent onto the free-bits floor.
+  # Plain ELBO
   kl_annealing_full_weight: 1.0
-  free_bits: 0.3  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
+  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
+  free_bits: 0.3
 
 # lr is set per hardware profile, in config/hardware/, since it scales with batch_size.
 optimizer:
@@ -79,13 +77,9 @@ early_stopping:
   patience: 30   # number of validation checks with no improvement after which training will be stopped
   min_delta_perc: 0.005  # z is sampled, so the score is noisy; this is the margin that counts as progress
 
-
+# Suffixes drawn per prefix, once for each of the two passes that generate them.
 inference:
-  # Suffixes drawn per prefix, once for each of the two passes that generate them.
-  # At least ten on either, since hit_rate_at_10 reads the tenth draw.
-
-  # The pass inside the training loop, over training.generation_pairs prefixes every
-  # training.val_every_n_steps steps. Kept small: it is paid for on every validation.
+  # The pass inside the training loop, kept small: it is paid for on every validation.
   validation_samples: 10
   # The pass over the whole test split that a report is built from. Paid for once per run, and a
   # hundred draws describe p(suffix | prefix) far better than ten.
