@@ -96,6 +96,7 @@ def generate_batch(
                         times_to_next=times_to_next[position, sample],
                         length=lengths[position, sample],
                         remaining_time=remaining_time[position, sample],
+                        clamp=True,
                     )
                     for sample in range(num_samples)
                 ]
@@ -107,6 +108,7 @@ def generate_batch(
                 times_to_next=point_times_to_next[position],
                 length=point_lengths[position],
                 remaining_time=point_remaining_time[position],
+                clamp=True,
             ),
             truth=_decode(
                 codec,
@@ -129,6 +131,7 @@ def _decode(
     times_to_next: np.ndarray,
     length: int,
     remaining_time: float,
+    clamp: bool = False,
 ) -> DecodedEvents:
     """One run of events, back in the log's own units.
 
@@ -139,11 +142,18 @@ def _decode(
         times_to_next: The run's standardized wait until each of `activities`, `[steps]`.
         length: How many of them are events, the rest being the EOT and the padding behind it.
         remaining_time: The run's standardized remaining time.
+        clamp: Whether to floor the denormalized times at 0, matching the baselines' behaviour on
+            a model prediction. Left off for ground truth, which is never negative to begin with.
     Returns:
         The run as the report and the generations file hold it.
     """
+    time_to_next_minutes = codec.time_to_next.denormalize(times_to_next[:length])
+    remaining_time_minutes = float(codec.remaining_time.denormalize(remaining_time))
+    if clamp:
+        time_to_next_minutes = np.maximum(time_to_next_minutes, 0.0)
+        remaining_time_minutes = max(remaining_time_minutes, 0.0)
     return DecodedEvents(
         activities=codes.encode(codec.activity.decode(activities, length=length)),
-        time_to_next_minutes=codec.time_to_next.denormalize(times_to_next[:length]).tolist(),
-        remaining_time_minutes=float(codec.remaining_time.denormalize(remaining_time)),
+        time_to_next_minutes=time_to_next_minutes.tolist(),
+        remaining_time_minutes=remaining_time_minutes,
     )
