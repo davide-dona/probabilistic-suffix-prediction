@@ -69,12 +69,17 @@ def stamped(schema: pa.Schema, run: RunIdentity) -> pa.Schema:
     """Stamp a run's identity into a Parquet schema, for the writer to carry into the footer.
 
     Args:
-        schema: The artifact's own schema, from the module that owns it.
+        schema: The artifact's own schema, from the module that owns it, carrying whatever metadata
+            that module already put there.
         run: The run writing it.
     Returns:
-        The same schema carrying the identity `read_run_identity` reads back.
+        The same schema carrying the identity `read_run_identity` reads back, beside the metadata it
+        arrived with: an artifact that describes itself, as the generations do with the vocabulary
+        their suffixes are spelled on, must not lose that by being stamped.
     """
-    return schema.with_metadata({_RUN_KEY: json.dumps(asdict(run)).encode()})
+    return schema.with_metadata(
+        (schema.metadata or {}) | {_RUN_KEY: json.dumps(asdict(run)).encode()}
+    )
 
 
 def read_run_identity(parquet: pq.ParquetFile) -> RunIdentity:

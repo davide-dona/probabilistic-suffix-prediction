@@ -1,23 +1,32 @@
-from collections.abc import Iterator
+import json
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from src.identity import RunIdentity, stamped
-from src.inference.generation import DecodedEvents, Generation
+from src.inference.generation import DecodedEvents, Draws, Generation
 
 # Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
 # a case and a length, and the pair is unique within a file.
 type PrefixKey = tuple[str, int]
 
-# One run of activity names, the shape every activity column of the schema is built from.
-_ACTIVITIES = pa.list_(pa.field(name='element', type=pa.string()))
+# The activity names the suffixes of this file are spelled on, in code order, held in the file's own
+# metadata so nothing else has to be read to make sense of it. The same key and the same idea as
+# `src/logs/continuations.py`, and both are seeded from `codec.activity.names`, so a suffix written
+# here is the string the continuation index holds it as.
+_VOCABULARY = b'activities'
+
+# One run of activities, one character each. A suffix is a string rather than a list of names: the
+# names live once in the metadata above, and an edit distance reads a string directly.
+_SUFFIX = pa.string()
 
 # One run's wait until each of its activities. Timestamps are these accumulated, so they are
-# not written a second time.
-_TIMES_TO_NEXT = pa.list_(pa.field(name='element', type=pa.float64()))
+# not written a second time. float32 because that is what the model emits: `denormalize` widens to
+# float64 on the way out, and storing that width would double the largest column of the file to
+# carry digits the decoder never produced.
+_TIMES_TO_NEXT = pa.list_(pa.field(name='element', type=pa.float32()))
 
 # The schema of the Parquet file that holds a run's generations. One row per prefix: the samples
 # nest inside it, so nothing describing the prefix is written once per sample.
@@ -26,27 +35,58 @@ _SCHEMA = pa.schema(
         ('case_id', pa.large_string()),
         ('prefix_len', pa.int64()),
         # The events before the cut, which a constraint over the whole trace is checked against.
-        ('prefix_activities', _ACTIVITIES),
-        # One entry per draw of z, in the order they were drawn: `hit_rate_at_k` reads the first k.
-        ('generated_activities', pa.list_(pa.field(name='element', type=_ACTIVITIES))),
+        ('prefix_activities', _SUFFIX),
+        # The distinct suffixes drawn for this prefix, each written once however many draws landed
+        # on it, and which of them each draw took, in the order they were drawn. The decoder is
+        # deterministic given `z`, so a repeated suffix is one answer the model gave twice;
+        # `hit_rate_at_k` reads the first k of `generated_draws`, and a mean over the draws is the
+        # weighted mean over the distinct suffixes.
+        ('generated_suffixes', pa.list_(pa.field(name='element', type=_SUFFIX))),
+        ('generated_draws', pa.list_(pa.field(name='element', type=pa.int16()))),
+        # Still one entry per draw, in draw order. Two draws of one suffix came from different `z`
+        # and the decoder wrote each its own times, so these do not fold the way the activities do.
         (
             'generated_time_to_next_minutes',
             pa.list_(pa.field(name='element', type=_TIMES_TO_NEXT)),
         ),
-        ('generated_remaining_time_minutes', pa.list_(pa.field(name='element', type=pa.float64()))),
+        (
+            'generated_remaining_time_minutes',
+            pa.list_(pa.field(name='element', type=pa.float32())),
+        ),
         # The suffix written from the mean of `p(z | prefix)`: the model's single answer, drawn once
         # per prefix and the only column comparable against a model that does not sample.
-        ('point_activities', _ACTIVITIES),
+        ('point_activities', _SUFFIX),
         ('point_time_to_next_minutes', _TIMES_TO_NEXT),
-        ('point_remaining_time_minutes', pa.float64()),
-        ('true_activities', _ACTIVITIES),
+        ('point_remaining_time_minutes', pa.float32()),
+        ('true_activities', _SUFFIX),
         ('true_time_to_next_minutes', _TIMES_TO_NEXT),
-        ('true_remaining_time_minutes', pa.float64()),
+        ('true_remaining_time_minutes', pa.float32()),
     ]
 )
 
+_COMPRESSION = 'zstd'
 
-def open_generations(path: Path, run: RunIdentity) -> pq.ParquetWriter:
+# Worth the write time: generation is GPU-bound over hours, where the whole file costs under a
+# minute more to compress at this level and comes out a tenth smaller than at the default.
+_COMPRESSION_LEVEL = 9
+
+# The float columns, named as Parquet names their leaves. Byte-stream-split splits a float into its
+# four byte planes before compressing, so the exponents of a column line up and zstd has something
+# repetitive to find; on the waits, which are continuous and share nothing as whole values, it is
+# the difference between compressing and not.
+_FLOAT_LEAVES = [
+    'generated_time_to_next_minutes.list.element.list.element',
+    'generated_remaining_time_minutes.list.element',
+    'point_time_to_next_minutes.list.element',
+    'point_remaining_time_minutes',
+    'true_time_to_next_minutes.list.element',
+    'true_remaining_time_minutes',
+]
+
+
+def open_generations(
+    path: Path, run: RunIdentity, *, vocabulary: Sequence[str]
+) -> pq.ParquetWriter:
     """Open a Parquet file for writing generations.
 
     Args:
@@ -54,11 +94,45 @@ def open_generations(path: Path, run: RunIdentity) -> pq.ParquetWriter:
             Overwritten if it already exists.
         run: The run these generations come from, stamped into the file so evaluation can read it
             back instead of guessing at it.
+        vocabulary: The activity names the suffixes are spelled on, in code order, from
+            `ActivityCodes.vocabulary`. Written into the file so it says what its own characters
+            mean.
     Returns:
         A writer bound to the generations schema, to be used as a context manager: closing it is
         what writes the file's footer.
     """
-    return pq.ParquetWriter(where=path, schema=stamped(_SCHEMA, run))
+    schema = _SCHEMA.with_metadata({_VOCABULARY: json.dumps(list(vocabulary))})
+    return pq.ParquetWriter(
+        where=path,
+        schema=stamped(schema, run),
+        compression=_COMPRESSION,
+        compression_level=_COMPRESSION_LEVEL,
+        # Dictionary encoding takes precedence over byte-stream-split wherever it is left on, and a
+        # column of continuous waits has no dictionary worth building, so the two are set together.
+        use_dictionary=False,
+        use_byte_stream_split=_FLOAT_LEAVES,
+    )
+
+
+def read_vocabulary(parquet: pq.ParquetFile) -> tuple[str, ...]:
+    """Read the activity names a generations file spells its suffixes on.
+
+    Args:
+        parquet: The file, already open.
+    Returns:
+        The names in code order, which is what `ActivityCodes.of` seeds back into a codebook and
+        what a reader compares against the continuation index's own.
+    Raises:
+        ValueError: If the file carries none, and so predates the vocabulary it should name itself
+            by.
+    """
+    metadata = parquet.schema_arrow.metadata or {}
+    if _VOCABULARY not in metadata:
+        raise ValueError(
+            'this file does not say what its activity codes mean. Write it again with the pipeline '
+            'that produces it.'
+        )
+    return tuple(json.loads(metadata[_VOCABULARY]))
 
 
 def table_from_generations(generations: list[Generation]) -> pa.Table:
@@ -75,12 +149,13 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
             'case_id': generation.case_id,
             'prefix_len': generation.prefix_len,
             'prefix_activities': generation.prefix_activities,
-            'generated_activities': [sample.activities for sample in generation.samples],
+            'generated_suffixes': list(generation.samples.suffixes),
+            'generated_draws': list(generation.samples.taken),
             'generated_time_to_next_minutes': [
-                sample.time_to_next_minutes for sample in generation.samples
+                events.time_to_next_minutes for events in generation.samples.events
             ],
             'generated_remaining_time_minutes': [
-                sample.remaining_time_minutes for sample in generation.samples
+                events.remaining_time_minutes for events in generation.samples.events
             ],
             'point_activities': generation.point.activities,
             'point_time_to_next_minutes': generation.point.time_to_next_minutes,
@@ -92,26 +167,6 @@ def table_from_generations(generations: list[Generation]) -> pa.Table:
         for generation in generations
     ]
     return pa.Table.from_pylist(mapping=rows, schema=_SCHEMA)
-
-
-def read_suffixes(path: Path) -> Iterator[tuple[list[str], list[str]]]:
-    """Walk a generations file for the pair of suffixes each prefix is summarized by.
-
-    One of three readers over this file, each reading the columns its caller needs and no more:
-    a walk that decoded every draw would cost this one ten times what it costs, on a file of a
-    quarter of a million rows.
-
-    Args:
-        path: The generations file, opened and closed here.
-    Yields:
-        The true suffix and the first generated suffix of each prefix, in the order the file holds
-        them, as activity names.
-    """
-    with pq.ParquetFile(path) as parquet:
-        for batch in parquet.iter_batches(columns=['true_activities', 'generated_activities']):
-            truths = batch.column('true_activities').to_pylist()
-            samples = pc.list_element(batch.column('generated_activities'), 0).to_pylist()
-            yield from zip(truths, samples, strict=True)
 
 
 def read_prefix_keys(path: Path) -> list[PrefixKey]:
@@ -134,16 +189,19 @@ def read_prefix_keys(path: Path) -> list[PrefixKey]:
     )
 
 
-def read_samples(path: Path) -> Iterator[tuple[PrefixKey, list[str], list[list[str]]]]:
-    """Walk a generations file for the prefix, the true suffix and every draw of each row.
+def read_samples(path: Path) -> Iterator[tuple[PrefixKey, str, tuple[str, ...], tuple[int, ...]]]:
+    """Walk a generations file for the prefix, the true suffix and the draws of each row.
 
     Args:
         path: The generations file, opened and closed here.
     Yields:
-        Which prefix each row answers, the suffix that truly followed it and every suffix generated
-        for it, in the order the file holds them, as activity names.
+        Which prefix each row answers, the suffix that truly followed it, the distinct suffixes
+        generated for it and which of them each draw took, in the order the file holds them, as
+        coded strings on the file's own scale. The draws come back folded, so a caller drawing one
+        of them at random picks an index of `taken` rather than one of the distinct suffixes: those
+        two are different distributions wherever the model repeated itself.
     """
-    columns = ['case_id', 'prefix_len', 'true_activities', 'generated_activities']
+    columns = ['case_id', 'prefix_len', 'true_activities', 'generated_suffixes', 'generated_draws']
     with pq.ParquetFile(path) as parquet:
         for batch in parquet.iter_batches(columns=columns):
             keys = zip(
@@ -152,8 +210,15 @@ def read_samples(path: Path) -> Iterator[tuple[PrefixKey, list[str], list[list[s
                 strict=True,
             )
             truths = batch.column('true_activities').to_pylist()
-            samples = batch.column('generated_activities').to_pylist()
-            yield from zip(keys, truths, samples, strict=True)
+            samples = batch.column('generated_suffixes').to_pylist()
+            taken = batch.column('generated_draws').to_pylist()
+            yield from zip(
+                keys,
+                truths,
+                (tuple(row) for row in samples),
+                (tuple(row) for row in taken),
+                strict=True,
+            )
 
 
 def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generation]:
@@ -179,23 +244,29 @@ def read_generation_block(parquet: pq.ParquetFile, block: int) -> list[Generatio
 
     generations = []
     for position in range(table.num_rows):
+        suffixes = columns['generated_suffixes'][position]
+        taken = columns['generated_draws'][position]
         generations.append(
             Generation(
                 case_id=columns['case_id'][position],
                 prefix_activities=columns['prefix_activities'][position],
-                samples=[
-                    DecodedEvents(
-                        activities=activities,
-                        time_to_next_minutes=time_to_next_minutes,
-                        remaining_time_minutes=remaining_time_minutes,
-                    )
-                    for activities, time_to_next_minutes, remaining_time_minutes in zip(
-                        columns['generated_activities'][position],
-                        columns['generated_time_to_next_minutes'][position],
-                        columns['generated_remaining_time_minutes'][position],
-                        strict=True,
-                    )
-                ],
+                samples=Draws(
+                    suffixes=tuple(suffixes),
+                    taken=tuple(taken),
+                    events=[
+                        DecodedEvents(
+                            activities=suffixes[index],
+                            time_to_next_minutes=time_to_next_minutes,
+                            remaining_time_minutes=remaining_time_minutes,
+                        )
+                        for index, time_to_next_minutes, remaining_time_minutes in zip(
+                            taken,
+                            columns['generated_time_to_next_minutes'][position],
+                            columns['generated_remaining_time_minutes'][position],
+                            strict=True,
+                        )
+                    ],
+                ),
                 point=DecodedEvents(
                     activities=columns['point_activities'][position],
                     time_to_next_minutes=columns['point_time_to_next_minutes'][position],

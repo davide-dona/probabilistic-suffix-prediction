@@ -3,7 +3,7 @@ from typing import Self
 
 from src.inference.generation import Generation
 from src.logs.conformance import ConformanceChecker
-from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
+from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, metric
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,16 +36,17 @@ class ConformanceScores(ScalarMetrics):
             `conformance_mean`, the worst it can be, rather than looking perfectly conformant.
         """
         # A constraint is about the whole trace, so a suffix is checked as the case it completes.
-        prefix = tuple(generation.prefix_activities)
+        prefix = generation.prefix_activities
+        samples = generation.samples
 
-        sampled = mean(
-            [checker.rate(prefix + tuple(sample.activities)) for sample in generation.samples]
-        )
-        point = checker.rate(prefix + tuple(generation.point.activities))
-        truth = checker.rate(prefix + tuple(generation.truth.activities))
+        # One check per distinct suffix, weighed by how many draws took it. A repeated draw is the
+        # same trace and rates the same, so this is the mean over the draws with the constraints
+        # walked once per distinct suffix rather than once per draw.
+        rates = [checker.rate(prefix + suffix) for suffix in samples.suffixes]
+        draws = len(samples)
 
         return cls(
-            conformance_mean=sampled,
-            conformance_point=point,
-            conformance_truth=truth,
+            conformance_mean=float(samples.counts @ rates) / draws if rates and draws else 0.0,
+            conformance_point=checker.rate(prefix + generation.point.activities),
+            conformance_truth=checker.rate(prefix + generation.truth.activities),
         )

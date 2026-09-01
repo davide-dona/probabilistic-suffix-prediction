@@ -3,8 +3,9 @@ import numpy as np
 from src.configs.schema import InferenceConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
-from src.inference.generation import DecodedEvents, Generation
+from src.inference.generation import DecodedEvents, Draws, Generation
 from src.model import TransformerCVAE
+from src.suffixes import ActivityCodes
 
 
 def generation_batch_size(
@@ -35,6 +36,7 @@ def generate_batch(
     *,
     num_samples: int,
     codec: DatasetCodec,
+    codes: ActivityCodes,
 ) -> list[Generation]:
     """Generate `num_samples` suffixes per prefix of one batch, and the point prediction beside
     them.
@@ -46,6 +48,9 @@ def generate_batch(
         codec: The codec the split was encoded through, read here in the decode
             direction. Passed rather than read off the dataset, which is a `Subset` wherever only
             a slice of the split is generated for.
+        codes: The dataset's codebook, seeded from `codec.activity.names`, which every suffix is
+            spelled on. Passed in rather than built here so one codebook serves the whole run and
+            is the one written into the file's metadata.
     Returns:
         One generation per prefix of the batch, in the batch's own order, each naming the case it
         was cut from. Everything is decoded into the log's own units and cut at its length, so what
@@ -79,21 +84,25 @@ def generate_batch(
     return [
         Generation(
             case_id=batch.case_id[position],
-            prefix_activities=codec.activity.decode(
-                prefix_activities[position], length=prefix_lengths[position]
+            prefix_activities=codes.encode(
+                codec.activity.decode(prefix_activities[position], length=prefix_lengths[position])
             ),
-            samples=[
-                _decode(
-                    codec,
-                    activities=activities[position, sample],
-                    times_to_next=times_to_next[position, sample],
-                    length=lengths[position, sample],
-                    remaining_time=remaining_time[position, sample],
-                )
-                for sample in range(num_samples)
-            ],
+            samples=Draws.of(
+                [
+                    _decode(
+                        codec,
+                        codes,
+                        activities=activities[position, sample],
+                        times_to_next=times_to_next[position, sample],
+                        length=lengths[position, sample],
+                        remaining_time=remaining_time[position, sample],
+                    )
+                    for sample in range(num_samples)
+                ]
+            ),
             point=_decode(
                 codec,
+                codes,
                 activities=point_activities[position],
                 times_to_next=point_times_to_next[position],
                 length=point_lengths[position],
@@ -101,6 +110,7 @@ def generate_batch(
             ),
             truth=_decode(
                 codec,
+                codes,
                 activities=true_activities[position],
                 times_to_next=true_times_to_next[position],
                 length=true_lengths[position],
@@ -113,6 +123,7 @@ def generate_batch(
 
 def _decode(
     codec: DatasetCodec,
+    codes: ActivityCodes,
     *,
     activities: np.ndarray,
     times_to_next: np.ndarray,
@@ -123,6 +134,7 @@ def _decode(
 
     Args:
         codec: The codec the split was encoded through, read here in the decode direction.
+        codes: The dataset's codebook, which the decoded names are spelled onto.
         activities: The run's activity indices, `[steps]`.
         times_to_next: The run's standardized wait until each of `activities`, `[steps]`.
         length: How many of them are events, the rest being the EOT and the padding behind it.
@@ -131,7 +143,7 @@ def _decode(
         The run as the report and the generations file hold it.
     """
     return DecodedEvents(
-        activities=codec.activity.decode(activities, length=length),
+        activities=codes.encode(codec.activity.decode(activities, length=length)),
         time_to_next_minutes=codec.time_to_next.denormalize(times_to_next[:length]).tolist(),
         remaining_time_minutes=float(codec.remaining_time.denormalize(remaining_time)),
     )

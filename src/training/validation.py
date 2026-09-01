@@ -8,6 +8,7 @@ from src.evaluation.scores import AccuracyScores, DistributionScores
 from src.inference.generate import generate_batch
 from src.logs.continuations import ContinuationIndex
 from src.model import TransformerCVAE
+from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss, compute_loss
 
@@ -105,6 +106,10 @@ def validate_generation(
     """
     model.eval()
 
+    # The same codebook the index was seeded from, so a generated suffix is spelled the way the
+    # continuations it is scored against are and nothing is translated per prefix.
+    codes = ActivityCodes.of(codec.activity.names)
+
     generations = [
         generation
         for batch in loader
@@ -113,6 +118,7 @@ def validate_generation(
             batch=batch.to(device),
             num_samples=num_samples,
             codec=codec,
+            codes=codes,
         )
     ]
     return GenerationMetrics(

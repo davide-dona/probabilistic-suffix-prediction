@@ -248,7 +248,11 @@ def run(
     for split, rows in ((Split.VAL, val), (Split.TEST, test)):
         with step(f'Indexing the continuations of the {split} split'):
             prefixes, occurrences = build_index(
-                rows, dataset=dataset, split=split, vocabulary=codec.activity.vocab
+                rows,
+                dataset=dataset,
+                split=split,
+                vocabulary=codec.activity.vocab,
+                names=codec.activity.names,
             )
             indexed[split] = prefixes
             print(
