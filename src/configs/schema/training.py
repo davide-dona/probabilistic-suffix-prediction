@@ -4,37 +4,25 @@ from .base import StrictModel
 
 
 class DataLoaderConfig(StrictModel):
-    """torch.utils.data.DataLoader parameters; hardware-dependent, owned by the hardware
-    profile rather than the dataset.
-    """
+    """torch.utils.data.DataLoader parameters, owned by the hardware profile."""
 
     batch_size: int = Field(..., gt=0)
     num_workers: int = Field(..., ge=0)
 
 
 class LossConfig(StrictModel):
-    """KL weighting: the annealing warmup and the free-bits floor.
+    """KL weighting: the annealing ramp and the free-bits floor.
 
-    The ramp is measured in optimizer steps, not epochs, so it means the same thing on every
-    dataset. It is a length rather than a fraction of `training.max_steps`, so a run that stops
-    early has still spent the same time reaching full weight as one that does not.
+    The ramp is a number of optimizer steps rather than a fraction of `training.max_steps`, so it
+    means the same thing on every dataset and a run that stops early has still spent the same
+    time reaching full weight.
     """
 
-    kl_annealing_ramp_steps: int = Field(
-        ..., gt=0, description='Optimizer steps spent ramping the KL weight from start to full'
-    )
-    kl_annealing_start_weight: float = Field(
-        ..., ge=0.0, description='Weight the run ramps up from'
-    )
-    kl_annealing_full_weight: float = Field(
-        ..., ge=0.0, description='Weight the run ramps up to, and holds at'
-    )
-
+    kl_annealing_ramp_steps: int = Field(..., gt=0)
+    kl_annealing_start_weight: float = Field(..., ge=0.0)
+    kl_annealing_full_weight: float = Field(..., ge=0.0)
     free_bits: float = Field(
-        ...,
-        ge=0.0,
-        description='Nats per latent dimension the KL is not penalized below. 0.0 leaves it '
-        'unfloored',
+        ..., ge=0.0, description='Nats per latent dimension the KL is not penalized below'
     )
 
 
@@ -54,35 +42,26 @@ class TrainingConfig(StrictModel):
         description='Ceiling on optimizer steps; early stopping normally ends a run first',
     )
     grad_clip_norm: float | None = Field(
-        None, gt=0.0, description='Max gradient norm; null or absent leaves gradients unclipped'
+        None, gt=0.0, description='Null or absent leaves gradients unclipped'
     )
-    device: str = Field(
-        ...,
-        pattern=r'^(cpu|mps|cuda(:\d+)?)$',
-        description='Torch device. `cuda:<n>` pins one GPU on a multi-GPU machine; bare `cuda` '
-        'takes whatever the current device is',
-    )
+    device: str = Field(..., pattern=r'^(cpu|mps|cuda(:\d+)?)$')
     val_every_n_steps: int = Field(
-        ...,
-        gt=0,
-        description='Steps between validations; also the unit `early_stopping.patience` counts in',
+        ..., gt=0, description='Also the unit `early_stopping.patience` counts in'
     )
     validation_pairs: int = Field(
-        ...,
-        gt=0,
-        description='Teacher-forced validation pairs read per validation, capped by split size',
+        ..., gt=0, description='Teacher-forced pairs read per validation, capped by split size'
     )
     generation_pairs: int = Field(
         ...,
         gt=0,
-        description='Free-running generation prefixes per validation; the sample the selection '
-        'score is computed on',
+        description='Free-running prefixes per validation; the sample the selection score is '
+        'computed on',
     )
 
 
 class EarlyStoppingConfig(StrictModel):
     """Stops training once the free-running generation score plateaus, the same score used for
-    best-model selection and reported by `pipelines/evaluate.py`.
+    best-model selection.
     """
 
     patience: int = Field(
