@@ -60,6 +60,25 @@ class RunIdentity:
 # Built once, since a `TypeAdapter` compiles the schema it validates against.
 _RUN_ADAPTER = TypeAdapter(RunIdentity)
 
+# The W&B project every run logs to, the counterpart to `scripts/hub.py`'s `HF_REPO_ID`.
+WANDB_PROJECT = 'suffix-generation'
+
+
+def wandb_id(run: RunIdentity) -> str:
+    """A run's identity, as a valid W&B run id and Artifact name.
+
+    W&B ids cannot hold `/`, so `dataset/model/tag` is joined with `-` instead. Used both as the
+    run's own id, so resuming a run resumes the same W&B run with no id carried in the checkpoint,
+    and as the name of the Artifact lineage its checkpoints are versioned under.
+
+    Args:
+        run: The run to name.
+    Returns:
+        `dataset-model-tag`.
+    """
+    return f'{run.dataset}-{run.model}-{run.tag}'
+
+
 # The schema metadata key a Parquet artifact stores the writing run's identity under, so a file
 # says what produced it rather than leaving that to be read off the path it happens to sit at.
 _RUN_KEY = b'run'

@@ -69,6 +69,7 @@ def save_checkpoint(
     optimizer_state: dict,
     early_stopping_state: dict,
     rng_state: dict,
+    git: dict,
     path: str | Path,
 ) -> Path:
     """
@@ -86,13 +87,16 @@ def save_checkpoint(
         step: The optimizer step the weights are from. The filename does not say, so the file
             has to.
         selection_score: That step's generation score, the number the best is chosen on.
-        run: Which run these weights belong to, so a resumed run keeps writing to the same
-            TensorBoard directory and the same files, and so the generations they produce are
-            named after the run rather than after the file the weights were read from.
+        run: Which run these weights belong to, so a resumed run keeps writing to the same W&B
+            run and the same files, and so the generations they produce are named after the run
+            rather than after the file the weights were read from.
         optimizer_state: The optimizer's `state_dict`.
         early_stopping_state: The `EarlyStopper`'s `state_dict`, which carries the best score
             seen as well as the patience count.
         rng_state: The random streams, as captured by `training/train.py`'s `rng_state`.
+        git: The commit that produced these weights, as `dataclasses.asdict(GitState)`.
+            Descriptive only: never required to resume, generate or publish from this file, so a
+            checkpoint written before this field existed keeps working unchanged.
         path: Where to write, its directory already made, from `paths.LAST_CHECKPOINT.prepare`
             or `paths.BEST_CHECKPOINT.prepare`.
     Returns:
@@ -114,6 +118,7 @@ def save_checkpoint(
             'optimizer_state': optimizer_state,
             'early_stopping_state': early_stopping_state,
             'rng_state': rng_state,
+            'git': git,
         },
         f=temp_path,
     )

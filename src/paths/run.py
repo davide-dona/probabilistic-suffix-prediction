@@ -70,12 +70,6 @@ class RunArtifact(Artifact):
 # What a run writes. The two checkpoints differ only in when they are written, which is why they
 # sit under one directory: both are a run's own output, and neither is what anyone downloads.
 # `scripts/publish.py` promotes one of them to the curated name `PRETRAINED` describes.
-TENSORBOARD = RunArtifact(
-    kind='tensorboard events',
-    remedy='Run `uv run python -m pipelines.train` first.',
-    directory=OUTPUTS_DIR / 'tensorboard',
-    suffix='',
-)
 LAST_CHECKPOINT = RunArtifact(
     kind='checkpoint',
     remedy='Run `uv run python -m pipelines.train` first.',

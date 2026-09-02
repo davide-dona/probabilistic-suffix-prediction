@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Mirror a training VM's outputs/ back onto this machine.
+# Pull a training VM's generations back onto this machine.
 #
-# This is a plain one-way rsync, pulling whatever is new or changed and never deleting 
+# Training curves are logged to W&B and checkpoints are either VM-resume-only (`last`) or
+# versioned as W&B Artifacts (`best`), so the only VM-side output left to fetch is what
+# `pipelines.generate` writes; evaluate and visualize already run locally against it.
+#
+# This is a plain one-way rsync, pulling whatever is new or changed and never deleting
 # anything on this side.
 set -euo pipefail
 
@@ -25,4 +29,4 @@ host="$1"
 remote_path="${2:-suffix-generation}"
 
 rsync -avz --progress "${dry_run[@]+"${dry_run[@]}"}" \
-  "$host:$remote_path/outputs/" outputs/
+  "$host:$remote_path/outputs/generations/" outputs/generations/

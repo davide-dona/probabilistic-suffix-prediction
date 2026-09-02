@@ -46,8 +46,8 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     Args:
         config: The validated experiment config.
         checkpoint: A checkpoint to carry on from, as read by `resumed`, or `None` to start a
-            new run. The run keeps the identity the checkpoint carries, so it writes to the
-            TensorBoard directory and the files the interrupted run was writing to.
+            new run. The run keeps the identity the checkpoint carries, so it writes to the same
+            W&B run and the files the interrupted run was writing to.
     """
     paths.require_preprocessed(config.data.name)
     # Checkpoints are selected on EMSC against the validation split's continuations, so the index
@@ -59,7 +59,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     generator = torch.Generator().manual_seed(config.seed)
 
     # When resuming, keep the identity the checkpoint carries, so it writes to the same
-    # TensorBoard directory and the same files.
+    # W&B run and the same files.
     run = (
         RunIdentity(
             dataset=config.data.name,
@@ -85,7 +85,6 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             f'weight decay {config.optimizer.weight_decay}',
             'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
             'checkpoints': paths.LAST_CHECKPOINT.path(run),
-            'tensorboard': paths.TENSORBOARD.path(run),
         },
     )
 
@@ -186,7 +185,7 @@ def main() -> None:
         type=paths.existing_file,
         metavar='CHECKPOINT',
         help='Path to a checkpoint to carry on from, its config included. The '
-        'run keeps its name, so it writes to the same TensorBoard directory '
+        'run keeps its name, so it writes to the same W&B run '
         'and the same files.',
     )
     parser.add_argument(

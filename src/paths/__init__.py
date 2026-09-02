@@ -29,7 +29,6 @@ from src.paths.run import (
     GENERATIONS,
     LAST_CHECKPOINT,
     PREFIX_SCORES,
-    TENSORBOARD,
     RunArtifact,
 )
 
@@ -55,7 +54,6 @@ __all__ = [
     'ROOT',
     'TABLE',
     'TABLES_DIR',
-    'TENSORBOARD',
     'VISUAL_DIR',
     'Artifact',
     'DatasetArtifact',

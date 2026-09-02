@@ -75,6 +75,7 @@ def run(model_paths: list[Path]) -> None:
 
             print(
                 f'\nRun:     {run}\n'
+                f'Commit:  {checkpoint.get("git", {}).get("commit", "unknown")}\n'
                 f'Step:    {payload["step"]} (selection score {payload["selection_score"]:.4f})\n'
                 f'Size:    {_mebibytes(model_path)} -> {_mebibytes(published)} (inference-only)\n'
                 f'Target:  {path_in_repo} on {HF_REPO_ID}\n'
