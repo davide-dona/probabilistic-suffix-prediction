@@ -40,9 +40,7 @@ The four pipelines below run in sequence, each reading what the previous one wro
 
 Preprocessing and training take `-c`/`--config`, the dataset's experiment config YAML (e.g. `config/datasets/bpic17.yaml`). 
 
-Training takes `-m`/`--model`, the architecture to build (e.g. `config/models/cvae.yaml`). Generation spells `-m` differently: there it is the trained checkpoint, a run's weights rather than an architecture.
-
-Training and generation, which build a model and a `DataLoader`, take `-w`/`--hardware`, a hardware profile YAML (e.g. `config/hardware/cuda-a6000.yaml`). 
+Training takes `-m`/`--model`, the architecture to build (e.g. `config/models/cvae.yaml`), which also carries every non-dataset setting a run needs: the optimizer, the training loop, and, for the CVAE, the loss. Generation spells `-m` differently: there it is the trained checkpoint, a run's weights rather than an architecture, and takes an optional `-d`/`--device` to generate on a different machine than the one the run trained on.
 
 ### 1. Preprocessing
 
@@ -64,10 +62,10 @@ The continuation index is read by both training (to select checkpoints) and eval
 Once the dataset is preprocessed, start a run:
 
 ```bash
-python -m pipelines.train -m config/models/<architecture>.yaml -c config/datasets/<dataset>.yaml -w config/hardware/<hardware>.yaml
+python -m pipelines.train -m config/models/<architecture>.yaml -c config/datasets/<dataset>.yaml
 ```
 
-`-m`/`--model`, `-c`/`--config` and `-w`/`--hardware` are all required. Two architectures are shipped: `config/models/cvae.yaml`, the conditional VAE, and `config/models/transformer.yaml`, the same backbone with the latent taken out. Which class gets built is read off `model.kind` inside the file. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
+`-m`/`--model` and `-c`/`--config` are both required. Two architectures are shipped: `config/models/cvae.yaml`, the conditional VAE, and `config/models/transformer.yaml`, the same backbone with the latent taken out. Which class gets built is read off `model.kind` inside the file. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
 
 #### Running a batch on every GPU at once
 
@@ -77,15 +75,17 @@ to the machine's GPUs.
 
 ```bash
 cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
-scripts/train_queue.sh -m config/models/cvae.yaml -w config/hardware/cuda-a6000.yaml   # -g 0,1 by default
+scripts/train_queue.sh -m config/models/cvae.yaml   # -g 0,1 by default
 
 cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
-scripts/generate_queue.sh -w config/hardware/cuda-a6000.yaml   # -n 100 for every job in the batch
+scripts/generate_queue.sh   # -n 100 for every job in the batch
 ```
 
 A training job is a dataset config, run under the one architecture the script was given; a generation job is a copy of a best checkpoint, which carries
 the config and the run identity of what wrote it. Both scripts are thin callers of
-`scripts/lib/queue.sh`, which is the queue itself.
+`scripts/lib/queue.sh`, which is the queue itself. Comparing both architectures over every dataset
+is running `train_queue.sh` once per model, `-m config/models/cvae.yaml` and then
+`-m config/models/transformer.yaml`, against the same queued datasets.
 
 One job per GPU at a time, and a GPU that finishes picks up the next rather than waiting on the job
 beside it. Each is launched with `CUDA_VISIBLE_DEVICES` masking in its own card, so the one profile
@@ -122,11 +122,11 @@ One run leaves one version, so an experiment's Artifact lineage reads as its run
 After training, generate suffixes for the test set:
 
 ```bash
-python -m pipelines.generate -m <path-to-checkpoint> -w config/hardware/<hardware>.yaml
+python -m pipelines.generate -m <path-to-checkpoint>
 ```
 
 - `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/` or `outputs/checkpoints/best/`.
-- `-w`/`--hardware` is the profile to generate under, replacing the one the run was trained with.
+- `-d`/`--device` overrides the device to generate on, e.g. to run on a different machine than the one the run trained on. Defaults to the run's own `training.device`.
 - `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.evaluation_samples`.
 
 The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
@@ -184,9 +184,7 @@ A dataset config declares everything a run needs: where to find the raw log and 
 
 ### Config inheritance
 
-Fields can be overridden between files. Four layers are deep-merged in order, each taking precedence over the last:
+Fields can be overridden between files. Two layers are deep-merged in order, each taking precedence over the last:
 
-1. `config/base.yaml` — default config, independent of any dataset, architecture or hardware.
-2. `config/models/<architecture>.yaml` — the `-m`/`--model` architecture, e.g. `config/models/cvae.yaml`. Owns the whole `model` section, including the `kind` that says which class to build. An architecture is chosen independently of the log it runs on, which is why it is a layer rather than a block inside a dataset config.
-3. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/cuda-a6000.yaml`. Owns everything that varies with the machine a run executes on.
-4. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log.
+1. `config/models/<architecture>.yaml` — the `-m`/`--model` architecture, e.g. `config/models/cvae.yaml`. Owns the whole `model` section, including the `kind` that says which class to build, and every other setting that does not vary with the dataset: the seed, the `dataloader`, the `optimizer`, the `training` loop, `early_stopping`, `inference`, and, for the CVAE, `model.loss`. An architecture is chosen independently of the log it runs on, which is why it is a layer rather than a block inside a dataset config; a different machine (a different device, batch size, learning rate) means a new model config variant rather than a third layer.
+2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log and `declare`, the declarative-model discovery settings.

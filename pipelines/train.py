@@ -126,7 +126,6 @@ def run(config: ExperimentConfig) -> None:
         generation_samples=config.inference.validation_samples,
         codec=codec,
         dataset=config.data.name,
-        loss_config=config.loss,
         optimizer_config=config.optimizer,
         training=config.training,
         early_stopping_config=config.early_stopping,
@@ -150,19 +149,12 @@ def main() -> None:
         metavar='MODEL',
         required=True,
         help='Path to the architecture to train, e.g. config/models/cvae.yaml. Its `model.kind` '
-        'is what selects the class that gets built.',
-    )
-    parser.add_argument(
-        '-w',
-        '--hardware',
-        type=paths.existing_file,
-        metavar='HARDWARE',
-        required=True,
-        help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
+        'is what selects the class that gets built, and it also carries every setting that does '
+        "not vary with the dataset: the training loop, the optimizer, and the model's own loss.",
     )
     args = parser.parse_args()
 
-    run(load_config(args.model, args.config, args.hardware))
+    run(load_config(args.model, args.config))
 
 
 if __name__ == '__main__':

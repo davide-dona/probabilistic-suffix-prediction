@@ -4,7 +4,7 @@ from .base import StrictModel
 
 
 class DataLoaderConfig(StrictModel):
-    """torch.utils.data.DataLoader parameters, owned by the hardware profile."""
+    """torch.utils.data.DataLoader parameters."""
 
     batch_size: int = Field(..., gt=0)
     num_workers: int = Field(..., ge=0)

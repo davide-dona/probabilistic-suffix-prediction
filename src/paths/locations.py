@@ -5,8 +5,6 @@ CONFIG_DIR = ROOT / 'config'
 DATA_DIR = ROOT / 'data'
 OUTPUTS_DIR = ROOT / 'outputs'
 PRETRAINED_DIR = ROOT / 'pretrained'
-# The layer every config is merged over
-BASE_CONFIG = CONFIG_DIR / 'base.yaml'
 # Where the visualizations go
 VISUAL_DIR = OUTPUTS_DIR / 'visual'
 FIGURES_DIR = VISUAL_DIR / 'figures'

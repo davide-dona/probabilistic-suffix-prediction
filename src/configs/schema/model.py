@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .base import NAME_PATTERN, StrictModel
+from .training import LossConfig
 
 
 class EmbeddingConfig(StrictModel):
@@ -96,13 +97,15 @@ class BackboneConfig(StrictModel):
 
 
 class CVAEConfig(BackboneConfig):
-    """Every hyperparameter of `TransformerCVAE`: the backbone, plus the latent path the
-    variability lives in."""
+    """Every hyperparameter of `TransformerCVAE`: the backbone, the latent path the variability
+    lives in, and the loss that latent is trained against - the only architecture here with a KL
+    term to weigh."""
 
     kind: Literal['cvae']
 
     prior: PriorConfig
     latent: LatentConfig
+    loss: LossConfig
 
 
 class TransformerConfig(BackboneConfig):

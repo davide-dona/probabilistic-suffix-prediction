@@ -11,7 +11,6 @@ from src.paths.dataset import (
     require_preprocessed,
 )
 from src.paths.locations import (
-    BASE_CONFIG,
     CONFIG_DIR,
     DATA_DIR,
     FIGURES_DIR,
@@ -32,7 +31,6 @@ from src.paths.run import (
 )
 
 __all__ = [
-    'BASE_CONFIG',
     'BEST_CHECKPOINT',
     'CODEC',
     'CONFIG_DIR',

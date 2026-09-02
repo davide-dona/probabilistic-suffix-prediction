@@ -67,28 +67,37 @@ ACTIVE_MARGIN_NATS = 0.05
 
 @dataclass(frozen=True, slots=True)
 class LatentMetrics(ScalarMetrics):
-    """What z carried over one pass: the KL it holds, and how many dimensions hold it.
+    """What z carried over one pass: the KL it holds, how many dimensions hold it, and the weight
+    the KL term was charged at.
 
-    Neither is a term of the loss. A total KL cannot tell a collapsed latent from a few dead
-    dimensions among used ones, which is what `free_bits` hides: a dimension below the floor is
-    left unpenalized, so a run can pay `latent_dim * free_bits` nats and carry no information.
-    Logged rather than reported, so like `Loss` it declares no units.
+    None of the three is a term of the loss. A total KL cannot tell a collapsed latent from a few
+    dead dimensions among used ones, which is what `free_bits` hides: a dimension below the floor
+    is left unpenalized, so a run can pay `latent_dim * free_bits` nats and carry no information.
+    `kl_weight` is only ever a constant of the step it was logged at, but is scaled with the
+    other two so the same averaging recovers it. Logged rather than reported, so like `Loss` it
+    declares no units.
     """
 
     kl_nats: float = 0.0
     active_dims: float = 0.0
+    kl_weight: float = 0.0
 
     @classmethod
-    def of(cls, kl_per_dim: torch.Tensor, *, free_bits: float) -> Self:
+    def of(cls, kl_per_dim: torch.Tensor, *, free_bits: float, kl_weight: float) -> Self:
         """Read one batch's KL, counting dimensions on the scale `free_bits_kl` floors.
 
         Args:
             kl_per_dim: `[batch_size, latent_dim]`, the per-dimension KL from `gaussian_kl`.
             free_bits: Nats per dimension the KL is not penalized below.
+            kl_weight: The weight this step's KL term was charged at.
         Returns:
             The metrics, scaled by the batch like the loss terms they are logged beside, so the
-            caller's division by the batch recovers both.
+            caller's division by the batch recovers all three.
         """
         batch_size = kl_per_dim.size(0)
         active = (kl_per_dim.mean(dim=0) > free_bits + ACTIVE_MARGIN_NATS).sum().item()
-        return cls(kl_nats=kl_per_dim.sum().item(), active_dims=active * batch_size)
+        return cls(
+            kl_nats=kl_per_dim.sum().item(),
+            active_dims=active * batch_size,
+            kl_weight=kl_weight * batch_size,
+        )

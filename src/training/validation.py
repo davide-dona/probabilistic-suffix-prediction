@@ -10,7 +10,7 @@ from src.logs.continuations import ContinuationIndex
 from src.model import SuffixModel
 from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
-from src.training.loss import Loss, compute_loss
+from src.training.loss import Loss
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,20 +28,15 @@ class GenerationMetrics:
 
 @torch.no_grad()
 def validate(
-    model: SuffixModel,
-    loader: DataLoader,
-    *,
-    kl_weight: float,
-    free_bits: float,
-    device: torch.device,
+    model: SuffixModel, loader: DataLoader, *, step: int, device: torch.device
 ) -> tuple[Loss, LatentMetrics | None]:
     """
     Run one pass over `loader` without learning from it.
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
         loader: The dataloader to iterate over. Its batches are `SplitTrace`s.
-        kl_weight: The weight this step's KL term is given.
-        free_bits: Nats per latent dimension the KL is not penalized below.
+        step: The training step this pass scores, for a model whose loss anneals a term over
+            the run.
         device: The device to run the computations on.
     Returns:
         The loss terms of the pass and what the latent carried, both averaged over the traces
@@ -54,13 +49,7 @@ def validate(
     for batch in loader:
         batch = batch.to(device)
         output = model(batch)
-        _, metrics, latent = compute_loss(
-            output,
-            batch,
-            pad_activity_index=model.pad_activity_index,
-            kl_weight=kl_weight,
-            free_bits=free_bits,
-        )
+        _, metrics, latent = model.compute_loss(output, batch, step=step)
         totals += metrics
         if latent is not None:
             latent_totals = latent if latent_totals is None else latent_totals + latent

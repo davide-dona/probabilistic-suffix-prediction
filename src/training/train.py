@@ -4,20 +4,14 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from src import paths
-from src.configs.schema import (
-    EarlyStoppingConfig,
-    LossConfig,
-    OptimizerConfig,
-    TrainingConfig,
-)
+from src.configs.schema import EarlyStoppingConfig, OptimizerConfig, TrainingConfig
 from src.datasets.codec import DatasetCodec
 from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
 from src.model import SuffixModel, save_checkpoint
 from src.training.early_stopping import EarlyStopper
-from src.training.kl import linear_warmup_weight
-from src.training.loss import Loss, compute_loss
+from src.training.loss import Loss
 from src.training.validation import validate, validate_generation
 
 
@@ -32,7 +26,6 @@ def train(
     dataset: str,
     run: RunIdentity,
     experiment_config: dict,
-    loss_config: LossConfig,
     optimizer_config: OptimizerConfig,
     training: TrainingConfig,
     early_stopping_config: EarlyStoppingConfig,
@@ -66,7 +59,6 @@ def train(
             its tag unique is the caller's business.
         experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
-        loss_config: The KL annealing schedule.
         optimizer_config: The optimizer hyperparameters.
         training: Step budget, validation cadence, gradient clipping and device.
         early_stopping_config: When to give up.
@@ -113,24 +105,12 @@ def train(
             for batch in train_loader:
                 model.train()
                 batch = batch.to(device)
-                # Get the current KL weight for this step
-                kl_weight = linear_warmup_weight(
-                    step,
-                    ramp_steps=loss_config.kl_annealing_ramp_steps,
-                    start=loss_config.kl_annealing_start_weight,
-                    stop=loss_config.kl_annealing_full_weight,
-                )
                 # Run a forward pass
                 output = model(batch)
 
-                # Compute the loss and propagate gradients
-                loss, metrics, latent = compute_loss(
-                    output,
-                    batch,
-                    pad_activity_index=model.pad_activity_index,
-                    kl_weight=kl_weight,
-                    free_bits=loss_config.free_bits,
-                )
+                # Compute the loss and propagate gradients. Whatever the architecture anneals or
+                # charges a KL term for is its own business, read off `step`.
+                loss, metrics, latent = model.compute_loss(output, batch, step=step)
                 optimizer.zero_grad()
                 loss.backward()
                 if training.grad_clip_norm is not None:
@@ -153,13 +133,7 @@ def train(
 
                     # Score the model on the validation set and the generation set, and log
                     # the results.
-                    val_metrics, val_latent = validate(
-                        model,
-                        val_loader,
-                        kl_weight=kl_weight,
-                        free_bits=loss_config.free_bits,
-                        device=device,
-                    )
+                    val_metrics, val_latent = validate(model, val_loader, step=step, device=device)
                     val_metrics.log(step, prefix='val')
                     if val_latent is not None:
                         val_latent.log(step, prefix='val')
@@ -175,13 +149,14 @@ def train(
                     gen_metrics.accuracy.log(step, prefix='gen')
                     gen_metrics.distribution.log(step, prefix='gen')
 
-                    if val_latent is not None:
-                        wandb.log({'kl_weight': kl_weight}, step=step)
+                    # `val_latent.log` above already wrote `kl_weight` beside the rest of the
+                    # latent metrics; only a model with a latent has one to show here.
+                    kl_info = f'kl {val_latent.kl_weight:.2f}  ' if val_latent is not None else ''
 
                     # The one line of live feedback: enough to see a run is alive and heading down
                     print(
                         f'Step {step:>{len(str(training.max_steps))}}/{training.max_steps}  '
-                        f'kl {kl_weight:.2f}  train {train_metrics.loss:.4f}  '
+                        f'{kl_info}train {train_metrics.loss:.4f}  '
                         f'val {val_metrics.loss:.4f}  '
                         f'gen_dls {gen_metrics.accuracy.dls_mean:.4f} mean / '
                         f'{gen_metrics.accuracy.dls_point:.4f} point  '
