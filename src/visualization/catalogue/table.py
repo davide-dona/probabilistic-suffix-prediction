@@ -38,8 +38,9 @@ class Table:
 
 
 # One table per question a mean can answer. Fidelity is one of the two goals stated for the model;
-# the accuracy table is neither of them, but is the comparison against a deterministic baseline on
-# the ground the literature already reads it on.
+# the two accuracy tables are neither of them, but the comparison against a deterministic
+# baseline (`accuracy-point`) and the check against the prefix's own ground truth
+# (`accuracy-generative`) on the ground the literature already reads a model on.
 #
 # Conformance, the other goal, is not tabulated: every model of every log sits within a few points
 # of the log's own conformance, where a mean over the whole split says nothing a reader can act on.
@@ -78,9 +79,10 @@ TABLES = (
     # times, where recall is weighted by how often each continuation occurred and so is the share
     # of what actually happens that the model reproduces.
     #
-    # The sampled DLS is in no table for now. It is the expected accuracy of one draw, which a
-    # model collapsed onto a mode maximizes, so it does not settle this question either;
-    # `dls-by-length` still draws it against the point estimate.
+    # The sampled DLS is not a fidelity column: it is the expected accuracy of one draw, which a
+    # model collapsed onto a mode maximizes, so it does not settle this question. `dls-by-length`
+    # draws it against the point estimate, and `accuracy-generative` below tabulates it beside hit
+    # rate as a check against the prefix's own ground truth.
     Table(
         name='fidelity',
         axis=Axis.OVERALL,
@@ -92,6 +94,23 @@ TABLES = (
             MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
             MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Rem. time W1'),
             MetricEntry(METRICS['activity_time_wasserstein_days'], 'Event time W1'),
+        ),
+    ),
+    # Whether the generated samples themselves, rather than the point prediction or the
+    # distribution they approximate, ever reproduce the one suffix the prefix actually took.
+    # Hit rate is exact-match, so it does not overlap `accuracy-point`'s edit distance or
+    # `fidelity`'s distributional read; the sampled DLS is the same samples' distance from that
+    # same truth read continuously rather than as a hit.
+    Table(
+        name='accuracy-generative',
+        axis=Axis.OVERALL,
+        note='Hit rate is the share of prefixes whose first k samples include the exact ground '
+        'truth suffix.',
+        columns=(
+            MetricEntry(METRICS['hit_rate_at_1'], 'Hit rate@1'),
+            MetricEntry(METRICS['hit_rate_at_5'], 'Hit rate@5'),
+            MetricEntry(METRICS['hit_rate_at_10'], 'Hit rate@10'),
+            MetricEntry(METRICS['dls_mean'], 'DLS'),
         ),
     ),
 )

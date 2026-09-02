@@ -22,7 +22,9 @@ from src.visualization import (
 
 # Which metrics the figures draw, so the per-prefix scores are read for those alone. Named off the
 # catalogue rather than listed, so a metric added to a figure reaches the read with no change here.
-_BANDED_METRICS = tuple(dict.fromkeys(entry.key for plot in FIGURES for entry in plot.metrics))
+_BANDED_METRICS = tuple(
+    dict.fromkeys(entry.key for plot in FIGURES for panel in plot.panels for entry in panel)
+)
 # Which breakdowns are bounded: the two a figure draws a line along. The overall one is not one of
 # them, `read_intervals` saying why.
 _BANDED_AXES = (Axis.PREFIX, Axis.SUFFIX)
