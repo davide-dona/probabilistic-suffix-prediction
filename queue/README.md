@@ -7,16 +7,17 @@ folder to the machine's GPUs.
 
 ```bash
 cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
-scripts/train_queue.sh -w config/hardware/cuda-a6000.yaml
+scripts/train_queue.sh -m config/models/cvae.yaml
 ```
 
-A job is a dataset config, and is named here by the config's own filename.
+A job is a dataset config, and is named here by the config's own filename. One architecture per
+sweep, so comparing both means running the script again with `-m config/models/transformer.yaml`.
 
 ## Generation
 
 ```bash
 cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
-scripts/generate_queue.sh -w config/hardware/cuda-a6000.yaml   # -n 100 for every job in the batch
+scripts/generate_queue.sh   # -n 100 for every job in the batch, -d <device> to override
 ```
 
 A job is a copy of a best checkpoint, since a checkpoint carries the config and the run identity

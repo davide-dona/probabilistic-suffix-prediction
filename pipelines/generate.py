@@ -14,11 +14,11 @@ from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
 from src.logs.keys import Split
-from src.model import TransformerCVAE, load_checkpoint
+from src.model import load_checkpoint, model_from_checkpoint
 from src.suffixes import ActivityCodes
 
 
-def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> None:
+def run(checkpoint_path: Path, *, device: str | None, num_samples: int | None) -> None:
     """Generate suffixes for every prefix of the test split and write them out.
 
     Args:
@@ -26,18 +26,18 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
             matches every run ever started from it, and picking one of them is a decision the
             caller makes, not one to be inferred from a filename. It carries the config of the
             run that wrote it, so nothing about the model or the dataset is passed alongside it.
-        hardware: The hardware profile to generate under, replacing the one the run was trained
-            with.
+        device: Overrides the run's own `training.device`, e.g. to generate on a different
+            machine than the one it trained on. `None` keeps it.
         num_samples: How many suffixes to draw per prefix, or `None` for the run's own
             `inference.evaluation_samples`.
     """
-    # The run's own config, resized for the machine in hand. Read before the codec, since it is
-    # what says which dataset's codec to read.
+    # The run's own config. Read before the codec, since it is what says which dataset's codec
+    # to read.
     with step(f'Reading the checkpoint at {checkpoint_path}'):
         checkpoint = load_checkpoint(checkpoint_path)
     run = RunIdentity.from_dict(checkpoint['run'])
     config = load_generation_config(
-        checkpoint['experiment_config'], hardware=hardware, num_samples=num_samples
+        checkpoint['experiment_config'], device=device, num_samples=num_samples
     )
 
     paths.require_preprocessed(config.data.name)
@@ -74,7 +74,7 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
         codec = DatasetCodec.load(config.data)
 
     with step(f'Building the model and moving it onto {device}'):
-        model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
+        model = model_from_checkpoint(checkpoint, codec, device=config.training.device)
         model.eval()
 
     # Build the DataLoader for the test split
@@ -134,12 +134,13 @@ def main() -> None:
         'the model and the dataset are read from.',
     )
     parser.add_argument(
-        '-w',
-        '--hardware',
-        type=paths.existing_file,
-        metavar='HARDWARE',
-        required=True,
-        help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
+        '-d',
+        '--device',
+        type=str,
+        default=None,
+        metavar='DEVICE',
+        help='Overrides the device to generate on, e.g. cpu or cuda:1. Defaults to the device '
+        'the run was trained with.',
     )
     parser.add_argument(
         '-n',
@@ -152,7 +153,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run(args.checkpoint, hardware=args.hardware, num_samples=args.num_samples)
+    run(args.checkpoint, device=args.device, num_samples=args.num_samples)
 
 
 if __name__ == '__main__':

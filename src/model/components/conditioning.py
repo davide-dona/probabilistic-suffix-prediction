@@ -10,12 +10,14 @@ class Modulation:
     and scales the branch the sublayer contributes back to the residual stream.
 
     Each field is `[batch_size, 1, d_model]`, the middle axis broadcasting over positions: z says
-    one thing about the whole suffix, so every position of a sequence is modulated alike.
+    one thing about the whole suffix, so every position of a sequence is modulated alike. A
+    modulation standing for no latent at all carries plain floats instead, which broadcast
+    against any shape.
     """
 
-    scale: torch.Tensor
-    shift: torch.Tensor
-    gate: torch.Tensor
+    scale: torch.Tensor | float
+    shift: torch.Tensor | float
+    gate: torch.Tensor | float
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,15 @@ class LayerModulation:
     self_attention: Modulation
     cross_attention: Modulation
     feedforward: Modulation
+
+
+# What a decoder with no latent applies: scale 1, shift 0, gate 1, which is the plain pre-norm
+# block the modulation is layered onto. Kept as one constant rather than a branch in every
+# sublayer, so conditioned and unconditioned decoding are one code path.
+_UNCHANGED = Modulation(scale=1.0, shift=0.0, gate=1.0)
+UNCONDITIONED = LayerModulation(
+    self_attention=_UNCHANGED, cross_attention=_UNCHANGED, feedforward=_UNCHANGED
+)
 
 
 def modulate(hidden: torch.Tensor, modulation: Modulation) -> torch.Tensor:

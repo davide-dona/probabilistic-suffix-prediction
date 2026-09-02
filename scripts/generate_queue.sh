@@ -12,23 +12,22 @@ readonly QUEUE_DIR='queue/generate'
 readonly LOGS='outputs/queue/generate'
 readonly SUFFIX='.pt'
 gpus=(0 1)
-hardware=''
+device=()
 samples=()
 
 usage() {
-  echo "usage: $0 -w config/hardware/<profile>.yaml [-g 0,1] [-n <samples>]" >&2
+  echo "usage: $0 [-d <device>] [-g 0,1] [-n <samples>]" >&2
   exit 2
 }
 
-while getopts ':w:g:n:' opt; do
+while getopts ':d:g:n:' opt; do
   case "$opt" in
-    w) hardware="$OPTARG" ;;
+    d) device=(-d "$OPTARG") ;;
     g) IFS=',' read -r -a gpus <<<"$OPTARG" ;;
     n) samples=(-n "$OPTARG") ;;
     *) usage ;;
   esac
 done
-[[ -f "$hardware" ]] || usage
 
 mkdir -p "$QUEUE_DIR"
 
@@ -39,7 +38,7 @@ job_name() {
 }
 
 run_job() {
-  uv run python -m pipelines.generate -m "$1" -w "$hardware" "${samples[@]+"${samples[@]}"}"
+  uv run python -m pipelines.generate -m "$1" "${device[@]+"${device[@]}"}" "${samples[@]+"${samples[@]}"}"
 }
 
 queue_run "${gpus[@]}"

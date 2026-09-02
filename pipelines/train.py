@@ -12,7 +12,7 @@ from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs.keys import Split
-from src.model import TransformerCVAE
+from src.model import build_model
 from src.training.train import train
 
 
@@ -60,7 +60,7 @@ def run(config: ExperimentConfig) -> None:
         codec = DatasetCodec.load(config.data)
 
     with step(f'Building the model and moving it onto {config.training.device}'):
-        model = TransformerCVAE(config.model, codec).to(config.training.device)
+        model = build_model(config.model, codec).to(config.training.device)
         parameters = sum(parameter.numel() for parameter in model.parameters())
         print(f'  {parameters:,} parameters', flush=True)
 
@@ -126,7 +126,6 @@ def run(config: ExperimentConfig) -> None:
         generation_samples=config.inference.validation_samples,
         codec=codec,
         dataset=config.data.name,
-        loss_config=config.loss,
         optimizer_config=config.optimizer,
         training=config.training,
         early_stopping_config=config.early_stopping,
@@ -144,16 +143,18 @@ def main() -> None:
         help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
     )
     parser.add_argument(
-        '-w',
-        '--hardware',
+        '-m',
+        '--model',
         type=paths.existing_file,
-        metavar='HARDWARE',
+        metavar='MODEL',
         required=True,
-        help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
+        help='Path to the architecture to train, e.g. config/models/cvae.yaml. Its `model.kind` '
+        'is what selects the class that gets built, and it also carries every setting that does '
+        "not vary with the dataset: the training loop, the optimizer, and the model's own loss.",
     )
     args = parser.parse_args()
 
-    run(load_config(args.config, args.hardware))
+    run(load_config(args.model, args.config))
 
 
 if __name__ == '__main__':

@@ -1,16 +1,16 @@
+# The conditional VAE: the backbone below, plus the latent the variability lives in. Every
+# non-architecture setting a run needs - the optimizer, the training loop, the loss - lives in
+# this one file too, so it and a dataset config together fully describe a run.
 seed: 42
 
-# Declarative model discovered from the train split during preprocessing,
-# written to data/<dataset>/declare/model.decl.
-declare:
-  consider_vacuity: false # unactivated constraints are considered as violated
-  min_support: 0.8        # fraction of train traces that satisfy a constraint for it to be included in the model
-  itemsets_support: 0.9   # build itemsets of activities that co-occur in at least this fraction of train traces
-  max_cardinality: 2      # highest n tried for the templates that take one
+dataloader:
+  batch_size: 4096
+  # 48 vCPUs, so cores are not the constraint: each worker prefetches two of these batches,
+  # and a batch of 4096 padded prefix/suffix pairs is hundreds of MB of host memory.
+  num_workers: 12
 
-
-# Model architecture
 model:
+  kind: cvae
   # Names every run this architecture produces, and the series it is drawn as.
   name: cvae
 
@@ -41,7 +41,8 @@ model:
   latent:
     latent_dim: 16  # z only carries what the prefix leaves undetermined
 
-  # Causal self-attention over the suffix, cross-attention over the encoded prefix.
+  # Causal self-attention over the suffix, cross-attention over the encoded prefix. Its heads are
+  # read greedily: a suffix is one draw from z rather than a run of independent per-step draws.
   decoder:
     num_layers: 4
     num_heads: 8
@@ -50,28 +51,32 @@ model:
     activity_dropout: 0.3  # teacher-forced activities blanked in training, so the decoder must lean on z
     head_hidden_dim: 128
 
-# All the hyperparameters below are defined in steps, not epochs, 
-# so that they are independent of the dataset size and batch size.
-loss:
-  # KL annealing: the KL term is ramped up from 0 to full weight over the first
-  # `kl_annealing_ramp_steps` steps, set per hardware profile.
-  kl_annealing_start_weight: 0.0
-  # Plain ELBO
-  kl_annealing_full_weight: 1.0
-  # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
-  free_bits: 0.3
+  # All the hyperparameters below are defined in steps, not epochs, so that they are independent
+  # of the dataset size and batch size. The only architecture here with a KL term to weigh.
+  loss:
+    # KL annealing: the KL term is ramped up from 0 to full weight over the first
+    # `kl_annealing_ramp_steps` steps.
+    kl_annealing_ramp_steps: 1500
+    # Plain ELBO
+    kl_annealing_start_weight: 0.0
+    kl_annealing_full_weight: 1.0
+    # nats/dimension floor below which the KL is not penalized; keeps z from collapsing
+    free_bits: 0.3
 
-# lr is set per hardware profile, in config/hardware/, since it scales with batch_size.
 optimizer:
+  lr: 0.0012
   weight_decay: 0.0
 
 training:
+  # Dual RTX A6000 workstation, 48GB GPU memory each; `cuda:0` pins one of the two.
+  device: cuda:0
+  max_steps: 6000
+  val_every_n_steps: 50
   grad_clip_norm: 5.0  # null to leave gradients unclipped
   # Fixed slice of the evaluation set used for validation;
   # Using the full evaluation set for validation would be too slow
   validation_pairs: 20000
   generation_pairs: 1024
-  
 
 early_stopping:
   patience: 30   # number of validation checks with no improvement after which training will be stopped
@@ -84,3 +89,4 @@ inference:
   # The pass over the whole test split that a report is built from. Paid for once per run, and a
   # hundred draws describe p(suffix | prefix) far better than ten.
   evaluation_samples: 100
+  generation_rows_upper_bound: 10240

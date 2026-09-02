@@ -7,11 +7,11 @@ from torch import nn
 
 from src.identity import RunIdentity
 
-# What rebuilding the model a checkpoint holds reads, and so what `TransformerCVAE.from_checkpoint`
+# What rebuilding the model a checkpoint holds reads, and so what `model_from_checkpoint`
 # refuses to guess at.
 MODEL_KEYS = ('model_config', 'model_state_dict')
 
-# The whole of a checkpoint: the two keys `TransformerCVAE.from_checkpoint` reads, the one
+# The whole of a checkpoint: the two keys `model_from_checkpoint` reads, the one
 # `pipelines/generate.py` names its output after, and two that say which step of which run this is
 # and how well it scored. A run is never carried on from, so there is no optimizer, early-stopping
 # or random state here and no second, fatter kind of checkpoint to tell this one apart from: the
@@ -67,7 +67,7 @@ def save_checkpoint(
         model: The model whose weights to save.
         experiment_config: The run's whole `ExperimentConfig`, dumped to plain data, so that
             rebuilding needs nothing but this file. Its `model` section is written out beside it,
-            since that is all `TransformerCVAE.from_checkpoint` reads.
+            since that is all `model_from_checkpoint` reads.
         step: The optimizer step the weights are from. The filename does not say, so the file
             has to.
         selection_score: That step's generation score, the number the best is chosen on.

@@ -60,29 +60,8 @@ data:
   log_scaled_remaining_time: false
   log_scaled_time_to_next: false
 
-# Sepsis is a much smaller log than the bpic logs: the model is sized down accordingly.
-model:
-  name: cvae-small
-
-  d_model: 32
-
-  embeddings:
-    resource_dim: 16
-    feature_dim: 4
-
-  encoder:
-    num_layers: 4
-    num_heads: 8
-    feedforward_dim: 128
-
-  prior:
-    hidden_dims: [64]
-
-  latent:
-    latent_dim: 8
-
-  decoder:
-    num_layers: 4
-    num_heads: 8
-    feedforward_dim: 128
-    head_hidden_dim: 64
+declare:
+  consider_vacuity: false # unactivated constraints are considered as violated
+  min_support: 0.8        # fraction of train traces that satisfy a constraint for it to be included in the model
+  itemsets_support: 0.9   # build itemsets of activities that co-occur in at least this fraction of train traces
+  max_cardinality: 2      # highest n tried for the templates that take one

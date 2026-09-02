@@ -10,21 +10,24 @@ readonly QUEUE_DIR='queue/train'
 readonly LOGS='outputs/queue/train'
 readonly SUFFIX='.yaml'
 gpus=(0 1)
-hardware=''
+model=''
 
 usage() {
-  echo "usage: $0 -w config/hardware/<profile>.yaml [-g 0,1]" >&2
+  echo "usage: $0 -m config/models/<architecture>.yaml [-g 0,1]" >&2
   exit 2
 }
 
-while getopts ':w:g:' opt; do
+# One architecture per sweep: the queue holds dataset configs, so the model is named once here
+# rather than copied into every one of them. A full comparison across architectures is running
+# this script once per model.
+while getopts ':m:g:' opt; do
   case "$opt" in
-    w) hardware="$OPTARG" ;;
+    m) model="$OPTARG" ;;
     g) IFS=',' read -r -a gpus <<<"$OPTARG" ;;
     *) usage ;;
   esac
 done
-[[ -f "$hardware" ]] || usage
+[[ -f "$model" ]] || usage
 
 mkdir -p "$QUEUE_DIR"
 
@@ -34,7 +37,7 @@ job_name() {
 }
 
 run_job() {
-  uv run python -m pipelines.train -c "$1" -w "$hardware"
+  uv run python -m pipelines.train -m "$model" -c "$1"
 }
 
 queue_run "${gpus[@]}"
