@@ -12,7 +12,7 @@ from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs.keys import Split
-from src.model import TransformerCVAE
+from src.model import build_model
 from src.training.train import train
 
 
@@ -60,7 +60,7 @@ def run(config: ExperimentConfig) -> None:
         codec = DatasetCodec.load(config.data)
 
     with step(f'Building the model and moving it onto {config.training.device}'):
-        model = TransformerCVAE(config.model, codec).to(config.training.device)
+        model = build_model(config.model, codec).to(config.training.device)
         parameters = sum(parameter.numel() for parameter in model.parameters())
         print(f'  {parameters:,} parameters', flush=True)
 
@@ -144,6 +144,15 @@ def main() -> None:
         help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
     )
     parser.add_argument(
+        '-m',
+        '--model',
+        type=paths.existing_file,
+        metavar='MODEL',
+        required=True,
+        help='Path to the architecture to train, e.g. config/models/cvae.yaml. Its `model.kind` '
+        'is what selects the class that gets built.',
+    )
+    parser.add_argument(
         '-w',
         '--hardware',
         type=paths.existing_file,
@@ -153,7 +162,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    run(load_config(args.config, args.hardware))
+    run(load_config(args.model, args.config, args.hardware))
 
 
 if __name__ == '__main__':

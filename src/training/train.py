@@ -14,7 +14,7 @@ from src.datasets.codec import DatasetCodec
 from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
-from src.model import TransformerCVAE, save_checkpoint
+from src.model import SuffixModel, save_checkpoint
 from src.training.early_stopping import EarlyStopper
 from src.training.kl import linear_warmup_weight
 from src.training.loss import Loss, compute_loss
@@ -23,7 +23,7 @@ from src.training.validation import validate, validate_generation
 
 def train(
     *,
-    model: TransformerCVAE,
+    model: SuffixModel,
     train_loader: DataLoader,
     val_loader: DataLoader,
     generation_loader: DataLoader,
@@ -143,7 +143,9 @@ def train(
                 seen += batch_size
                 step += 1
                 (metrics / batch_size).log(step, prefix='train')
-                (latent / batch_size).log(step, prefix='train')
+                # Only a model with a latent has one to watch, and only it is charged a KL term.
+                if latent is not None:
+                    (latent / batch_size).log(step, prefix='train')
 
                 if step % training.val_every_n_steps == 0 or step >= training.max_steps:
                     train_metrics = interval_totals / seen
@@ -159,7 +161,8 @@ def train(
                         device=device,
                     )
                     val_metrics.log(step, prefix='val')
-                    val_latent.log(step, prefix='val')
+                    if val_latent is not None:
+                        val_latent.log(step, prefix='val')
 
                     gen_metrics = validate_generation(
                         model,
@@ -172,7 +175,8 @@ def train(
                     gen_metrics.accuracy.log(step, prefix='gen')
                     gen_metrics.distribution.log(step, prefix='gen')
 
-                    wandb.log({'kl_weight': kl_weight}, step=step)
+                    if val_latent is not None:
+                        wandb.log({'kl_weight': kl_weight}, step=step)
 
                     # The one line of live feedback: enough to see a run is alive and heading down
                     print(

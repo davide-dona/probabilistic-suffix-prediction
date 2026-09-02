@@ -7,7 +7,7 @@ from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import AccuracyScores, DistributionScores
 from src.inference.generate import generate_batch
 from src.logs.continuations import ContinuationIndex
-from src.model import TransformerCVAE
+from src.model import SuffixModel
 from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss, compute_loss
@@ -28,13 +28,13 @@ class GenerationMetrics:
 
 @torch.no_grad()
 def validate(
-    model: TransformerCVAE,
+    model: SuffixModel,
     loader: DataLoader,
     *,
     kl_weight: float,
     free_bits: float,
     device: torch.device,
-) -> tuple[Loss, LatentMetrics]:
+) -> tuple[Loss, LatentMetrics | None]:
     """
     Run one pass over `loader` without learning from it.
     Args:
@@ -45,12 +45,12 @@ def validate(
         device: The device to run the computations on.
     Returns:
         The loss terms of the pass and what the latent carried, both averaged over the traces
-        of the split.
+        of the split. The latter is None where the model has no latent.
     """
     model.eval()
 
     totals = Loss()
-    latent_totals = LatentMetrics()
+    latent_totals: LatentMetrics | None = None
     for batch in loader:
         batch = batch.to(device)
         output = model(batch)
@@ -62,15 +62,16 @@ def validate(
             free_bits=free_bits,
         )
         totals += metrics
-        latent_totals += latent
+        if latent is not None:
+            latent_totals = latent if latent_totals is None else latent_totals + latent
 
     traces = len(loader.dataset)
-    return totals / traces, latent_totals / traces
+    return totals / traces, None if latent_totals is None else latent_totals / traces
 
 
 @torch.no_grad()
 def validate_generation(
-    model: TransformerCVAE,
+    model: SuffixModel,
     loader: DataLoader,
     *,
     num_samples: int,

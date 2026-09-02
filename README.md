@@ -40,6 +40,8 @@ The four pipelines below run in sequence, each reading what the previous one wro
 
 Preprocessing and training take `-c`/`--config`, the dataset's experiment config YAML (e.g. `config/datasets/bpic17.yaml`). 
 
+Training takes `-m`/`--model`, the architecture to build (e.g. `config/models/cvae.yaml`). Generation spells `-m` differently: there it is the trained checkpoint, a run's weights rather than an architecture.
+
 Training and generation, which build a model and a `DataLoader`, take `-w`/`--hardware`, a hardware profile YAML (e.g. `config/hardware/cuda-a6000.yaml`). 
 
 ### 1. Preprocessing
@@ -62,10 +64,10 @@ The continuation index is read by both training (to select checkpoints) and eval
 Once the dataset is preprocessed, start a run:
 
 ```bash
-python -m pipelines.train -c config/datasets/<dataset>.yaml -w config/hardware/<hardware>.yaml
+python -m pipelines.train -m config/models/<architecture>.yaml -c config/datasets/<dataset>.yaml -w config/hardware/<hardware>.yaml
 ```
 
-Both `-c`/`--config` and `-w`/`--hardware` are required. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
+`-m`/`--model`, `-c`/`--config` and `-w`/`--hardware` are all required. Two architectures are shipped: `config/models/cvae.yaml`, the conditional VAE, and `config/models/transformer.yaml`, the same backbone with the latent taken out. Which class gets built is read off `model.kind` inside the file. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
 
 #### Running a batch on every GPU at once
 
@@ -75,13 +77,13 @@ to the machine's GPUs.
 
 ```bash
 cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
-scripts/train_queue.sh -w config/hardware/cuda-a6000.yaml      # -g 0,1 by default
+scripts/train_queue.sh -m config/models/cvae.yaml -w config/hardware/cuda-a6000.yaml   # -g 0,1 by default
 
 cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
 scripts/generate_queue.sh -w config/hardware/cuda-a6000.yaml   # -n 100 for every job in the batch
 ```
 
-A training job is a dataset config; a generation job is a copy of a best checkpoint, which carries
+A training job is a dataset config, run under the one architecture the script was given; a generation job is a copy of a best checkpoint, which carries
 the config and the run identity of what wrote it. Both scripts are thin callers of
 `scripts/lib/queue.sh`, which is the queue itself.
 
@@ -182,8 +184,9 @@ A dataset config declares everything a run needs: where to find the raw log and 
 
 ### Config inheritance
 
-Fields can be overridden between files. Three layers are deep-merged in order, each taking precedence over the last:
+Fields can be overridden between files. Four layers are deep-merged in order, each taking precedence over the last:
 
-1. `config/base.yaml` — default config, independent of any dataset or hardware.
-2. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/cuda-a6000.yaml`. Owns everything that varies with the machine a run executes on.
-3. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log and any dataset-specific overrides, such as `sepsis.yaml`'s model, sized down for a log two orders of magnitude smaller than the bpic ones.
+1. `config/base.yaml` — default config, independent of any dataset, architecture or hardware.
+2. `config/models/<architecture>.yaml` — the `-m`/`--model` architecture, e.g. `config/models/cvae.yaml`. Owns the whole `model` section, including the `kind` that says which class to build. An architecture is chosen independently of the log it runs on, which is why it is a layer rather than a block inside a dataset config.
+3. `config/hardware/<hardware>.yaml` — the `-w`/`--hardware` profile, e.g. `config/hardware/cuda-a6000.yaml`. Owns everything that varies with the machine a run executes on.
+4. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log.

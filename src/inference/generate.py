@@ -4,7 +4,7 @@ from src.configs.schema import InferenceConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.inference.generation import DecodedEvents, Draws, Generation
-from src.model import TransformerCVAE
+from src.model import SuffixModel
 from src.suffixes import ActivityCodes
 
 
@@ -31,7 +31,7 @@ def generation_batch_size(
 
 
 def generate_batch(
-    model: TransformerCVAE,
+    model: SuffixModel,
     batch: SplitTrace,
     *,
     num_samples: int,
@@ -58,7 +58,7 @@ def generate_batch(
         behind it both dropped.
     """
     generated = model.generate(item=batch, num_samples=num_samples)
-    point = model.generate(item=batch, num_samples=1, sample_latent=False)
+    point = model.generate(item=batch, num_samples=1, sample=False)
 
     # Every suffix closes on an EOT, so true lengths are one less tha batch.suffix.length.
     true_lengths = (batch.suffix.length - 1).cpu().numpy()  # [batch_size]

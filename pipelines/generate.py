@@ -14,7 +14,7 @@ from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
 from src.logs.keys import Split
-from src.model import TransformerCVAE, load_checkpoint
+from src.model import load_checkpoint, model_from_checkpoint
 from src.suffixes import ActivityCodes
 
 
@@ -74,7 +74,7 @@ def run(checkpoint_path: Path, *, hardware: Path, num_samples: int | None) -> No
         codec = DatasetCodec.load(config.data)
 
     with step(f'Building the model and moving it onto {device}'):
-        model = TransformerCVAE.from_checkpoint(checkpoint, codec, device=config.training.device)
+        model = model_from_checkpoint(checkpoint, codec, device=config.training.device)
         model.eval()
 
     # Build the DataLoader for the test split

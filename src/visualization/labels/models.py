@@ -25,14 +25,10 @@ MODELS = Registry[ModelStyle](
     where='MODELS in src/visualization/labels/models.py',
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'cvae-small': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        # The SuTraN-matched backbone, which is what a CVAE run is now named after.
-        'cvae-sutran-match': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'cvae-small-sutran-match': ModelStyle(
-            label='CVAE', color='#2E8B57', marker='*', linestyle='-'
-        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
-        'sutran': ModelStyle(label='SuTraN', color='#6B3FA0', marker='D', linestyle=':'),
+        # The same backbone with the latent taken out, drawn where SuTraN used to be: it stands in
+        # the same place, as the arm whose variability comes from its heads instead.
+        'transformer': ModelStyle(label='Transformer', color='#6B3FA0', marker='D', linestyle=':'),
     },
 )
 

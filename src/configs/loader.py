@@ -37,19 +37,26 @@ def _read(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def load_config(config: Path, hardware: Path) -> ExperimentConfig:
-    """Load and validate an experiment config, merging the base config,
-    the hardware profile, and the dataset config in that order.
+def load_config(model: Path, config: Path, hardware: Path) -> ExperimentConfig:
+    """Load and validate an experiment config, merging the base config, the model, the hardware
+    profile and the dataset config in that order.
+
+    The model is a layer of its own because an architecture is chosen independently of the log it
+    is run on: one file per architecture against one per dataset, rather than a copy of each
+    model's widths in every dataset config.
 
     Args:
+        model: Path to the model config YAML, e.g. config/models/cvae.yaml. Its `model.kind` is
+            what says which architecture the run builds.
         config: Path to the dataset config YAML, e.g. config/datasets/bpic17.yaml.
         hardware: Path to the hardware profile YAML, e.g. config/hardware/cuda-a6000.yaml.
     Returns:
         The validated config.
     """
-    # Load the base config, the hardware profile, and the dataset.
+    # Load the base config, the model, the hardware profile, and the dataset.
     # Overrides are applied in that same order.
-    merged = _deep_merge(_deep_merge(_read(BASE_CONFIG), _read(hardware)), _read(config))
+    merged = _deep_merge(_read(BASE_CONFIG), _read(model))
+    merged = _deep_merge(_deep_merge(merged, _read(hardware)), _read(config))
     return ExperimentConfig.model_validate(merged)
 
 
