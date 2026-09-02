@@ -27,7 +27,6 @@ from src.paths.run import (
     BEST_CHECKPOINT,
     EVALUATION,
     GENERATIONS,
-    LAST_CHECKPOINT,
     PREFIX_SCORES,
     RunArtifact,
 )
@@ -44,7 +43,6 @@ __all__ = [
     'FIGURE',
     'FIGURES_DIR',
     'GENERATIONS',
-    'LAST_CHECKPOINT',
     'ORIGINAL_LOG',
     'OUTPUTS_DIR',
     'PREFIX_SCORES',

@@ -59,16 +59,13 @@ The continuation index is read by both training (to select checkpoints) and eval
 
 ### 2. Training
 
-Once the dataset is preprocessed, start a new run or resume one already started:
+Once the dataset is preprocessed, start a run:
 
 ```bash
 python -m pipelines.train -c config/datasets/<dataset>.yaml -w config/hardware/<hardware>.yaml
-python -m pipelines.train -r <path-to-checkpoint>   # resume instead of starting fresh
 ```
 
-Exactly one of `-c` (start a new run) or `-r`/`--resume` (carry on from a checkpoint, config included) is required. `-w`/`--hardware` is required alongside `-c`, and rejected with `-r`. 
-
-A resumed run also keeps its original name, so it continues writing to the same W&B run and the same files.
+Both `-c`/`--config` and `-w`/`--hardware` are required. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
 
 #### Running a batch on every GPU at once
 
@@ -102,14 +99,21 @@ dropping the suffix once the log has been read. See [`queue/README.md`](queue/RE
 > ```bash
 > python -m scripts.fetch
 > ```
-> There is one file per model per log, at `pretrained/<name>/<model>.pt`. They are trimmed to what generation reads, so they can be generated from but not resumed from.
+> There is one file per model per log, at `pretrained/<name>/<model>.pt`.
 
 Training curves are logged live to the `suffix-generation` W&B project; the run prints its URL as
 soon as logging starts, so watching a VM's training needs no tunnel or synced files.
 
-Model checkpoints are written to two places:
- - `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`: a single file holding the run's last improvement, overwritten each time the selection score improves. Each improvement is also pushed to W&B as a new version of a `<name>-<model>-<timestamp>` Artifact, its `best` alias always pointing at the newest; fetch one with `wandb artifact get <name>-<model>-<timestamp>:best`.
- - `outputs/checkpoints/last/<name>/<model>/<timestamp>.pt` is overwritten at every validation step so the run can resume from where it left off. It stays local to the machine training runs on.
+Runs are grouped in W&B by the experiment they belong to, `<name>/<model>`, and tagged with each half of it, so one model on one log reads as one group of runs and either axis can be filtered on alone.
+
+A run's checkpoint is written to `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`, overwritten each time the selection score improves, so the file always holds the run's best step rather than its last. When the run finishes it is uploaded once, as a new version of the `<name>-<model>` Artifact aliased with the run's own timestamp:
+
+```bash
+wandb artifact get <name>-<model>:<timestamp>   # a particular run
+wandb artifact get <name>-<model>:latest        # the most recent run of that experiment
+```
+
+One run leaves one version, so an experiment's Artifact lineage reads as its run history. A run that dies before finishing uploads nothing, and its checkpoint stays on the machine that trained it.
 
 ### 3. Inference
 
@@ -119,7 +123,7 @@ After training, generate suffixes for the test set:
 python -m pipelines.generate -m <path-to-checkpoint> -w config/hardware/<hardware>.yaml
 ```
 
-- `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/`, `outputs/checkpoints/best/` or `outputs/checkpoints/last/`. 
+- `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/` or `outputs/checkpoints/best/`.
 - `-w`/`--hardware` is the profile to generate under, replacing the one the run was trained with.
 - `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.evaluation_samples`.
 
@@ -148,7 +152,7 @@ python -m scripts.publish -m <path-to-best-checkpoint>
 
 `-m`/`--checkpoint` points to the checkpoint to publish, from `outputs/checkpoints/best/`. Which run deserves the name is exactly the decision this step exists to record, so it is named rather than searched for.
 
-The checkpoint is trimmed to what generation reads, dropping the optimizer, early-stopping and RNG state that only `--resume` needs, and uploaded to `<name>/<model>.pt` in the Hugging Face model repo.
+The checkpoint file is uploaded as it sits, to `<name>/<model>.pt` in the Hugging Face model repo: it holds only what rebuilding the model reads, so there is nothing to trim off one first.
 
 ---
 

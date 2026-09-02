@@ -1,6 +1,5 @@
 import argparse
 from datetime import datetime
-from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
@@ -13,41 +12,16 @@ from src.datasets.dataset import TraceDataset, fixed_subset
 from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs.keys import Split
-from src.model import RESUME_KEYS, TransformerCVAE, load_checkpoint, require_keys
+from src.model import TransformerCVAE
 from src.training.train import train
 
 
-def resumed(resume_path: Path) -> tuple[ExperimentConfig, dict]:
-    """
-    Read a checkpoint together with the config of the run that wrote it.
-
-    Args:
-        resume_path: The checkpoint to carry on from.
-    Returns:
-        Its config, and the checkpoint itself.
-    Raises:
-        ValueError: If the checkpoint carries no training state, and so can only be generated with.
-    """
-    checkpoint = load_checkpoint(resume_path)
-    require_keys(
-        checkpoint,
-        RESUME_KEYS,
-        subject=str(resume_path),
-        purpose='resumed from',
-        remedy='It can be generated with instead; start a new run to train.',
-    )
-    return ExperimentConfig.model_validate(checkpoint['experiment_config']), checkpoint
-
-
-def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
+def run(config: ExperimentConfig) -> None:
     """
     Train the model an experiment config describes, on the dataset it names.
     The dataset must have been preprocessed already.
     Args:
         config: The validated experiment config.
-        checkpoint: A checkpoint to carry on from, as read by `resumed`, or `None` to start a
-            new run. The run keeps the identity the checkpoint carries, so it writes to the same
-            W&B run and the files the interrupted run was writing to.
     """
     paths.require_preprocessed(config.data.name)
     # Checkpoints are selected on EMSC against the validation split's continuations, so the index
@@ -58,20 +32,14 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
     torch.manual_seed(config.seed)
     generator = torch.Generator().manual_seed(config.seed)
 
-    # When resuming, keep the identity the checkpoint carries, so it writes to the same
-    # W&B run and the same files.
-    run = (
-        RunIdentity(
-            dataset=config.data.name,
-            model=config.model.name,
-            tag=f'{datetime.now():%Y%m%d-%H%M%S}',
-        )
-        if checkpoint is None
-        else RunIdentity.from_dict(checkpoint['run'])
+    run = RunIdentity(
+        dataset=config.data.name,
+        model=config.model.name,
+        tag=f'{datetime.now():%Y%m%d-%H%M%S}',
     )
 
     banner(
-        'Resuming training' if checkpoint is not None else 'Training a suffix-prediction model',
+        'Training a suffix-prediction model',
         {
             'run': run,
             'dataset': config.data.name,
@@ -84,7 +52,7 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
             'optimizer': f'Adam, lr {config.optimizer.lr}, '
             f'weight decay {config.optimizer.weight_decay}',
             'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
-            'checkpoints': paths.LAST_CHECKPOINT.path(run),
+            'checkpoints': paths.BEST_CHECKPOINT.path(run),
         },
     )
 
@@ -155,8 +123,6 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
         generation_loader=generation_loader,
         run=run,
         experiment_config=config.model_dump(),
-        generator=generator,
-        resume=checkpoint,
         generation_samples=config.inference.validation_samples,
         codec=codec,
         dataset=config.data.name,
@@ -169,44 +135,25 @@ def run(config: ExperimentConfig, checkpoint: dict | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Train a suffix-prediction model.')
-    # A run is either started from a config or carried on from a checkpoint, which already
-    # describes the run that wrote it. Two descriptions of one run could only disagree.
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument(
+    parser.add_argument(
         '-c',
         '--config',
         type=paths.existing_file,
         metavar='CONFIG',
+        required=True,
         help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
-    )
-    source.add_argument(
-        '-r',
-        '--resume',
-        type=paths.existing_file,
-        metavar='CHECKPOINT',
-        help='Path to a checkpoint to carry on from, its config included. The '
-        'run keeps its name, so it writes to the same W&B run '
-        'and the same files.',
     )
     parser.add_argument(
         '-w',
         '--hardware',
         type=paths.existing_file,
         metavar='HARDWARE',
+        required=True,
         help='Path to the hardware profile to run under, e.g. config/hardware/cuda-a6000.yaml.',
     )
     args = parser.parse_args()
 
-    if args.resume is not None:
-        # A resumed run keeps the batch size, learning rate and annealing schedule it started
-        # with, all of which a profile carries, so there is nothing a second one could mean here.
-        if args.hardware is not None:
-            parser.error('-w/--hardware is not used with -r/--resume: the checkpoint carries one')
-        run(*resumed(args.resume))
-    else:
-        if args.hardware is None:
-            parser.error('-w/--hardware is required with -c/--config')
-        run(load_config(args.config, args.hardware))
+    run(load_config(args.config, args.hardware))
 
 
 if __name__ == '__main__':

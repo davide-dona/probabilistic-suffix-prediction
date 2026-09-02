@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Pull a training VM's generations back onto this machine.
 #
-# Training curves are logged to W&B and checkpoints are either VM-resume-only (`last`) or
-# versioned as W&B Artifacts (`best`), so the only VM-side output left to fetch is what
-# `pipelines.generate` writes; evaluate and visualize already run locally against it.
+# Training curves are logged to W&B, and a finished run uploads its checkpoint there as an
+# Artifact, so the only VM-side output left to fetch is what `pipelines.generate` writes;
+# evaluate and visualize already run locally against it.
 #
 # This is a plain one-way rsync, pulling whatever is new or changed and never deleting
 # anything on this side.
