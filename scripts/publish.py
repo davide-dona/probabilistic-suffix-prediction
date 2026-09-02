@@ -1,15 +1,13 @@
 import argparse
-import tempfile
 from pathlib import Path
 
-import torch
 from huggingface_hub import CommitOperationAdd, create_commit, file_exists, whoami
 from huggingface_hub.errors import HfHubHTTPError, LocalTokenNotFoundError
 
 from scripts.hub import HF_REPO_ID
 from src import paths
 from src.identity import RunIdentity
-from src.model import inference_payload, load_checkpoint
+from src.model import CHECKPOINT_KEYS, load_checkpoint, require_keys
 
 
 def _mebibytes(path: Path) -> str:
@@ -36,8 +34,10 @@ def _account() -> str:
 
 def run(model_paths: list[Path]) -> None:
     """Propose one or more runs' checkpoints as published models on the Hugging Face Hub, as a
-    single pull request. Each checkpoint is trimmed to `inference_payload`, under a name carrying
-    no run tag.
+    single pull request, under a name carrying no run tag.
+
+    The file is uploaded as it sits: a checkpoint holds only what rebuilding the model reads, so
+    there is nothing to trim off one before it is published.
 
     Args:
         model_paths: The checkpoints to publish, from `outputs/checkpoints/best/`. Named rather
@@ -46,7 +46,7 @@ def run(model_paths: list[Path]) -> None:
     Raises:
         SystemExit: If there are no Hugging Face credentials, or if the confirmation is declined.
         FileNotFoundError: If there is no checkpoint at one of `model_paths`.
-        ValueError: If a checkpoint predates `inference_payload`'s format.
+        ValueError: If a checkpoint is missing a key rebuilding the model reads.
     """
     missing = [path for path in model_paths if not path.exists()]
     if missing:
@@ -54,61 +54,61 @@ def run(model_paths: list[Path]) -> None:
 
     account = _account()
 
-    with tempfile.TemporaryDirectory() as directory:
-        operations = []
-        descriptions = []
-        for model_path in model_paths:
-            checkpoint = load_checkpoint(model_path)
-            # The destination comes from the run's identity, not the checkpoint's filename,
-            # making it invariant to local naming.
-            run = RunIdentity.from_dict(checkpoint['run'])
-            payload = inference_payload(checkpoint)
-
-            fetched_to = paths.PRETRAINED.path(dataset=run.dataset, model=run.model)
-            path_in_repo = fetched_to.relative_to(paths.PRETRAINED_DIR).as_posix()
-            replaces = file_exists(HF_REPO_ID, path_in_repo, repo_type='model')
-
-            # Prefixed with the run's dataset/model so files from different runs sharing a model
-            # name don't collide once they land together in this one temporary directory.
-            published = Path(directory) / f'{run.dataset}_{run.model}_{fetched_to.name}'
-            torch.save(obj=payload, f=published)
-
-            print(
-                f'\nRun:     {run}\n'
-                f'Commit:  {checkpoint.get("git", {}).get("commit", "unknown")}\n'
-                f'Step:    {payload["step"]} (selection score {payload["selection_score"]:.4f})\n'
-                f'Size:    {_mebibytes(model_path)} -> {_mebibytes(published)} (inference-only)\n'
-                f'Target:  {path_in_repo} on {HF_REPO_ID}\n'
-                f'         {"replaces an existing file" if replaces else "adds a new file"}\n'
-            )
-
-            operations.append(
-                CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=published)
-            )
-            descriptions.append(
-                f'- {run}: step {payload["step"]}, selection score {payload["selection_score"]:.4f}'
-            )
-
-        print(f'Author:  {account}\n')
-        prompt = (
-            'Open a pull request?'
-            if len(model_paths) == 1
-            else f'Open a pull request for {len(model_paths)} models?'
+    operations = []
+    descriptions = []
+    for model_path in model_paths:
+        checkpoint = load_checkpoint(model_path)
+        require_keys(
+            checkpoint,
+            CHECKPOINT_KEYS,
+            subject=str(model_path),
+            purpose='published',
+            remedy='It was written by an older version of `save_checkpoint`; retrain, or publish '
+            'a newer run.',
         )
-        if input(f'{prompt} [y/N] ').strip().lower() != 'y':
-            raise SystemExit('Nothing was uploaded.')
+        # The destination comes from the run's identity, not the checkpoint's filename, making it
+        # invariant to local naming.
+        run = RunIdentity.from_dict(checkpoint['run'])
 
-        commit_message = (
-            f'Publish {run}' if len(model_paths) == 1 else f'Publish {len(model_paths)} models'
+        fetched_to = paths.PRETRAINED.path(dataset=run.dataset, model=run.model)
+        path_in_repo = fetched_to.relative_to(paths.PRETRAINED_DIR).as_posix()
+        replaces = file_exists(HF_REPO_ID, path_in_repo, repo_type='model')
+
+        print(
+            f'\nRun:     {run}\n'
+            f'Step:    {checkpoint["step"]} '
+            f'(selection score {checkpoint["selection_score"]:.4f})\n'
+            f'Size:    {_mebibytes(model_path)}\n'
+            f'Target:  {path_in_repo} on {HF_REPO_ID}\n'
+            f'         {"replaces an existing file" if replaces else "adds a new file"}\n'
         )
-        commit = create_commit(
-            repo_id=HF_REPO_ID,
-            repo_type='model',
-            operations=operations,
-            commit_message=commit_message,
-            commit_description='\n'.join(descriptions),
-            create_pr=True,
+
+        operations.append(CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=model_path))
+        descriptions.append(
+            f'- {run}: step {checkpoint["step"]}, '
+            f'selection score {checkpoint["selection_score"]:.4f}'
         )
+
+    print(f'Author:  {account}\n')
+    prompt = (
+        'Open a pull request?'
+        if len(model_paths) == 1
+        else f'Open a pull request for {len(model_paths)} models?'
+    )
+    if input(f'{prompt} [y/N] ').strip().lower() != 'y':
+        raise SystemExit('Nothing was uploaded.')
+
+    commit_message = (
+        f'Publish {run}' if len(model_paths) == 1 else f'Publish {len(model_paths)} models'
+    )
+    commit = create_commit(
+        repo_id=HF_REPO_ID,
+        repo_type='model',
+        operations=operations,
+        commit_message=commit_message,
+        commit_description='\n'.join(descriptions),
+        create_pr=True,
+    )
 
     print(f'Opened a pull request: {commit.pr_url}')
 

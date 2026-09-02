@@ -1,5 +1,3 @@
-from dataclasses import asdict
-
 import torch
 import wandb
 from torch import optim
@@ -13,8 +11,7 @@ from src.configs.schema import (
     TrainingConfig,
 )
 from src.datasets.codec import DatasetCodec
-from src.git import current_git_state
-from src.identity import WANDB_PROJECT, RunIdentity, wandb_id
+from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
 from src.model import TransformerCVAE, save_checkpoint
@@ -22,54 +19,6 @@ from src.training.early_stopping import EarlyStopper
 from src.training.kl import linear_warmup_weight
 from src.training.loss import Loss, compute_loss
 from src.training.validation import validate, validate_generation
-
-# The device's own stream, which dropout and the latent sampling draw from, lives behind a
-# namespace of its own; `cpu` has none beside the global one.
-# Both halves take the device the run is on: on a multi-GPU machine `torch.cuda`'s zero-argument
-# form would capture the current device's stream rather than the pinned one, so a run on `cuda:1`
-# would checkpoint and restore `cuda:0`. `torch.mps` has one device and so takes no argument.
-DEVICE_RNG = {
-    'cuda': (torch.cuda.get_rng_state, torch.cuda.set_rng_state),
-    'mps': (
-        lambda _device: torch.mps.get_rng_state(),
-        lambda state, _device: torch.mps.set_rng_state(state),
-    ),
-}
-
-
-def rng_state(generator: torch.Generator, device: torch.device) -> dict:
-    """
-    Every random stream a run draws from, so a resumed one carries on where it left off.
-
-    Args:
-        generator: The generator the training loader shuffles with.
-        device: The device the model runs on.
-    Returns:
-        The states, keyed for `restore_rng_state`.
-    """
-    capture = DEVICE_RNG.get(device.type)
-    return {
-        'cpu': torch.get_rng_state(),
-        'dataloader': generator.get_state(),
-        'device': capture[0](device) if capture is not None else None,
-    }
-
-
-def restore_rng_state(state: dict, *, generator: torch.Generator, device: torch.device) -> None:
-    """
-    Put back what `rng_state` captured, on the device the run trained on.
-
-    Args:
-        state: What `rng_state` returned.
-        generator: The generator the training loader shuffles with.
-        device: The device the model runs on.
-    """
-    torch.set_rng_state(state['cpu'])
-    generator.set_state(state['dataloader'])
-
-    restore = DEVICE_RNG.get(device.type)
-    if restore is not None:
-        restore[1](state['device'], device)
 
 
 def train(
@@ -83,8 +32,6 @@ def train(
     dataset: str,
     run: RunIdentity,
     experiment_config: dict,
-    generator: torch.Generator,
-    resume: dict | None,
     loss_config: LossConfig,
     optimizer_config: OptimizerConfig,
     training: TrainingConfig,
@@ -93,9 +40,10 @@ def train(
     """
     Train a model on a dataset, logging to W&B and saving checkpoints.
 
-    Every validation writes a checkpoint to `paths.LAST_CHECKPOINT`, whether or not the step is
-    the best one, and a validation that improves on the best writes a second copy to
-    `paths.BEST_CHECKPOINT`. Either file can be handed back as `resume`.
+    A validation that improves on the best selection score so far overwrites
+    `paths.BEST_CHECKPOINT`; no other step is kept. A run that ends, however it ends, is over:
+    there is no carrying one on, so nothing here writes the optimizer, early-stopping or random
+    state a resume would have read.
 
     Args:
         model: The model to train, already on `training.device`.
@@ -111,17 +59,13 @@ def train(
             generation pass so its remaining times are scored in minutes.
         dataset: The log being trained on, naming the validation split's continuation index the
             selection score is read against.
-        run: What every file this run writes is named after (see `src/paths.py`), and what its
-            W&B run is identified by (`src.tracking.wandb_id`). One W&B run is one identity, so
-            an identity reused across runs overlays their curves instead of listing them side by
-            side; what makes its tag unique is the caller's business.
-        experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into
-            every checkpoint so the run can be rebuilt and carried on from the file alone.
-        generator: The generator the training loader shuffles with, whose state is saved and
-            restored along with the rest.
-        resume: A checkpoint to carry on from, read by `load_checkpoint`, or `None` to start
-            from step zero. Its step, weights, optimizer state, early-stopping state and random
-            streams are all restored.
+        run: What every file this run writes is named after (see `src/paths.py`), what its W&B
+            run is identified by (`src.identity.wandb_id`) and, minus its tag, which group and
+            Artifact lineage it belongs to. One W&B run is one identity, so an identity reused
+            across runs overlays their curves instead of listing them side by side; what makes
+            its tag unique is the caller's business.
+        experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into the
+            checkpoint so the model can be rebuilt from the file alone.
         loss_config: The KL annealing schedule.
         optimizer_config: The optimizer hyperparameters.
         training: Step budget, validation cadence, gradient clipping and device.
@@ -144,35 +88,23 @@ def train(
     interval_totals = Loss()
     seen = 0
 
-    # If resuming, restore the model, optimizer, early stopper and random streams to the state
-    # they were in when the checkpoint was written.
-    if resume is not None:
-        model.load_state_dict(state_dict=resume['model_state_dict'])
-        optimizer.load_state_dict(state_dict=resume['optimizer_state'])
-        early_stopper.load_state_dict(resume['early_stopping_state'])
-        # Restored after the loaders were built, so that the fixed validation and generation
-        # subsets are still drawn from the seeded stream exactly as an unresumed run draws them.
-        restore_rng_state(resume['rng_state'], generator=generator, device=device)
-        step = resume['step']
-        print(f'Resuming {run} from step {step}, best score {resume["selection_score"]:.4f}')
+    # The step the best checkpoint on disk came from, kept so the Artifact this run leaves can
+    # say which step it is without anyone downloading it.
+    best_step = 0
 
-    # The commit training runs under, carried into the W&B config and every checkpoint, so a set
-    # of weights never leaves anyone guessing what code produced it.
-    git_state = current_git_state()
-
-    # `resume='allow'` picks the W&B run back up if `wandb_id(run)` already exists (a carried-on
-    # run) and starts a fresh one otherwise. Unlike TensorBoard's `purge_step`, W&B has no way to
-    # truncate history that ran ahead of the last checkpoint: a crash between two validations,
-    # followed by resume, can leave a few stray, overlapping points on the step axis until the
-    # next validation. Cosmetic only, not a data-loss risk.
+    # `group` is the experiment, `dataset/model`, so runs of one model on one log sit together and
+    # a run is one attempt at it; `job_type` says which stage of the pipeline this is, leaving room
+    # for a later generate or evaluate stage on the same run. The tags repeat the two halves of the
+    # group so either can be filtered on alone, which one group string cannot do. The commit is
+    # W&B's own to record: it reads it off the working tree at `init`.
     wandb.init(
         project=WANDB_PROJECT,
         id=wandb_id(run),
         name=str(run),
-        group=run.dataset,
-        job_type=run.model,
-        resume='allow',
-        config=experiment_config | {'git_commit': git_state.commit, 'git_dirty': git_state.dirty},
+        group=experiment(run),
+        job_type='train',
+        tags=[run.dataset, run.model],
+        config=experiment_config,
     )
     print(f'Logging to {wandb.run.url}')
 
@@ -261,33 +193,19 @@ def train(
                     is_best = selection_score < early_stopper.min_validation_score
                     should_stop = early_stopper.update(selection_score)
 
-                    # Save a checkpoint with the model, optimizer, early stopper and random
-                    # streams in their current state.
-                    checkpoint = dict(
-                        experiment_config=experiment_config,
-                        step=step,
-                        selection_score=selection_score,
-                        run=run,
-                        optimizer_state=optimizer.state_dict(),
-                        early_stopping_state=early_stopper.state_dict(),
-                        rng_state=rng_state(generator, device),
-                        git=asdict(git_state),
-                    )
-                    save_checkpoint(model, **checkpoint, path=paths.LAST_CHECKPOINT.prepare(run))
-                    # If this validation improved on the best, save a second copy to the
-                    # best-model directory, and version it as a W&B Artifact: `best` always
-                    # points at the newest version of this run's own lineage.
+                    # Only an improvement is worth a file: the last step is never read back.
+                    # The Artifact waits for the end of the run, so one run leaves one version
+                    # rather than one per improvement.
                     if is_best:
+                        best_step = step
                         path = save_checkpoint(
-                            model, **checkpoint, path=paths.BEST_CHECKPOINT.prepare(run)
+                            model,
+                            experiment_config=experiment_config,
+                            step=step,
+                            selection_score=selection_score,
+                            run=run,
+                            path=paths.BEST_CHECKPOINT.prepare(run),
                         )
-                        artifact = wandb.Artifact(
-                            name=wandb_id(run),
-                            type='checkpoint',
-                            metadata={'step': step, 'selection_score': selection_score},
-                        )
-                        artifact.add_file(str(path))
-                        wandb.log_artifact(artifact, aliases=['best'])
                         print(
                             f'New best model (step {step}, score {selection_score:.4f}) '
                             f'saved at {path}'
@@ -296,14 +214,33 @@ def train(
                 if should_stop or step >= training.max_steps:
                     break
 
-        # Only reached on a normal finish, not a crash, and while the W&B run is still open, so
-        # the alert is one nobody has to be watching a terminal to get.
+        # Everything below is only reached on a normal finish, not a crash, and while the W&B run
+        # is still open. A run that dies leaves its best checkpoint on the machine that ran it and
+        # nothing on W&B, which is the same thing a run that dies leaves behind anywhere else: it
+        # cannot be carried on from either way.
         reason = (
             f'no validation improvement for {early_stopping_config.patience} validations'
             if should_stop
             else 'reached max_steps'
         )
         print(f'Finished training after {step} steps ({reason})')
+
+        # One version per run, in the lineage its experiment shares, aliased with the run's own
+        # tag. The file is uploaded as it sits: a checkpoint holds nothing a downloader would want
+        # trimmed off it.
+        artifact = wandb.Artifact(
+            name=wandb_artifact(run),
+            type='model',
+            metadata={
+                'run': str(run),
+                'step': best_step,
+                'selection_score': early_stopper.min_validation_score,
+            },
+        )
+        artifact.add_file(str(paths.BEST_CHECKPOINT.path(run)), name='model.pt')
+        wandb.log_artifact(artifact, aliases=[run.tag])
+
+        # The alert is the one nobody has to be watching a terminal to get.
         wandb.alert(title=f'Training finished: {run}', text=f'{step} steps, {reason}.')
     finally:
         wandb.finish()

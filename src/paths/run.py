@@ -67,15 +67,9 @@ class RunArtifact(Artifact):
         return found
 
 
-# What a run writes. The two checkpoints differ only in when they are written, which is why they
-# sit under one directory: both are a run's own output, and neither is what anyone downloads.
-# `scripts/publish.py` promotes one of them to the curated name `PRETRAINED` describes.
-LAST_CHECKPOINT = RunArtifact(
-    kind='checkpoint',
-    remedy='Run `uv run python -m pipelines.train` first.',
-    directory=OUTPUTS_DIR / 'checkpoints' / 'last',
-    suffix='.pt',
-)
+# What a run writes. The best step's weights, not the last: a run is never carried on from, so
+# there is nothing a checkpoint of the final step would be read for. `scripts/publish.py` promotes
+# one of these to the curated name `PRETRAINED` describes.
 BEST_CHECKPOINT = RunArtifact(
     kind='best checkpoint',
     remedy='Run `uv run python -m pipelines.train` first.',

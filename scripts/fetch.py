@@ -10,9 +10,8 @@ def run() -> None:
     """Download every published model into `pretrained/`, mirroring the Hugging Face repo's
     `dataset/model.pt` layout exactly.
 
-    These are the checkpoints `scripts/publish.py` proposed and a maintainer merged, trimmed to
-    what generation reads, so they cannot be resumed from. A run's own checkpoints live under
-    `outputs/checkpoints/` instead.
+    These are the checkpoints `scripts/publish.py` proposed and a maintainer merged. A run's own
+    checkpoints live under `outputs/checkpoints/` instead.
     """
     snapshot_download(repo_id=HF_REPO_ID, repo_type='model', local_dir=paths.PRETRAINED_DIR)
 
