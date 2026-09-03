@@ -96,3 +96,13 @@ PREFIX_SCORES = RunArtifact(
     directory=OUTPUTS_DIR / 'eval',
     suffix='.parquet',
 )
+# What sampler a trained run is read with, chosen on the validation split after training rather
+# than written into the weights. Its own kind rather than a field of the checkpoint, so a
+# checkpoint stays the record of what was trained and this stays the record of what was picked for
+# it; one run can be searched again without the weights being touched.
+TUNING = RunArtifact(
+    kind='tuning report',
+    remedy='Run `uv run python -m pipelines.tune` first.',
+    directory=OUTPUTS_DIR / 'tuning',
+    suffix='.json',
+)

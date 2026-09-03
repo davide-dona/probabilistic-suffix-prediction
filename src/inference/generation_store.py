@@ -5,6 +5,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from src.configs.schema import SamplingConfig
 from src.identity import RunIdentity, stamped
 from src.inference.generation import DecodedEvents, Draws, Generation
 
@@ -17,6 +18,12 @@ type PrefixKey = tuple[str, int]
 # `src/logs/continuations.py`, and both are seeded from `codec.activity.names`, so a suffix written
 # here is the string the continuation index holds it as.
 _VOCABULARY = b'activities'
+
+# How the activity head was read, for a file whose model drew from it, and absent for one whose
+# model read it at its mode. A run's identity does not settle this: the sampler is chosen after
+# training and can be changed without the weights moving, so two files of one run are told apart
+# by nothing else.
+_SAMPLING = b'sampling'
 
 # One run of activities, one character each. A suffix is a string rather than a list of names: the
 # names live once in the metadata above, and an edit distance reads a string directly.
@@ -85,7 +92,11 @@ _FLOAT_LEAVES = [
 
 
 def open_generations(
-    path: Path, run: RunIdentity, *, vocabulary: Sequence[str]
+    path: Path,
+    run: RunIdentity,
+    *,
+    vocabulary: Sequence[str],
+    sampling: SamplingConfig | None,
 ) -> pq.ParquetWriter:
     """Open a Parquet file for writing generations.
 
@@ -97,11 +108,18 @@ def open_generations(
         vocabulary: The activity names the suffixes are spelled on, in code order, from
             `ActivityCodes.vocabulary`. Written into the file so it says what its own characters
             mean.
+        sampling: How the activity head was read, for a model that draws from it, or None for one
+            that reads it at its mode. Written in for the same reason the vocabulary is: the
+            sampler is chosen after training, so the run's identity alone does not say which one
+            produced this file.
     Returns:
         A writer bound to the generations schema, to be used as a context manager: closing it is
         what writes the file's footer.
     """
-    schema = _SCHEMA.with_metadata({_VOCABULARY: json.dumps(list(vocabulary))})
+    metadata = {_VOCABULARY: json.dumps(list(vocabulary))}
+    if sampling is not None:
+        metadata[_SAMPLING] = sampling.model_dump_json()
+    schema = _SCHEMA.with_metadata(metadata)
     return pq.ParquetWriter(
         where=path,
         schema=stamped(schema, run),

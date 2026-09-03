@@ -14,14 +14,17 @@ from .schema import (
     ModelConfig,
     OptimizerConfig,
     PriorConfig,
+    SamplingConfig,
     TraceEncoderConfig,
     TrainingConfig,
+    sampling_of,
 )
 
 __all__ = [
     'load_config',
     'load_dataset_config',
     'load_generation_config',
+    'sampling_of',
     'DataConfig',
     'DataLoaderConfig',
     'DatasetConfig',
@@ -36,6 +39,7 @@ __all__ = [
     'ModelConfig',
     'OptimizerConfig',
     'PriorConfig',
+    'SamplingConfig',
     'TraceEncoderConfig',
     'TrainingConfig',
 ]

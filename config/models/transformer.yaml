@@ -43,6 +43,18 @@ model:
     activity_dropout: 0.0
     head_hidden_dim: 128
 
+  # How the activity logits are shaped before a draw reads them. Inference-time only: nothing here
+  # reaches a gradient, and training and checkpoint selection run at whatever is written here.
+  # `pipelines.tune` searches the pair on the validation split once a run is trained, and what it
+  # picks is written back here and handed to `pipelines.generate`.
+  sampling:
+    # Divides the logits. Above 1 flattens every step alike, the ones the process already
+    # determines included, which is the per-step noise this arm exists to measure.
+    temperature: 1.0
+    # Keeps the smallest set of activities summing to this. Unlike the temperature it reads how
+    # peaked a step is: 1.0 drops nothing, and the arm draws from the whole softmax.
+    top_p: 1.0
+
 optimizer:
   lr: 0.0012
   weight_decay: 0.0
