@@ -51,5 +51,6 @@ UNK_TOKEN = 'UNK'  # Unknown (Used to represent values not seen during training)
 MISSING_FEATURE = '<MISSING>'  # Value used to represent missing features in the input data
 
 
-# Separator used by every raw and processed CSV log in this project.
+# Separator used by every CSV log this project writes. A raw log is read with whatever
+# separator it was downloaded with, declared as `data.separator`.
 CSV_SEPARATOR = ';'

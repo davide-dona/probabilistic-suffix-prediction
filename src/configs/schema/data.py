@@ -16,6 +16,12 @@ class DataConfig(StrictModel):
     activity_key: str
     resource_key: str
     timestamp_key: str
+    separator: str = Field(
+        ...,
+        min_length=1,
+        description='Field separator of the raw log, as it was downloaded. Only that file: '
+        'everything preprocessing writes uses `CSV_SEPARATOR`',
+    )
 
     train_split: float = Field(..., gt=0.0, lt=1.0)
     val_split: float = Field(..., gt=0.0, lt=1.0)

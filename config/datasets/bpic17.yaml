@@ -6,6 +6,8 @@ data:
   activity_key: "concept:name"
   resource_key: "org:resource"
   timestamp_key: "time:timestamp"
+  # Field separator of the raw log, as it was downloaded.
+  separator: ";"
 
   # Split the dataset into train, validation, and test sets.
   # Splits are applied on the case level, with an out-of-time split
