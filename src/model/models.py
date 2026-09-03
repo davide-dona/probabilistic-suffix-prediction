@@ -9,6 +9,7 @@ from src.configs.schema import CVAEConfig, ModelConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.distributions.gaussian import Gaussian
+from src.distributions.laplace import Laplace
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
 from src.training.kl import LatentMetrics
@@ -42,9 +43,6 @@ class ModelOutput:
 def _timed_positions(batch: SplitTrace) -> torch.Tensor:
     """Mark the suffix positions the time targets are defined at.
 
-    Shared by every architecture's `compute_loss`: neither has an opinion about which positions a
-    time target is scored at, only about how the head there is scored.
-
     Args:
         batch: A batch from `TraceDataset`, whose `suffix.length` counts the EOT closing it.
     Returns:
@@ -54,6 +52,24 @@ def _timed_positions(batch: SplitTrace) -> torch.Tensor:
         end=batch.suffix.activities.size(dim=1), device=batch.suffix.length.device
     )  # [seq_len]
     return positions.unsqueeze(dim=0) < (batch.suffix.length - 1).unsqueeze(dim=1)
+
+
+def time_nll(prediction: Laplace, target: torch.Tensor, batch: SplitTrace) -> torch.Tensor:
+    """Score one time head over the positions its target is defined at.
+
+    Shared by every architecture: neither has an opinion about where a time target is scored or
+    how, only about whether the head there carries a scale of its own. `Laplace.point` is what
+    makes the unconditioned case the plain absolute error without this having to ask.
+
+    Args:
+        prediction: The head's distribution, `[batch_size, seq_len]` per field, standardized.
+        target: What it is scored against, the shape and scale of `prediction.mean`.
+        batch: The batch the scored positions are read off.
+    Returns:
+        A scalar, summed over the scored positions of the whole batch.
+    """
+    error = prediction.negative_log_likelihood(target)  # [batch_size, seq_len]
+    return error.masked_fill(mask=~_timed_positions(batch), value=0.0).sum()
 
 
 class SuffixModel(nn.Module, ABC):

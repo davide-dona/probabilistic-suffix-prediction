@@ -17,6 +17,21 @@ from src.training.loss import Loss
 from src.training.validation import validate, validate_generation
 
 
+def _lr_factor(step: int, *, warmup_steps: int) -> float:
+    """What `optimizer.lr` is multiplied by at one step: a linear warmup, then nothing.
+
+    Args:
+        step: The step about to be taken, counted from 0 as `LambdaLR` counts it.
+        warmup_steps: Steps the ramp spans. 0 leaves the rate at `lr` from the first step.
+    Returns:
+        The multiplier, in `(0, 1]`.
+    """
+    if step >= warmup_steps:
+        return 1.0
+    # From one step's worth of the rate rather than from 0, so the first step still moves.
+    return (step + 1) / warmup_steps
+
+
 def train(
     *,
     model: SuffixModel,
@@ -61,7 +76,8 @@ def train(
             its tag unique is the caller's business.
         experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
-        optimizer_config: The optimizer hyperparameters.
+        optimizer_config: The optimizer hyperparameters, its learning rate's warmup included.
+            The warmup is stepped per optimizer step, so it means the same on every dataset.
         training: Step budget, validation cadence, gradient clipping and device.
         early_stopping_config: When to give up.
     """
@@ -78,6 +94,10 @@ def train(
 
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_config.lr, weight_decay=optimizer_config.weight_decay
+    )
+    scheduler = optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda step: _lr_factor(step, warmup_steps=optimizer_config.warmup_steps),
     )
     early_stopper = EarlyStopper(early_stopping_config)
 
@@ -121,7 +141,11 @@ def train(
                 loss.backward()
                 if training.grad_clip_norm is not None:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), training.grad_clip_norm)
+                # Read before the scheduler advances, so the rate logged is the one this step
+                # was actually taken at rather than the one the next will be.
+                learning_rate = scheduler.get_last_lr()[0]
                 optimizer.step()
+                scheduler.step()
 
                 # Update the running totals and log to W&B
                 batch_size = batch.suffix.activities.size(0)
@@ -129,6 +153,8 @@ def train(
                 seen += batch_size
                 step += 1
                 (metrics / batch_size).log(step, prefix='train')
+                # So a loss curve can be read against where in the warmup it sits.
+                wandb.log({'train/lr': learning_rate}, step=step)
                 # Only a model with a latent has one to watch, and only it is charged a KL term.
                 if latent is not None:
                     (latent / batch_size).log(step, prefix='train')

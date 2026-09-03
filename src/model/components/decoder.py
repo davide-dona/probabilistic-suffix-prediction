@@ -5,7 +5,7 @@ from torch import nn
 
 from src.configs.schema import DecoderConfig, LatentConfig, SamplingConfig
 from src.datasets.dataset import Events
-from src.distributions.gaussian import Gaussian
+from src.distributions.laplace import Laplace
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
 from src.model.components.conditioning import (
     UNCONDITIONED,
@@ -66,16 +66,16 @@ class DecoderOutput:
     """What the decoder predicts at every suffix position: the activity to write there, the
     minutes until it, and the minutes until the case ends.
 
-    Both times are Gaussians on the standardized scale their targets are encoded at, scored by
-    their negative log-likelihood. A decoder built with `stochastic=False` pins their variance to
-    1, which leaves that term the plain squared error it would otherwise be and leaves the times
-    nothing to be drawn from. They overlap - a remaining time is the sum of the waits from that
+    Both times are Laplace on the standardized scale their targets are encoded at, scored by their
+    negative log-likelihood. A decoder built with `stochastic=False` pins their scale to 1, which
+    leaves that term the plain absolute error it would otherwise be and leaves the times nothing
+    to be drawn from. They overlap - a remaining time is the sum of the waits from that
     position on - and are read as two independent estimates rather than tied together.
     """
 
     activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    times_to_next: Gaussian  # [batch_size, seq_len] per field, standardized
-    remaining_times: Gaussian  # [batch_size, seq_len] per field, standardized
+    times_to_next: Laplace  # [batch_size, seq_len] per field, standardized
+    remaining_times: Laplace  # [batch_size, seq_len] per field, standardized
 
 
 @dataclass(frozen=True)
@@ -253,7 +253,7 @@ class Decoder(nn.Module):
     from one latent is a coherent alternative continuation, where a per-step draw walks off the
     process's language while still looking locally plausible. A decoder with no latent has
     nowhere else to put its variability, so its heads are the distributions the draws come from:
-    the activity is sampled from its logits, and each time head emits a variance of its own to
+    the activity is sampled from its logits, and each time head emits a scale of its own to
     be sampled from.
     """
 
@@ -287,8 +287,8 @@ class Decoder(nn.Module):
                 one the decoder never feeds itself.
             eot_activity_index: What ends a generated suffix.
             stochastic: Whether the heads are the model's source of variability. True widens both
-                time heads to a mean and a log-variance and lets `generate` draw from all three
-                heads; False pins the time variance to 1 and reads every head at its mode.
+                time heads to a median and a log-scale and lets `generate` draw from all three
+                heads; False pins the time scale to 1 and reads every head at its mode.
             sampling: How the activity logits are shaped before a draw reads them, or None for a
                 decoder that never draws from them. Required when `stochastic`, since a
                 stochastic decoder with no sampler declared is a run whose draws nothing
@@ -303,6 +303,9 @@ class Decoder(nn.Module):
         super().__init__()
         self.embeddings = embeddings
         self.dropout = nn.Dropout(p=config.dropout)
+        # The embeddings are shared with the encoder but this norm is not: the two stacks read one
+        # embedding space at whatever scale each of them settles on.
+        self.embedding_norm = nn.LayerNorm(normalized_shape=d_model)
         self.activity_dropout = config.activity_dropout
         self.stochastic = stochastic
         self.sampling = sampling
@@ -345,8 +348,8 @@ class Decoder(nn.Module):
         self.activity_head = nn.Linear(
             in_features=config.head_hidden_dim, out_features=num_activities
         )
-        # A stochastic head emits a mean and a log-variance side by side, `Gaussian.from_head`'s
-        # convention; a point head emits the mean alone. Neither output is squashed: the targets
+        # A stochastic head emits a median and a log-scale side by side; a point head emits the
+        # median alone and `Laplace.point` pins the scale. Neither output is squashed: the targets
         # are standardized rather than bounded.
         time_head_width = 2 if stochastic else 1
         self.time_to_next_head = nn.Linear(
@@ -459,23 +462,22 @@ class Decoder(nn.Module):
         probabilities = _nucleus(probabilities, top_p=self.sampling.top_p)
         return torch.multinomial(input=probabilities, num_samples=1).squeeze(dim=1)
 
-    def _time(self, head: nn.Linear, features: torch.Tensor) -> Gaussian:
+    def _time(self, head: nn.Linear, features: torch.Tensor) -> Laplace:
         """Read one time head as the distribution its target is scored against.
 
         Args:
             head: The head to read, `time_to_next_head` or `remaining_time_head`.
             features: What the shared trunk produced, `[..., head_hidden_dim]`.
         Returns:
-            The distribution, `[...]` per field. A point head's variance is a constant 1 rather
-            than a parameter, which leaves its log-likelihood the squared error it would
-            otherwise be and leaves `sample` nothing to add.
+            The distribution, `[...]` per field. A point head's scale is a constant 1 rather than
+            a parameter, which leaves its log-likelihood the absolute error it would otherwise be
+            and leaves `sample` nothing to add.
         """
         parameters = head(features)  # [..., 1] or [..., 2]
         if self.stochastic:
-            mean, logvar = parameters.unbind(dim=-1)  # [...] each
-            return Gaussian.create(mean=mean, logvar=logvar)
-        mean = parameters.squeeze(dim=-1)  # [...]
-        return Gaussian(mean=mean, logvar=torch.zeros_like(input=mean))
+            mean, logscale = parameters.unbind(dim=-1)  # [...] each
+            return Laplace.create(mean=mean, logscale=logscale)
+        return Laplace.point(mean=parameters.squeeze(dim=-1))  # [...]
 
     def _teacher_forced_input(self, suffix_activities: torch.Tensor) -> torch.Tensor:
         """What the decoder reads at each position: the suffix moved one step later, behind SOS.
@@ -534,8 +536,10 @@ class Decoder(nn.Module):
         Returns:
             The stack's output for the positions read, and the caches carrying them.
         """
-        hidden = self.dropout(
-            self.embeddings(self._blank_events(activities), start_position=start_position)
+        hidden = self.embedding_norm(
+            self.dropout(
+                self.embeddings(self._blank_events(activities), start_position=start_position)
+            )
         )  # [batch_size, seq_len, d_model]
 
         # No suffix padding mask: under the causal mask a padded position is visible only to
