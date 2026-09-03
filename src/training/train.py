@@ -7,9 +7,11 @@ from src import paths
 from src.configs.schema import EarlyStoppingConfig, OptimizerConfig, TrainingConfig
 from src.datasets.codec import DatasetCodec
 from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
+from src.logs.conformance import ConformanceChecker
 from src.logs.continuations import ContinuationIndex
 from src.logs.keys import Split
 from src.model import SuffixModel, save_checkpoint
+from src.suffixes import ActivityCodes
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
 from src.training.validation import validate, validate_generation
@@ -69,6 +71,10 @@ def train(
     # once here rather than per validation, and never the test split's: selecting against those
     # would fold the held-out set into which checkpoint is kept.
     continuations = ContinuationIndex(dataset=dataset, split=Split.VAL)
+
+    # The declarative model generated suffixes are checked against, built once and reused: it
+    # caches a trace's rate across the run rather than rebuilding the constraints per validation.
+    checker = ConformanceChecker(dataset, ActivityCodes.of(codec.activity.names))
 
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_config.lr, weight_decay=optimizer_config.weight_decay
@@ -144,10 +150,10 @@ def train(
                         num_samples=generation_samples,
                         codec=codec,
                         index=continuations,
+                        checker=checker,
                         device=device,
                     )
-                    gen_metrics.accuracy.log(step, prefix='gen')
-                    gen_metrics.distribution.log(step, prefix='gen')
+                    gen_metrics.log(step)
 
                     # `val_latent.log` above already wrote `kl_weight` beside the rest of the
                     # latent metrics; only a model with a latent has one to show here.
