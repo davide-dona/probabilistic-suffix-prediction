@@ -40,8 +40,8 @@ class GenerationMetrics:
 
     def log(self, step: int) -> None:
         """Log every model-owned score to the active W&B run, namespaced by the report table it
-        answers (`gen/accuracy-point`, `gen/fidelity`, `gen/accuracy-generative`) or
-        `gen/diagnostics` for the ones no table holds.
+        answers (`accuracy-point`, `fidelity`, `accuracy-generative`) or `diagnostics` for the
+        ones no table holds.
 
         A `Owner.LOG` field (e.g. `suffix_length`, `reference_diversity`) is a property of the
         fixed slice this run generates for, constant across every validation of one run, so it is
@@ -62,7 +62,7 @@ class GenerationMetrics:
                 if declaration.owner is Owner.LOG:
                     continue
                 namespace = table_namespace or _TABLE_OF_METRIC.get(declaration.key, _DIAGNOSTICS)
-                payload[f'gen/{namespace}/{declaration.key}'] = getattr(family, declaration.key)
+                payload[f'{namespace}/{declaration.key}'] = getattr(family, declaration.key)
         wandb.log(payload, step=step)
 
 
