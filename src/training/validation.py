@@ -1,29 +1,69 @@
 from dataclasses import dataclass
 
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.evaluation.scores import AccuracyScores, DistributionScores
+from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
 from src.inference.generate import generate_batch
+from src.logs.conformance import ConformanceChecker
 from src.logs.continuations import ContinuationIndex
 from src.model import SuffixModel
+from src.scalar_metrics import Owner
 from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
+from src.visualization.catalogue import TABLES
+
+# Which report table, if any, answers with each metric, read off the same catalogue a figure or a
+# table is composed from: the wandb chart a run is watched on and the paper's own tables read the
+# same grouping by construction. A metric no table holds (a diagnostic, e.g. `sample_diversity` or
+# the `_ae_mean` columns) falls into a namespace of its own instead.
+_TABLE_OF_METRIC = {entry.key: table.name for table in TABLES for entry in table.columns}
+_DIAGNOSTICS = 'diagnostics'
 
 
 @dataclass(frozen=True, slots=True)
 class GenerationMetrics:
-    """What one generation pass measured: how close the suffixes are to the ground truth, and how
-    the set of them compares against every continuation the validation split took.
+    """What one generation pass measured: how close the suffixes are to the ground truth, whether
+    they are traces the process allows, and how the set of them compares against every
+    continuation the validation split took.
 
-    The two families a training run reads. Accuracy is the curve a run is watched on, and
+    The three families a training run reads. Accuracy is the curve a run is watched on, and
     `DistributionScores.emsc` is the score a checkpoint is selected on.
     """
 
     accuracy: AccuracyScores
+    conformance: ConformanceScores
     distribution: DistributionScores
+
+    def log(self, step: int) -> None:
+        """Log every model-owned score to the active W&B run, namespaced by the report table it
+        answers (`gen/accuracy-point`, `gen/fidelity`, `gen/accuracy-generative`) or
+        `gen/diagnostics` for the ones no table holds.
+
+        A `Owner.LOG` field (e.g. `suffix_length`, `reference_diversity`) is a property of the
+        fixed slice this run generates for, constant across every validation of one run, so it is
+        dropped here rather than logged as a flat line: it already sits in every report and
+        per-prefix file.
+
+        Args:
+            step: The training step this pass scores.
+        """
+        payload = {}
+        for family in (self.accuracy, self.conformance, self.distribution):
+            # Conformance has no report table of its own (`visualization.md`: a whole-split mean
+            # says nothing a reader can act on there, so it is drawn by length instead), but it is
+            # still one of the two goals a run is judged on, so it keeps a namespace of its own
+            # rather than falling into `diagnostics` beside unrelated per-run diagnostics.
+            table_namespace = 'conformance' if isinstance(family, ConformanceScores) else None
+            for declaration in type(family).metrics():
+                if declaration.owner is Owner.LOG:
+                    continue
+                namespace = table_namespace or _TABLE_OF_METRIC.get(declaration.key, _DIAGNOSTICS)
+                payload[f'gen/{namespace}/{declaration.key}'] = getattr(family, declaration.key)
+        wandb.log(payload, step=step)
 
 
 @torch.no_grad()
@@ -66,16 +106,17 @@ def validate_generation(
     num_samples: int,
     codec: DatasetCodec,
     index: ContinuationIndex,
+    checker: ConformanceChecker,
     device: torch.device,
 ) -> GenerationMetrics:
     """
-    Generate suffixes from the prefixes in `loader` and compare them to the ground truth and to
-    every continuation the split was observed to take.
+    Generate suffixes from the prefixes in `loader` and compare them to the ground truth, to the
+    declarative model, and to every continuation the split was observed to take.
 
-    Scored through the same two families the final report is built from, over the same population:
-    every prefix counts here and in `pipelines/evaluate.py` alike. What differs is which split is
-    read, how much of it, and how many suffixes each prefix is answered with, so a training curve
-    is read for its shape over steps rather than against a report's numbers.
+    Scored through the same three families the final report is built from, over the same
+    population: every prefix counts here and in `pipelines/evaluate.py` alike. What differs is
+    which split is read, how much of it, and how many suffixes each prefix is answered with, so a
+    training curve is read for its shape over steps rather than against a report's numbers.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
@@ -90,6 +131,7 @@ def validate_generation(
         index: The continuations the validation split takes after each of its prefixes. The
             validation split's and never the test split's: selecting a checkpoint against the
             test split's continuations would fold the held-out set into what gets kept.
+        checker: The declarative model to check generated suffixes against.
         device: The device to run the computations on.
     Returns:
         The metrics of the pass, averaged over prefixes.
@@ -113,6 +155,9 @@ def validate_generation(
     ]
     return GenerationMetrics(
         accuracy=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]),
+        conformance=ConformanceScores.mean(
+            [ConformanceScores.of(one, checker=checker) for one in generations]
+        ),
         distribution=DistributionScores.mean(
             [DistributionScores.of(one, index=index) for one in generations]
         ),
