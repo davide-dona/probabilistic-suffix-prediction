@@ -18,6 +18,7 @@ class ModelStyle:
     marker: str
     linestyle: str
 
+
 # How the log's own values are drawn, wherever a figure puts the log beside the models: the target
 LOG_STYLE = ModelStyle(label='Log', color='#8A8A8A', marker='o', linestyle='-.')
 
@@ -28,6 +29,10 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'transformer': ModelStyle(label='Transformer', color='#6B3FA0', marker='D', linestyle=':'),
+        # The same arm with its time heads made point regressors: one column, not two drawn alike.
+        'transformer-point-times': ModelStyle(
+            label='Transformer', color='#6B3FA0', marker='D', linestyle=':'
+        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
     },
 )

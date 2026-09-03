@@ -5,7 +5,6 @@ from torch import nn
 
 from src.configs.schema import DecoderConfig, LatentConfig, SamplingConfig
 from src.datasets.dataset import Events
-from src.distributions.laplace import Laplace
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
 from src.model.components.conditioning import (
     UNCONDITIONED,
@@ -66,16 +65,16 @@ class DecoderOutput:
     """What the decoder predicts at every suffix position: the activity to write there, the
     minutes until it, and the minutes until the case ends.
 
-    Both times are Laplace on the standardized scale their targets are encoded at, scored by their
-    negative log-likelihood. A decoder built with `stochastic=False` pins their scale to 1, which
-    leaves that term the plain absolute error it would otherwise be and leaves the times nothing
-    to be drawn from. They overlap - a remaining time is the sum of the waits from that
-    position on - and are read as two independent estimates rather than tied together.
+    Both times are a single standardized number on the scale their targets are encoded at, scored
+    by `time_mae`. Neither head carries a spread of its own: what a wait could have been is the
+    latent's to say where there is one, and the sampled activity path's where there is not. They
+    overlap - a remaining time is the sum of the waits from that position on - and are read as two
+    independent estimates rather than tied together.
     """
 
     activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    times_to_next: Laplace  # [batch_size, seq_len] per field, standardized
-    remaining_times: Laplace  # [batch_size, seq_len] per field, standardized
+    times_to_next: torch.Tensor  # [batch_size, seq_len], standardized
+    remaining_times: torch.Tensor  # [batch_size, seq_len], standardized
 
 
 @dataclass(frozen=True)
@@ -248,13 +247,22 @@ class Decoder(nn.Module):
     once per pass for what each layer is modulated by; with no latent every layer is handed
     `UNCONDITIONED` instead and the stack is the plain pre-norm decoder underneath.
 
-    Where a model's variability lives decides how its heads are read, so the two go together in
-    `stochastic`. A conditioned decoder is read greedily, one suffix per z: a whole suffix drawn
-    from one latent is a coherent alternative continuation, where a per-step draw walks off the
-    process's language while still looking locally plausible. A decoder with no latent has
-    nowhere else to put its variability, so its heads are the distributions the draws come from:
-    the activity is sampled from its logits, and each time head emits a scale of its own to
-    be sampled from.
+    Where a model's variability lives decides how its activity head is read, which is what
+    `sampling` says. A conditioned decoder declares none and is read greedily, one suffix per z: a
+    whole suffix drawn from one latent is a coherent alternative continuation, where a per-step
+    draw walks off the process's language while still looking locally plausible. A decoder with no
+    latent has nowhere else to put its variability, so it declares a sampler and draws the activity
+    from its logits at every step.
+
+    The time heads are point regressors either way, and that is the whole of what they are: a
+    single standardized number, scored by the absolute error. A head that emitted a scale of its
+    own would be a second difference between the two arms, one the latent does not reach, and it
+    would be paid for out of the activity head - a scale is free to shrink, and every step it
+    shrinks by multiplies the gradient the shared trunk sees from the times against the one it sees
+    from the activities. What a wait could have been is the latent's to carry where there is one.
+    Where there is not, a wait still varies from draw to draw, because it is read off an activity
+    path that was itself drawn; a remaining time, read at position 0 before any activity is
+    written, does not, and that is a result about this arm rather than a gap in it.
     """
 
     def __init__(
@@ -269,7 +277,6 @@ class Decoder(nn.Module):
         pad_activity_index: int,
         pad_resource_index: int,
         eot_activity_index: int,
-        stochastic: bool,
         sampling: SamplingConfig | None,
     ):
         """
@@ -286,20 +293,11 @@ class Decoder(nn.Module):
             pad_resource_index: The resource row every decoder input carries, the channel being
                 one the decoder never feeds itself.
             eot_activity_index: What ends a generated suffix.
-            stochastic: Whether the heads are the model's source of variability. True widens both
-                time heads to a median and a log-scale and lets `generate` draw from all three
-                heads; False pins the time scale to 1 and reads every head at its mode.
             sampling: How the activity logits are shaped before a draw reads them, or None for a
-                decoder that never draws from them. Required when `stochastic`, since a
-                stochastic decoder with no sampler declared is a run whose draws nothing
-                describes.
+                decoder that reads them at their mode. Declaring one is what makes this decoder's
+                heads the source of its variability, so it is also the whole of what tells the two
+                arms apart here.
         """
-        if stochastic == (sampling is None):
-            raise ValueError(
-                'Decoder needs a `sampling` config exactly when it is `stochastic`: the activity '
-                f'head is drawn from in one case and read at its mode in the other (stochastic='
-                f'{stochastic}, sampling={sampling})'
-            )
         super().__init__()
         self.embeddings = embeddings
         self.dropout = nn.Dropout(p=config.dropout)
@@ -307,7 +305,6 @@ class Decoder(nn.Module):
         # embedding space at whatever scale each of them settles on.
         self.embedding_norm = nn.LayerNorm(normalized_shape=d_model)
         self.activity_dropout = config.activity_dropout
-        self.stochastic = stochastic
         self.sampling = sampling
 
         self.sos_activity_index = sos_activity_index
@@ -348,16 +345,10 @@ class Decoder(nn.Module):
         self.activity_head = nn.Linear(
             in_features=config.head_hidden_dim, out_features=num_activities
         )
-        # A stochastic head emits a median and a log-scale side by side; a point head emits the
-        # median alone and `Laplace.point` pins the scale. Neither output is squashed: the targets
+        # One number each, the standardized time itself. Neither output is squashed: the targets
         # are standardized rather than bounded.
-        time_head_width = 2 if stochastic else 1
-        self.time_to_next_head = nn.Linear(
-            in_features=config.head_hidden_dim, out_features=time_head_width
-        )
-        self.remaining_time_head = nn.Linear(
-            in_features=config.head_hidden_dim, out_features=time_head_width
-        )
+        self.time_to_next_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
+        self.remaining_time_head = nn.Linear(in_features=config.head_hidden_dim, out_features=1)
 
     def forward(
         self,
@@ -391,10 +382,11 @@ class Decoder(nn.Module):
             modulations=self._modulations(z),
         )  # [batch_size, seq_len, d_model]
         features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
+        # Both time heads are [batch_size, seq_len, 1] -> [batch_size, seq_len].
         return DecoderOutput(
             activity_logits=self.activity_head(features),
-            times_to_next=self._time(self.time_to_next_head, features),
-            remaining_times=self._time(self.remaining_time_head, features),
+            times_to_next=self.time_to_next_head(features).squeeze(dim=-1),
+            remaining_times=self.remaining_time_head(features).squeeze(dim=-1),
         )
 
     def _modulations(self, z: torch.Tensor | None) -> tuple[LayerModulation, ...]:
@@ -422,10 +414,10 @@ class Decoder(nn.Module):
         Args:
             sampling: The sampler to draw with from here on.
         Raises:
-            ValueError: If this decoder reads its heads at their mode, there being nothing for a
-                sampler to shape.
+            ValueError: If this decoder reads its activity head at its mode, there being nothing
+                for a sampler to shape.
         """
-        if not self.stochastic:
+        if self.sampling is None:
             raise ValueError(
                 'this decoder reads its activity head at its mode, so there is no sampler to '
                 'replace: its draws vary in z alone'
@@ -455,29 +447,11 @@ class Decoder(nn.Module):
         logits = logits.index_fill(dim=-1, index=self.unemittable_activities, value=-torch.inf)
         if not drawing:
             return logits.argmax(dim=-1)
-        # `self.sampling` is not None here: the constructor refuses a stochastic decoder without
-        # one, and `drawing` is only ever True for a stochastic decoder.
+        # `self.sampling` is not None here: `drawing` is read off it in the first place.
         assert self.sampling is not None
         probabilities = (logits / self.sampling.temperature).softmax(dim=-1)
         probabilities = _nucleus(probabilities, top_p=self.sampling.top_p)
         return torch.multinomial(input=probabilities, num_samples=1).squeeze(dim=1)
-
-    def _time(self, head: nn.Linear, features: torch.Tensor) -> Laplace:
-        """Read one time head as the distribution its target is scored against.
-
-        Args:
-            head: The head to read, `time_to_next_head` or `remaining_time_head`.
-            features: What the shared trunk produced, `[..., head_hidden_dim]`.
-        Returns:
-            The distribution, `[...]` per field. A point head's scale is a constant 1 rather than
-            a parameter, which leaves its log-likelihood the absolute error it would otherwise be
-            and leaves `sample` nothing to add.
-        """
-        parameters = head(features)  # [..., 1] or [..., 2]
-        if self.stochastic:
-            mean, logscale = parameters.unbind(dim=-1)  # [...] each
-            return Laplace.create(mean=mean, logscale=logscale)
-        return Laplace.point(mean=parameters.squeeze(dim=-1))  # [...]
 
     def _teacher_forced_input(self, suffix_activities: torch.Tensor) -> torch.Tensor:
         """What the decoder reads at each position: the suffix moved one step later, behind SOS.
@@ -616,11 +590,12 @@ class Decoder(nn.Module):
         Every step is one cached call to `_run_layers`, the same pass teacher forcing runs, so
         writing n events costs n passes over one position.
 
-        How the heads are read is what `sample` and `stochastic` decide together. A conditioned
-        decoder is `stochastic=False`: every head is read at its mode, and two generations of one
-        prefix differ only in the z each was given. A decoder with no latent is `stochastic=True`,
-        and a drawn suffix samples all three heads; its point prediction is the same pass with
-        `sample=False`.
+        Only the activity head is ever drawn from, and only where `self.sampling` says so: a
+        conditioned decoder declares none, so every step is greedy and two generations of one
+        prefix differ in the z each was given. A decoder with no latent draws its activity at
+        every step, and its point prediction is the same pass with `sample=False`. Both time
+        heads are read as they are either way, so a wait varies from draw to draw only through
+        the activity path it was read off.
 
         Args:
             z: The sampled latent, `[batch_size, latent_dim]`, or None for a decoder built
@@ -629,16 +604,16 @@ class Decoder(nn.Module):
             prefix_pad_mask: True where a prefix position holds padding.
             max_steps: Hard cap on the suffix length, for generations that never emit EOT.
             sample: Whether this call is a draw rather than the point prediction. Nothing on a
-                decoder whose heads are not the source of its variability.
+                decoder whose activity head is not the source of its variability.
         Returns:
             The generated suffixes, the length of each, the minutes until each of their events,
             and the remaining time each was opened with.
         """
         batch_size = prefix_encoded.size(dim=0)
         device = prefix_encoded.device
-        # The heads are drawn from only where they are what the variability lives in; everywhere
-        # else they are read at their mode, whatever the caller asked for.
-        drawing = self.stochastic and sample
+        # The activity head is drawn from only where it is what the variability lives in;
+        # everywhere else it is read at its mode, whatever the caller asked for.
+        drawing = self.sampling is not None and sample
         # z does not change while a suffix is being written, so what it does to each layer is
         # read once here rather than at every step of the loop below.
         modulations = self._modulations(z)
@@ -685,16 +660,13 @@ class Decoder(nn.Module):
             activities = self._next_activity(
                 self.activity_head(features), drawing=drawing
             )  # [batch_size]
-            # Only position 0, the state after SOS, answers for the whole suffix.
+            # Only position 0, the state after SOS, answers for the whole suffix. Nothing has been
+            # drawn yet there, so every sample of one prefix opens on the same remaining time.
             if position == 0:
-                remaining = self._time(self.remaining_time_head, features)
-                remaining_time = remaining.sample() if drawing else remaining.mean  # [batch_size]
+                remaining_time = self.remaining_time_head(features).squeeze(dim=-1)  # [batch_size]
 
-            time_to_next = self._time(self.time_to_next_head, features)
             generated_activities[:, position] = activities
-            generated_times_to_next[:, position] = (
-                time_to_next.sample() if drawing else time_to_next.mean
-            )
+            generated_times_to_next[:, position] = self.time_to_next_head(features).squeeze(dim=-1)
             next_input = activities.unsqueeze(dim=1)  # [batch_size, 1]
 
             # A suffix ends at its first EOT, so a later one cannot move the length back.

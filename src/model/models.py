@@ -9,7 +9,6 @@ from src.configs.schema import CVAEConfig, ModelConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.distributions.gaussian import Gaussian
-from src.distributions.laplace import Laplace
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
 from src.training.kl import LatentMetrics
@@ -54,21 +53,24 @@ def _timed_positions(batch: SplitTrace) -> torch.Tensor:
     return positions.unsqueeze(dim=0) < (batch.suffix.length - 1).unsqueeze(dim=1)
 
 
-def time_nll(prediction: Laplace, target: torch.Tensor, batch: SplitTrace) -> torch.Tensor:
+def time_mae(prediction: torch.Tensor, target: torch.Tensor, batch: SplitTrace) -> torch.Tensor:
     """Score one time head over the positions its target is defined at.
 
-    Shared by every architecture: neither has an opinion about where a time target is scored or
-    how, only about whether the head there carries a scale of its own. `Laplace.point` is what
-    makes the unconditioned case the plain absolute error without this having to ask.
+    Shared by every architecture, and the same call for both: neither has an opinion about where a
+    time target is scored or how. The absolute error rather than a squared one because its
+    minimizer is the conditional *median*, which is what the report's `*_ae_*_days` columns score.
+    A squared error would fit the conditional mean instead, over durations that are standardized
+    raw minutes with nothing but a 99.9-percentile filter guarding their tail, and the tail would
+    set the fit.
 
     Args:
-        prediction: The head's distribution, `[batch_size, seq_len]` per field, standardized.
-        target: What it is scored against, the shape and scale of `prediction.mean`.
+        prediction: The head's output, `[batch_size, seq_len]`, standardized.
+        target: What it is scored against, shaped and scaled like `prediction`.
         batch: The batch the scored positions are read off.
     Returns:
         A scalar, summed over the scored positions of the whole batch.
     """
-    error = prediction.negative_log_likelihood(target)  # [batch_size, seq_len]
+    error = (prediction - target).abs()  # [batch_size, seq_len]
     return error.masked_fill(mask=~_timed_positions(batch), value=0.0).sum()
 
 

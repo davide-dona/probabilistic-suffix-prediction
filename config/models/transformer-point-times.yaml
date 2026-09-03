@@ -1,0 +1,96 @@
+# The same backbone with the latent path taken out: the arm the CVAE is read against. Every width
+# below matches config/models/cvae.yaml, so what separates the two runs is the latent and nothing
+# else. With no z conditioning the decoder, the draws have to come from the activity head instead,
+# sampled from its logits at every step. That per-step noise is exactly what the latent exists to
+# avoid, which is the comparison.
+#
+# Both time heads are point regressors, as the CVAE's are and as SuTraN's are, rather than heads
+# emitting a scale of their own to be drawn from. A free scale was a second difference between the
+# arms, one the latent does not reach, and it was paid for out of the activity head: the scale
+# shrinks to buy likelihood, and every step it shrinks by multiplies the time gradient reaching the
+# shared trunk against the activity gradient. On bpic17 that left the greedy read of the activity
+# head unable to find EOT at all - `length_ae_point` pinned at the decode cap for 1200 steps while
+# the CVAE cleared it by step 200. A wait still varies from draw to draw here, through the drawn
+# activity path it is read off; a remaining time, read before the first step, does not.
+#
+# Every non-architecture setting a run needs - the optimizer, the training loop - lives in this
+# one file too, so it and a dataset config together fully describe a run. There is no `loss`
+# section: with no latent there is no KL term to weigh.
+seed: 42
+
+dataloader:
+  batch_size: 4096
+  # 48 vCPUs, so cores are not the constraint: each worker prefetches two of these batches,
+  # and a batch of 4096 padded prefix/suffix pairs is hundreds of MB of host memory.
+  num_workers: 12
+
+model:
+  kind: transformer
+  name: transformer-point-times
+
+  d_model: 32
+
+  embeddings:
+    activity_dim: 16
+    resource_dim: 32
+    feature_dim: 8
+
+  # Reads the prefix alone: with no posterior there is nothing a summary of the suffix would feed.
+  encoder:
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
+    dropout: 0.1
+
+  decoder:
+    num_layers: 4
+    num_heads: 8
+    feedforward_dim: 128
+    dropout: 0.1
+    # A device of the conditioned decoder alone: blanking a teacher-forced activity is what makes
+    # the CVAE lean on z, and there is no z here for it to lean on.
+    activity_dropout: 0.0
+    head_hidden_dim: 128
+
+  # How the activity logits are shaped before a draw reads them. Inference-time only: nothing here
+  # reaches a gradient, and training and checkpoint selection run at whatever is written here.
+  # `pipelines.tune` searches the pair on the validation split once a run is trained, and what it
+  # picks is written back here and handed to `pipelines.generate`.
+  sampling:
+    # Divides the logits. Above 1 flattens every step alike, the ones the process already
+    # determines included, which is the per-step noise this arm exists to measure.
+    temperature: 1.0
+    # Keeps the smallest set of activities summing to this. Unlike the temperature it reads how
+    # peaked a step is: 1.0 drops nothing, and the arm draws from the whole softmax.
+    top_p: 1.0
+
+optimizer:
+  lr: 0.0012
+  weight_decay: 0.0
+  # A batch this wide takes a few hundred steps to settle; starting it at the full rate is what
+  # makes those the steps a run never recovers from. Nothing decays it afterwards.
+  warmup_steps: 300
+
+training:
+  # Dual RTX A6000 workstation, 48GB GPU memory each; `cuda:0` pins one of the two.
+  device: cuda:0
+  max_steps: 10000
+  val_every_n_steps: 50
+  grad_clip_norm: 5.0  # null to leave gradients unclipped
+  # Fixed slice of the evaluation set used for validation;
+  # Using the full evaluation set for validation would be too slow
+  validation_pairs: 20000
+  generation_pairs: 1024
+
+early_stopping:
+  patience: 30   # number of validation checks with no improvement after which training will be stopped
+  min_delta_perc: 0.005
+
+# Suffixes drawn per prefix, once for each of the two passes that generate them.
+inference:
+  # The pass inside the training loop, kept small: it is paid for on every validation.
+  validation_samples: 10
+  # The pass over the whole test split that a report is built from. Paid for once per run, and a
+  # hundred draws describe p(suffix | prefix) far better than ten.
+  evaluation_samples: 100
+  generation_rows_upper_bound: 10240
