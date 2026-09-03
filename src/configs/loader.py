@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import DatasetConfig, ExperimentConfig
+from .schema import DatasetConfig, ExperimentConfig, SamplingConfig
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -66,7 +66,11 @@ def load_dataset_config(config: Path) -> DatasetConfig:
 
 
 def load_generation_config(
-    experiment_config: dict, *, device: str | None, num_samples: int | None
+    experiment_config: dict,
+    *,
+    device: str | None,
+    num_samples: int | None,
+    sampling: SamplingConfig | None,
 ) -> ExperimentConfig:
     """Load and validate the config a checkpoint is generated from.
     Args:
@@ -76,11 +80,17 @@ def load_generation_config(
             machine than the one it trained on. `None` keeps it.
         num_samples: How many suffixes to draw per prefix, replacing the run's own
             `inference.evaluation_samples`, or `None` to keep it.
+        sampling: Overrides the run's own `model.sampling`, which is how a sampler chosen after
+            training by `pipelines.tune` reaches a generation without the checkpoint being
+            rewritten. `None` keeps what the run trained under. An architecture whose config has
+            no `sampling` section rejects this rather than ignoring it, there being no read of
+            its heads for a temperature to shape.
     Returns:
         The validated config.
     Raises:
-        pydantic.ValidationError: If the merged config is not a valid experiment, `num_samples`
-            below `InferenceConfig`'s floor included.
+        pydantic.ValidationError: If the merged config is not a valid experiment: `num_samples`
+            below `InferenceConfig`'s floor, or a `sampling` override against an architecture
+            that declares none.
     """
     merged = experiment_config
     if device is not None:
@@ -88,4 +98,6 @@ def load_generation_config(
         merged = _deep_merge(merged, {'training': {'device': device}})
     if num_samples is not None:
         merged = _deep_merge(merged, {'inference': {'evaluation_samples': num_samples}})
+    if sampling is not None:
+        merged = _deep_merge(merged, {'model': {'sampling': sampling.model_dump()}})
     return ExperimentConfig.model_validate(merged)

@@ -27,6 +27,7 @@ from src.paths.run import (
     EVALUATION,
     GENERATIONS,
     PREFIX_SCORES,
+    TUNING,
     RunArtifact,
 )
 
@@ -50,6 +51,7 @@ __all__ = [
     'ROOT',
     'TABLE',
     'TABLES_DIR',
+    'TUNING',
     'VISUAL_DIR',
     'Artifact',
     'DatasetArtifact',

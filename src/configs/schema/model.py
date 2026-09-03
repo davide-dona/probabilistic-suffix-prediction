@@ -43,6 +43,34 @@ class LatentConfig(StrictModel):
     latent_dim: int = Field(..., gt=0)
 
 
+class SamplingConfig(StrictModel):
+    """How an architecture that draws from its activity head shapes those logits before reading
+    them.
+
+    Inference-time only, and chosen after training rather than with it: nothing here reaches a
+    gradient. `temperature: 1.0, top_p: 1.0` is the untouched softmax, which is what a run trains
+    and selects its checkpoint under; `pipelines.tune` searches the pair on the validation split
+    and `pipelines.generate` is handed what it picked.
+    """
+
+    temperature: float = Field(
+        ...,
+        gt=0.0,
+        description='Divides the logits before the softmax. Above 1 flattens the head, below 1 '
+        'sharpens it towards its mode, and every step is scaled alike, the ones the process '
+        'already determines included',
+    )
+    top_p: float = Field(
+        ...,
+        gt=0.0,
+        le=1.0,
+        description='Nucleus: the smallest set of activities whose probability sums to this is '
+        'kept and the rest are dropped. Unlike the temperature it reads how peaked the step is, '
+        'so a step with one plausible activity keeps one candidate and emits no noise while a '
+        'genuine choice point keeps the activities that make it one. 1.0 drops nothing',
+    )
+
+
 class DecoderConfig(StrictModel):
     """Transformer decoder writing the suffix: causal self-attention plus cross-attention over
     the encoded prefix.
@@ -109,15 +137,35 @@ class CVAEConfig(BackboneConfig):
 
 
 class TransformerConfig(BackboneConfig):
-    """Every hyperparameter of `Transformer`: the backbone alone.
+    """Every hyperparameter of `Transformer`: the backbone, and how its activity head is read.
 
     It carries no `prior` or `latent` section, and `extra='forbid'` is what turns writing one
-    into a config error rather than a silently ignored block.
+    into a config error rather than a silently ignored block. `sampling` is here rather than
+    beside the sample counts in `InferenceConfig` for the same reason in the other direction: it
+    means nothing to an architecture whose decode is greedy, so writing it under a `cvae` config
+    is a config error rather than a block that reads as if it did something.
     """
 
     kind: Literal['transformer']
+
+    sampling: SamplingConfig
 
 
 # Which architecture a run builds is read off `model.kind`, so a config names its own class rather
 # than the pipeline guessing from the sections it happens to carry.
 ModelConfig = Annotated[CVAEConfig | TransformerConfig, Field(discriminator='kind')]
+
+
+def sampling_of(model: ModelConfig) -> SamplingConfig | None:
+    """The sampler an architecture declares, or None for one whose decode is greedy.
+
+    Written once here rather than at each caller, so the question 'does this architecture shape
+    its logits' is answered by the union itself and a third architecture answers it by being
+    added to the union.
+
+    Args:
+        model: The `model` section of a validated config.
+    Returns:
+        Its `sampling`, or None where the architecture has no such section.
+    """
+    return model.sampling if isinstance(model, TransformerConfig) else None

@@ -10,8 +10,10 @@ from .model import (
     LatentConfig,
     ModelConfig,
     PriorConfig,
+    SamplingConfig,
     TraceEncoderConfig,
     TransformerConfig,
+    sampling_of,
 )
 from .training import (
     DataLoaderConfig,
@@ -38,8 +40,10 @@ __all__ = [
     'ModelConfig',
     'OptimizerConfig',
     'PriorConfig',
+    'SamplingConfig',
     'StrictModel',
     'TraceEncoderConfig',
     'TrainingConfig',
     'TransformerConfig',
+    'sampling_of',
 ]

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from src.configs.schema import DecoderConfig, LatentConfig
+from src.configs.schema import DecoderConfig, LatentConfig, SamplingConfig
 from src.datasets.dataset import Events
 from src.distributions.gaussian import Gaussian
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
@@ -206,6 +206,39 @@ class DecoderLayer(nn.Module):
         )
 
 
+def _nucleus(probabilities: torch.Tensor, *, top_p: float) -> torch.Tensor:
+    """Keep the smallest set of activities whose probability sums to `top_p`, and renormalize.
+
+    Where the temperature scales every step alike, this reads how peaked each one is: a step the
+    process already determines leaves one activity above the threshold and the draw becomes the
+    greedy read, where a genuine choice point keeps the activities that make it one. That is the
+    whole reason it is here rather than a fixed candidate count, which cannot tell the two apart
+    on a vocabulary this small.
+
+    Args:
+        probabilities: The activity head's softmax, `[batch_size, num_activities]`. Activities
+            masked out upstream sit at zero and are sorted to the back, so they are never kept.
+        top_p: The mass to keep. 1.0 keeps everything.
+    Returns:
+        The same shape, summing to 1 along the last dimension, zero outside the nucleus.
+    """
+    if top_p >= 1.0:
+        return probabilities
+
+    ordered, indices = probabilities.sort(dim=-1, descending=True)  # [batch_size, num_activities]
+    # The mass strictly before each column. A column is kept when what came before it fell short
+    # of the threshold, so the column that first reaches it is kept too and the heaviest activity
+    # always is: the nucleus is never empty however peaked or flat the step.
+    preceding = ordered.cumsum(dim=-1) - ordered  # [batch_size, num_activities]
+    kept = ordered.masked_fill(mask=preceding >= top_p, value=0.0)
+
+    # Back into vocabulary order, the dropped activities left at zero.
+    probabilities = torch.zeros_like(input=probabilities).scatter(
+        dim=-1, index=indices, src=kept
+    )  # [batch_size, num_activities]
+    return probabilities / probabilities.sum(dim=-1, keepdim=True)
+
+
 class Decoder(nn.Module):
     """Transformer decoder that predicts a suffix of events, given the prefix and, where the model
     has one, a latent z.
@@ -237,6 +270,7 @@ class Decoder(nn.Module):
         pad_resource_index: int,
         eot_activity_index: int,
         stochastic: bool,
+        sampling: SamplingConfig | None,
     ):
         """
         Args:
@@ -255,12 +289,23 @@ class Decoder(nn.Module):
             stochastic: Whether the heads are the model's source of variability. True widens both
                 time heads to a mean and a log-variance and lets `generate` draw from all three
                 heads; False pins the time variance to 1 and reads every head at its mode.
+            sampling: How the activity logits are shaped before a draw reads them, or None for a
+                decoder that never draws from them. Required when `stochastic`, since a
+                stochastic decoder with no sampler declared is a run whose draws nothing
+                describes.
         """
+        if stochastic == (sampling is None):
+            raise ValueError(
+                'Decoder needs a `sampling` config exactly when it is `stochastic`: the activity '
+                f'head is drawn from in one case and read at its mode in the other (stochastic='
+                f'{stochastic}, sampling={sampling})'
+            )
         super().__init__()
         self.embeddings = embeddings
         self.dropout = nn.Dropout(p=config.dropout)
         self.activity_dropout = config.activity_dropout
         self.stochastic = stochastic
+        self.sampling = sampling
 
         self.sos_activity_index = sos_activity_index
         self.pad_activity_index = pad_activity_index
@@ -364,6 +409,26 @@ class Decoder(nn.Module):
             return (UNCONDITIONED,) * len(self.layers)
         return self.conditioning.layers(z)
 
+    def read_with(self, sampling: SamplingConfig) -> None:
+        """Replace the sampler the activity head is drawn through.
+
+        Inference-time only: nothing here is a parameter or reaches the state dict, so swapping it
+        changes how a trained model is read and not what it learned. That is what lets
+        `pipelines.tune` search the pair over one set of weights rather than one run per value.
+
+        Args:
+            sampling: The sampler to draw with from here on.
+        Raises:
+            ValueError: If this decoder reads its heads at their mode, there being nothing for a
+                sampler to shape.
+        """
+        if not self.stochastic:
+            raise ValueError(
+                'this decoder reads its activity head at its mode, so there is no sampler to '
+                'replace: its draws vary in z alone'
+            )
+        self.sampling = sampling
+
     def _next_activity(self, logits: torch.Tensor, *, drawing: bool) -> torch.Tensor:
         """Read the activity head for one decode step.
 
@@ -374,6 +439,10 @@ class Decoder(nn.Module):
         whatever rate that leaves. Masking both reads rather than only the draw keeps the two
         architectures decoding under one constraint, which is what makes them comparable.
 
+        A draw is then shaped by `self.sampling`: the temperature scales every step alike, the
+        nucleus reads how peaked each one is. The masked tokens leave the softmax at zero, so
+        neither knob can put them back.
+
         Args:
             logits: The head's output, `[batch_size, num_activities]`.
             drawing: Whether this step is a draw rather than the point prediction.
@@ -381,9 +450,14 @@ class Decoder(nn.Module):
             The activity written at this position, `[batch_size]`.
         """
         logits = logits.index_fill(dim=-1, index=self.unemittable_activities, value=-torch.inf)
-        if drawing:
-            return torch.multinomial(input=logits.softmax(dim=-1), num_samples=1).squeeze(dim=1)
-        return logits.argmax(dim=-1)
+        if not drawing:
+            return logits.argmax(dim=-1)
+        # `self.sampling` is not None here: the constructor refuses a stochastic decoder without
+        # one, and `drawing` is only ever True for a stochastic decoder.
+        assert self.sampling is not None
+        probabilities = (logits / self.sampling.temperature).softmax(dim=-1)
+        probabilities = _nucleus(probabilities, top_p=self.sampling.top_p)
+        return torch.multinomial(input=probabilities, num_samples=1).squeeze(dim=1)
 
     def _time(self, head: nn.Linear, features: torch.Tensor) -> Gaussian:
         """Read one time head as the distribution its target is scored against.

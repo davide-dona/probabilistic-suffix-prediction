@@ -65,6 +65,7 @@ class TransformerCVAE(SuffixModel):
             pad_resource_index=codec.resource.pad_index,
             eot_activity_index=codec.activity.eot_index,
             stochastic=False,
+            sampling=None,
         )
 
     def forward(self, item: SplitTrace) -> ModelOutput:
