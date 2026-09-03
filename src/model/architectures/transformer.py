@@ -4,11 +4,10 @@ import torch.nn.functional as F
 from src.configs.schema import TransformerConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
-from src.distributions.gaussian import Gaussian
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.trace_encoder import TraceEncoder
-from src.model.models import ModelOutput, SuffixModel, _timed_positions
+from src.model.models import ModelOutput, SuffixModel, time_nll
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
 
@@ -115,8 +114,8 @@ class Transformer(SuffixModel):
         """Score a forward pass by its reconstruction alone: no latent, no KL term to charge.
 
         Both time heads are genuinely stochastic here (`Decoder(..., stochastic=True)`), sampled
-        from at generation, so they are scored by their Gaussian NLL rather than a plain error:
-        a head that is wrong pays less by widening, which is the price of being drawn from.
+        from at generation, so the scale they emit is scored along with the median they place: a
+        head that is wrong pays less by widening, which is the price of being drawn from.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -127,13 +126,8 @@ class Transformer(SuffixModel):
             reduction='sum',
         )
 
-        timed = _timed_positions(batch)  # [batch_size, seq_len]
-        time_to_next_loss = _gaussian_nll(
-            prediction=output.decoder.times_to_next, target=batch.times_to_next, mask=timed
-        )
-        remaining_time_loss = _gaussian_nll(
-            prediction=output.decoder.remaining_times, target=batch.remaining_times, mask=timed
-        )
+        time_to_next_loss = time_nll(output.decoder.times_to_next, batch.times_to_next, batch)
+        remaining_time_loss = time_nll(output.decoder.remaining_times, batch.remaining_times, batch)
 
         reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 
@@ -145,29 +139,3 @@ class Transformer(SuffixModel):
             remaining_time_loss=remaining_time_loss.item(),
         )
         return reconstruction_loss / batch_size, metrics, None
-
-
-def _gaussian_nll(
-    *, prediction: Gaussian, target: torch.Tensor, mask: torch.Tensor
-) -> torch.Tensor:
-    """The negative log-likelihood of one time head, over the positions its target is defined at,
-    without the constant the two halves of a comparison would both carry.
-
-    A head that emits its own scale can buy its way out of a hard position by widening, which is
-    the price of letting it be sampled from: a model whose draws come from its heads has to say
-    how wide they are.
-
-    Args:
-        prediction: The head's distribution, `[batch_size, seq_len]` per field, standardized.
-        target: What it is scored against, the shape and scale of `prediction.mean`.
-        mask: True at the positions to score.
-    Returns:
-        A scalar, summed over the scored positions of the whole batch.
-    """
-    # exp(-logvar) rather than a division by the variance: one exp and a multiply, and no
-    # reciprocal of a number that a wide head can drive towards 0.
-    error = 0.5 * (
-        prediction.logvar
-        + (prediction.mean - target).pow(exponent=2) * torch.exp(input=-prediction.logvar)
-    )  # [batch_size, seq_len]
-    return error.masked_fill(mask=~mask, value=0.0).sum()

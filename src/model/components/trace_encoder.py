@@ -30,6 +30,9 @@ class TraceEncoder(nn.Module):
         super().__init__()
         self.embeddings = embeddings
         self.dropout = nn.Dropout(p=config.dropout)
+        # The embeddings are shared with the decoder but this norm is not: the two stacks read one
+        # embedding space at whatever scale each of them settles on.
+        self.embedding_norm = nn.LayerNorm(normalized_shape=d_model)
         # Initialize the CLS token to zero, so the encoder starts with no bias
         self.cls_token = nn.Parameter(data=torch.zeros(size=(1, 1, d_model)))
 
@@ -41,8 +44,8 @@ class TraceEncoder(nn.Module):
                 dropout=config.dropout,
                 batch_first=True,
                 # Pre-norm: each sublayer normalizes its input rather than its output, which
-                # leaves the residual path clean and is what lets the stack train without the
-                # warmup schedule post-norm needs.
+                # leaves the residual path clean. The run still warms its learning rate up, but
+                # for the width of the batch rather than for the instability post-norm has.
                 norm_first=True,
             ),
             num_layers=config.num_layers,
@@ -61,9 +64,11 @@ class TraceEncoder(nn.Module):
         Returns:
             The sequence's summary and its encoded events.
         """
-        # Apply the embedding and dropout to every event, then prepend the CLS token to the
-        # sequence.
-        embedded = self.dropout(self.embeddings(events))  # [batch_size, seq_len, d_model]
+        # Apply the embedding, dropout and norm to every event, then prepend the CLS token to
+        # the sequence.
+        embedded = self.embedding_norm(
+            self.dropout(self.embeddings(events))
+        )  # [batch_size, seq_len, d_model]
 
         cls_token = self.cls_token.expand(embedded.size(dim=0), -1, -1)  # [batch_size, 1, d_model]
         sequence = torch.cat(

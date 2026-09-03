@@ -66,11 +66,14 @@ model:
 optimizer:
   lr: 0.0012
   weight_decay: 0.0
+  # A batch this wide takes a few hundred steps to settle; starting it at the full rate is what
+  # makes those the steps a run never recovers from. Nothing decays it afterwards.
+  warmup_steps: 300
 
 training:
   # Dual RTX A6000 workstation, 48GB GPU memory each; `cuda:0` pins one of the two.
   device: cuda:0
-  max_steps: 6000
+  max_steps: 10000
   val_every_n_steps: 50
   grad_clip_norm: 5.0  # null to leave gradients unclipped
   # Fixed slice of the evaluation set used for validation;

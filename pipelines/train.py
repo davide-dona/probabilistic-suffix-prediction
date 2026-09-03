@@ -49,7 +49,8 @@ def run(config: ExperimentConfig) -> None:
             f'{config.training.val_every_n_steps:,}',
             'batch': f'{config.dataloader.batch_size} pairs, '
             f'{config.dataloader.num_workers} loader workers',
-            'optimizer': f'Adam, lr {config.optimizer.lr}, '
+            'optimizer': f'Adam, lr {config.optimizer.lr} after '
+            f'{config.optimizer.warmup_steps} warmup steps, '
             f'weight decay {config.optimizer.weight_decay}',
             'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
             'checkpoints': paths.BEST_CHECKPOINT.path(run),

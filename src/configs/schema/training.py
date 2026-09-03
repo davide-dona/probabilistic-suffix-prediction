@@ -27,8 +27,24 @@ class LossConfig(StrictModel):
 
 
 class OptimizerConfig(StrictModel):
-    lr: float = Field(..., gt=0.0)
+    """Adam and the ramp its learning rate reaches `lr` over.
+
+    The ramp is counted in optimizer steps rather than epochs, like everything else in
+    `TrainingConfig`, so it means the same thing on every dataset. Nothing decays it afterwards:
+    a decay spanning `training.max_steps` would never be reached, early stopping ending a run
+    long before that, which would leave the schedule's shape a property of where a run happened
+    to stop rather than of the config.
+    """
+
+    lr: float = Field(..., gt=0.0, description='The peak, reached at the end of the warmup')
     weight_decay: float = Field(..., ge=0.0)
+    warmup_steps: int = Field(
+        ...,
+        ge=0,
+        description='Steps the learning rate is ramped linearly to `lr` over, from one step of '
+        'it. A wide batch takes a few hundred steps to settle, and starting it at full rate is '
+        'what makes those steps the ones a run never recovers from. 0 starts at `lr`',
+    )
 
 
 class TrainingConfig(StrictModel):

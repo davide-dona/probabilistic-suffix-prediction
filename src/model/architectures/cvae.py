@@ -9,7 +9,7 @@ from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.latent import PosteriorNetwork, PriorNetwork
 from src.model.components.trace_encoder import TraceEncoder
-from src.model.models import Latents, ModelOutput, SuffixModel, _timed_positions
+from src.model.models import Latents, ModelOutput, SuffixModel, time_nll
 from src.training.kl import LatentMetrics, free_bits_kl, gaussian_kl, linear_warmup_weight
 from src.training.loss import Loss
 
@@ -154,10 +154,11 @@ class TransformerCVAE(SuffixModel):
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 
-        The two time heads are read at their mean alone: `Decoder(..., stochastic=False)` pins
-        their `logvar` at 0, so nothing here is a distribution to be scored by a likelihood - it
-        is the simple regressor the architecture already is, and the loss says so directly rather
-        than through a Gaussian NLL that happens to reduce to it.
+        The two time heads are read at their median alone: `Decoder(..., stochastic=False)` pins
+        their scale at 1, so the Laplace likelihood `time_nll` charges reduces exactly to the
+        absolute error, which is the simple regressor this architecture's decoder already is.
+        Everything the prefix leaves open is z's to carry, the spread of a wait included, so
+        nothing here is handed a scale of its own to widen instead.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -168,15 +169,8 @@ class TransformerCVAE(SuffixModel):
             reduction='sum',
         )
 
-        timed = _timed_positions(batch)  # [batch_size, seq_len]
-        time_to_next_loss = _masked_mse(
-            prediction=output.decoder.times_to_next.mean, target=batch.times_to_next, mask=timed
-        )
-        remaining_time_loss = _masked_mse(
-            prediction=output.decoder.remaining_times.mean,
-            target=batch.remaining_times,
-            mask=timed,
-        )
+        time_to_next_loss = time_nll(output.decoder.times_to_next, batch.times_to_next, batch)
+        remaining_time_loss = time_nll(output.decoder.remaining_times, batch.remaining_times, batch)
 
         reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 
@@ -204,20 +198,3 @@ class TransformerCVAE(SuffixModel):
             kl_per_dim, free_bits=self.loss_config.free_bits, kl_weight=kl_weight
         )
         return total_loss / batch_size, metrics, latent
-
-
-def _masked_mse(
-    *, prediction: torch.Tensor, target: torch.Tensor, mask: torch.Tensor
-) -> torch.Tensor:
-    """The summed squared error of one time head's mean, over the positions its target is
-    defined at.
-
-    Args:
-        prediction: The head's mean, `[batch_size, seq_len]`, standardized like `target`.
-        target: What it is scored against.
-        mask: True at the positions to score.
-    Returns:
-        A scalar, summed over the scored positions of the whole batch.
-    """
-    error = 0.5 * (prediction - target).pow(exponent=2)  # [batch_size, seq_len]
-    return error.masked_fill(mask=~mask, value=0.0).sum()

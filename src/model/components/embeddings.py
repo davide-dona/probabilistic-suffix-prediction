@@ -14,7 +14,8 @@ class EventEmbeddings(nn.Module):
     whatever channels `data.event_features` offers, concatenated and projected to `d_model`.
 
     A sinusoidal encoding of its position is added to the projected vector, so the stacks
-    can read the order of events out of the vectors.
+    can read the order of events out of the vectors. The stacks normalize what comes back before
+    reading it; nothing here does, so that the encoder's norm and the decoder's stay their own.
     """
 
     def __init__(self, config: EmbeddingConfig, codec: DatasetCodec, *, d_model: int):
