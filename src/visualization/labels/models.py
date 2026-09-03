@@ -18,6 +18,8 @@ class ModelStyle:
     marker: str
     linestyle: str
 
+# How the log's own values are drawn, wherever a figure puts the log beside the models: the target
+LOG_STYLE = ModelStyle(label='Log', color='#8A8A8A', marker='o', linestyle='-.')
 
 # How a model is called and its stlye
 MODELS = Registry[ModelStyle](
@@ -25,10 +27,8 @@ MODELS = Registry[ModelStyle](
     where='MODELS in src/visualization/labels/models.py',
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
-        'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
-        # The same backbone with the latent taken out, drawn where SuTraN used to be: it stands in
-        # the same place, as the arm whose variability comes from its heads instead.
         'transformer': ModelStyle(label='Transformer', color='#6B3FA0', marker='D', linestyle=':'),
+        'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
     },
 )
 
