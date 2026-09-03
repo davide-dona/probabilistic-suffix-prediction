@@ -10,6 +10,8 @@ DATASETS = Registry[str](
         'sepsis': 'Sepsis',
         'bpic19': 'BPIC19',
         'bpic17': 'BPIC17',
-        'bpic17-dr': 'BPIC17-DR',
+        'bpic12': 'BPIC12',
+        'bpic13': 'BPIC13',
+        'sp2020': 'SP2020',
     },
 )

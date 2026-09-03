@@ -1,11 +1,11 @@
 data:
-  name: bpic17-dr
+  name: bpic12
 
   # Keys of the raw event log to be mapped to the standard keys used in the framework.
-  case_key: "case:concept:name"
+  case_key: "CaseID"
   activity_key: "concept:name"
   resource_key: "org:resource"
-  timestamp_key: "time:timestamp"
+  timestamp_key: "CompleteTimestamp"
 
   # Split the dataset into train, validation, and test sets.
   # Splits are applied on the case level, with an out-of-time split
@@ -23,20 +23,9 @@ data:
 
   event_features:
     # Case-level: share the same value for every row in a case
-    - case:LoanGoal
-    - case:ApplicationType
-    - case:RequestedAmount
+    - "(case) AMOUNT_REQ"
     # Event-level: vary per row in a case
-    - Action
-    - EventOrigin
     - lifecycle:transition
-    - FirstWithdrawalAmount
-    - NumberOfTerms
-    - Accepted
-    - MonthlyCost
-    - Selected
-    - CreditScore
-    - OfferedAmount
     # Minutes since the case began, derived from the timestamp
     - ts_start
     # Calendar position of the event, cyclically encoded
