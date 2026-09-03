@@ -27,8 +27,10 @@ ideas/
 
 
 # Preprocessed datasets
-data/
-!original.csv
+data/*
+!data/*/
+data/*/*
+!data/*/original.csv
 
 
 # Jobs staged for a batch run, kept out of the repo like the runs they produce;
