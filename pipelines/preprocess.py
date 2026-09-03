@@ -26,6 +26,7 @@ from src.logs.keys import (
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
+    RESOURCE_KEY,
     SECONDS_COS_KEY,
     SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
@@ -108,7 +109,7 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
             the present flag instead.
     Returns:
         A copy of `log` with the two timestamp proxies, the remaining time and the four calendar
-        columns added, and its categorical feature columns filled.
+        columns added, and its categorical columns filled.
     """
     log = add_event_delta(
         log,
@@ -136,6 +137,11 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
         seconds_sin_key=SECONDS_SIN_KEY,
         seconds_cos_key=SECONDS_COS_KEY,
     )
+    # The resource is a categorical channel whatever the log holds, so it is filled outright:
+    # a log that records no resource for an event states that much, and `DatasetCodec.fit` has a
+    # value to build a vocabulary row from rather than a gap it cannot sort.
+    log[RESOURCE_KEY] = log[RESOURCE_KEY].fillna(MISSING_FEATURE).astype(str)
+
     # Filling leaves these columns as strings, so the same test in `DatasetCodec.fit`
     # sorts them into the same channels it would have before.
     for column in feature_columns:

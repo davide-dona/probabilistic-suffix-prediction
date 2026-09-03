@@ -52,21 +52,25 @@ def read_original_log(data_config: DataConfig) -> pd.DataFrame:
     """Read a dataset's raw log, renaming its structural columns to the canonical ones.
 
     Args:
-        data_config: The `data` section naming the dataset and the raw columns holding the case,
-            the activity, the resource and the timestamp.
+        data_config: The `data` section naming the dataset, the raw log's separator and the
+            raw columns holding the case, the activity, the resource and the timestamp.
 
     Returns:
         The raw log as a DataFrame, one row per event, with no derived column added yet.
     """
     return read_log(
         paths.ORIGINAL_LOG.path(data_config.name),
+        separator=data_config.separator,
         column_mapping={
             data_config.case_key: CASE_KEY,
             data_config.activity_key: ACTIVITY_KEY,
             data_config.resource_key: RESOURCE_KEY,
             data_config.timestamp_key: TIMESTAMP_KEY,
         },
-        dtype=dict.fromkeys(data_config.string_features, str),
+        # The case identifier is a name, never a number: a log that numbers its cases would
+        # otherwise be read as integers, which is a dtype pm4py refuses when the declarative
+        # model is discovered and which every reader downstream already overrides to text.
+        dtype=dict.fromkeys([data_config.case_key, *data_config.string_features], str),
     )
 
 
