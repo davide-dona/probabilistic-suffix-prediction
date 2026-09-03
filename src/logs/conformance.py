@@ -95,14 +95,29 @@ def _init(constraint: Constraint, trace: str, positions: Positions) -> bool:
     return bool(trace) and trace[0] == constraint.first
 
 
+def _end(constraint: Constraint, trace: str, positions: Positions) -> bool:
+    """`a` is the last event of the trace."""
+    return bool(trace) and trace[-1] == constraint.first
+
+
 def _choice(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` or `b` occurs."""
     return constraint.first in positions or constraint.second in positions
 
 
+def _exclusive_choice(constraint: Constraint, trace: str, positions: Positions) -> bool:
+    """`a` or `b` occurs, and never both."""
+    return (constraint.first in positions) != (constraint.second in positions)
+
+
 def _responded_existence(constraint: Constraint, trace: str, positions: Positions) -> bool:
     """`a` occurs, and so does `b`."""
     return constraint.first in positions and constraint.second in positions
+
+
+def _not_responded_existence(constraint: Constraint, trace: str, positions: Positions) -> bool:
+    """`a` occurs, and `b` does not."""
+    return constraint.first in positions and constraint.second not in positions
 
 
 def _response(constraint: Constraint, trace: str, positions: Positions) -> bool:
@@ -196,15 +211,26 @@ def _alternate_precedence(constraint: Constraint, trace: str, positions: Positio
     return activations > 0 and activations == fulfillments
 
 
-# Every template `pipelines.preprocess` can mine, keyed by the name it writes into the model file.
+# Every template `pipelines.preprocess` can mine, keyed by the name it writes into the model
+# file. The whole of what `DeclareMiner` draws from, which is Declare4Py's unary templates and its
+# binary ones that are not shortcuts for a pair of others: a template missing here is a model this
+# cannot read back, and the miner picks its templates off the log rather than off the dataset, so
+# one left out surfaces only once some log happens to support it.
 TEMPLATES: dict[str, _Template] = {
     'Existence': _Template(holds=_existence, is_binary=False, supports_cardinality=True),
     'Absence': _Template(holds=_absence, is_binary=False, supports_cardinality=True),
     'Exactly': _Template(holds=_exactly, is_binary=False, supports_cardinality=True),
     'Init': _Template(holds=_init, is_binary=False, supports_cardinality=False),
+    'End': _Template(holds=_end, is_binary=False, supports_cardinality=False),
     'Choice': _Template(holds=_choice, is_binary=True, supports_cardinality=False),
+    'Exclusive Choice': _Template(
+        holds=_exclusive_choice, is_binary=True, supports_cardinality=False
+    ),
     'Responded Existence': _Template(
         holds=_responded_existence, is_binary=True, supports_cardinality=False
+    ),
+    'Not Responded Existence': _Template(
+        holds=_not_responded_existence, is_binary=True, supports_cardinality=False
     ),
     'Response': _Template(holds=_response, is_binary=True, supports_cardinality=False),
     'Precedence': _Template(holds=_precedence, is_binary=True, supports_cardinality=False),
