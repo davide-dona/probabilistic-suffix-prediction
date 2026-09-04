@@ -5,14 +5,7 @@
 # avoid, which is the comparison.
 #
 # Both time heads are point regressors, as the CVAE's are and as SuTraN's are, rather than heads
-# emitting a scale of their own to be drawn from: a free scale was a second difference between the
-# arms, one the latent does not reach. `activity_dropout` matches the CVAE's for the same reason -
-# what a blanked position buys differs with the architecture, z there and the cross-attended
-# prefix and position here, but the cost is the same either way.
-#
-# Every non-architecture setting a run needs - the optimizer, the training loop - lives in this
-# one file too, so it and a dataset config together fully describe a run. There is no `loss`
-# section: with no latent there is no KL term to weigh.
+# emitting a scale of their own to be drawn from.
 seed: 42
 
 dataloader:
@@ -44,15 +37,12 @@ model:
     num_heads: 8
     feedforward_dim: 128
     dropout: 0.1
-    # Matched to the CVAE's, so the arms differ in the latent and nothing else. What a blanked
-    # position buys differs with the architecture - z there, the prefix and the position here -
-    # but what it costs is the same either way: the decoder cannot answer from its own last token.
     activity_dropout: 0.3
     head_hidden_dim: 128
 
   # How the activity logits are shaped before a draw reads them. Inference-time only: nothing here
   # reaches a gradient, and training and checkpoint selection run at whatever is written here.
-  # `pipelines.tune` searches the pair on the validation split once a run is trained, and what it
+  # `pipelines.tune` searches the pair of sampling parameters on the validation split once a run is trained, and what it
   # picks is written back here and handed to `pipelines.generate`.
   sampling:
     # Divides the logits. Above 1 flattens every step alike, the ones the process already

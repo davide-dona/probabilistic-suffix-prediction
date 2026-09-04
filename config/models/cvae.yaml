@@ -1,6 +1,4 @@
-# The conditional VAE: the backbone below, plus the latent the variability lives in. Every
-# non-architecture setting a run needs - the optimizer, the training loop, the loss - lives in
-# this one file too, so it and a dataset config together fully describe a run.
+# The conditional VAE: the backbone below, plus the latent the variability lives in
 seed: 42
 
 dataloader:
