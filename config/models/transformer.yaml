@@ -1,8 +1,14 @@
 # The same backbone with the latent path taken out: the arm the CVAE is read against. Every width
 # below matches config/models/cvae.yaml, so what separates the two runs is the latent and nothing
-# else. With no z conditioning the decoder, the draws have to come from the heads instead: the
-# activity is sampled from its logits at every step and both time heads emit a variance of their
-# own. That per-step noise is exactly what the latent exists to avoid, which is the comparison.
+# else. With no z conditioning the decoder, the draws have to come from the activity head instead,
+# sampled from its logits at every step. That per-step noise is exactly what the latent exists to
+# avoid, which is the comparison.
+#
+# Both time heads are point regressors, as the CVAE's are and as SuTraN's are, rather than heads
+# emitting a scale of their own to be drawn from: a free scale was a second difference between the
+# arms, one the latent does not reach. `activity_dropout` matches the CVAE's for the same reason -
+# what a blanked position buys differs with the architecture, z there and the cross-attended
+# prefix and position here, but the cost is the same either way.
 #
 # Every non-architecture setting a run needs - the optimizer, the training loop - lives in this
 # one file too, so it and a dataset config together fully describe a run. There is no `loss`
@@ -38,9 +44,10 @@ model:
     num_heads: 8
     feedforward_dim: 128
     dropout: 0.1
-    # A device of the conditioned decoder alone: blanking a teacher-forced activity is what makes
-    # the CVAE lean on z, and there is no z here for it to lean on.
-    activity_dropout: 0.0
+    # Matched to the CVAE's, so the arms differ in the latent and nothing else. What a blanked
+    # position buys differs with the architecture - z there, the prefix and the position here -
+    # but what it costs is the same either way: the decoder cannot answer from its own last token.
+    activity_dropout: 0.3
     head_hidden_dim: 128
 
   # How the activity logits are shaped before a draw reads them. Inference-time only: nothing here

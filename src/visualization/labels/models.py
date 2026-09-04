@@ -29,16 +29,6 @@ MODELS = Registry[ModelStyle](
     entries={
         'cvae': ModelStyle(label='CVAE', color='#2E8B57', marker='*', linestyle='-'),
         'transformer': ModelStyle(label='Transformer', color='#6B3FA0', marker='D', linestyle=':'),
-        # The same arm with its time heads made point regressors: one column, not two drawn alike.
-        'transformer-point-times': ModelStyle(
-            label='Transformer', color='#6B3FA0', marker='D', linestyle=':'
-        ),
-        # A style of its own rather than the Transformer's: this arm is read against the one
-        # above, so folding the two into one column is exactly what must not happen while the
-        # blanking is being measured. It takes that slot only if it wins it.
-        'transformer-activity-dropout': ModelStyle(
-            label='Transformer + AD', color='#B07AA1', marker='^', linestyle='-'
-        ),
         'u-ed-lstm': ModelStyle(label='U-ED-LSTM', color='#E67300', marker='s', linestyle='--'),
     },
 )
