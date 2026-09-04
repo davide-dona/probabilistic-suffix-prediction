@@ -476,8 +476,11 @@ class Decoder(nn.Module):
     def _drop_activities(self, activities: torch.Tensor) -> torch.Tensor:
         """Blank a random `activity_dropout` fraction of the teacher-forced activities to PAD.
 
-        A decoder that cannot count on the previous ground-truth token has to look to z for
-        what comes next, which keeps information flowing through the latent.
+        A decoder that cannot count on the previous ground-truth token has to read what comes
+        next off something else: z where there is one, which is what keeps information flowing
+        through the latent, and the cross-attended prefix and the position being written where
+        there is not. Either way it is what stops the previous token from being the whole answer,
+        which is the state a free-running argmax read gets stuck in.
         """
         dropped = (torch.rand_like(activities, dtype=torch.float32) < self.activity_dropout) & (
             activities != self.sos_activity_index

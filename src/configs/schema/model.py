@@ -84,9 +84,11 @@ class DecoderConfig(StrictModel):
         ...,
         ge=0.0,
         lt=1.0,
-        description='Fraction of teacher-forced activities blanked to PAD during training, '
-        'forcing information into z. A device of the conditioned decoder alone: with no latent '
-        'to force it into there is nothing for a blanked activity to buy, so leave it at 0.0',
+        description='Fraction of teacher-forced activities blanked to PAD during training, so '
+        'the decoder cannot answer a position from the token before it alone. What that pushes '
+        'it onto depends on the architecture - z where there is one, the cross-attended prefix '
+        'and the position otherwise - but the cost is the same either way, which is why both '
+        'arms carry it',
     )
     head_hidden_dim: int = Field(
         ..., gt=0, description='Width of the layer shared by the two output heads'
