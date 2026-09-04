@@ -7,7 +7,7 @@ from src.datasets.dataset import SplitTrace
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.trace_encoder import TraceEncoder
-from src.model.models import ModelOutput, SuffixModel, time_nll
+from src.model.models import ModelOutput, SuffixModel, time_mae
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
 
@@ -18,11 +18,16 @@ class Transformer(SuffixModel):
 
     It is the arm the CVAE is read against, so it is the same everywhere the latent does not
     reach: one embedding space, the same encoder over the prefix, the same decoder
-    cross-attending over its events. What differs is where the variability lives. With nothing
-    conditioning the decoder, two runs of one prefix could only be the same suffix, so the draws
-    have to come from the heads: the activity is sampled from its logits at every step, and both
-    time heads emit a variance to be sampled from. That is exactly the per-step noise the latent
-    exists to avoid, which is the comparison.
+    cross-attending over its events, the same point time heads scored by the same `time_mae`.
+    What differs is where the variability lives, and the activity head is the whole of it here:
+    with nothing conditioning the decoder, two runs of one prefix could only be the same suffix,
+    so the activity is sampled from its logits at every step. That is exactly the per-step noise
+    the latent exists to avoid, which is the comparison.
+
+    A wait still varies from draw to draw, because it is read off an activity path that was drawn.
+    A remaining time does not: it is read at position 0, before any activity has been written, so
+    every sample of one prefix opens on the same number. That is what an arm with no latent can
+    say about a quantity settled before its first step, and it is a result rather than a gap.
 
     Flow, with `prefix` and `suffix` both padded to `max_seq_len`:
         prefix                -> prefix events (for the decoder)
@@ -50,7 +55,7 @@ class Transformer(SuffixModel):
             pad_activity_index=codec.activity.pad_index,
             pad_resource_index=codec.resource.pad_index,
             eot_activity_index=codec.activity.eot_index,
-            stochastic=True,
+            # A sampler: with no z to draw, the activity head is where the variability comes from.
             sampling=config.sampling,
         )
 
@@ -113,9 +118,8 @@ class Transformer(SuffixModel):
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its reconstruction alone: no latent, no KL term to charge.
 
-        Both time heads are genuinely stochastic here (`Decoder(..., stochastic=True)`), sampled
-        from at generation, so the scale they emit is scored along with the median they place: a
-        head that is wrong pays less by widening, which is the price of being drawn from.
+        The same three terms the CVAE charges, summed the same way and scored by the same calls,
+        so the two arms' losses differ in the KL and nothing else.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -126,8 +130,8 @@ class Transformer(SuffixModel):
             reduction='sum',
         )
 
-        time_to_next_loss = time_nll(output.decoder.times_to_next, batch.times_to_next, batch)
-        remaining_time_loss = time_nll(output.decoder.remaining_times, batch.remaining_times, batch)
+        time_to_next_loss = time_mae(output.decoder.times_to_next, batch.times_to_next, batch)
+        remaining_time_loss = time_mae(output.decoder.remaining_times, batch.remaining_times, batch)
 
         reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 

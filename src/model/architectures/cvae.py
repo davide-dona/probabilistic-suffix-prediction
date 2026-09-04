@@ -9,7 +9,7 @@ from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.latent import PosteriorNetwork, PriorNetwork
 from src.model.components.trace_encoder import TraceEncoder
-from src.model.models import Latents, ModelOutput, SuffixModel, time_nll
+from src.model.models import Latents, ModelOutput, SuffixModel, time_mae
 from src.training.kl import LatentMetrics, free_bits_kl, gaussian_kl, linear_warmup_weight
 from src.training.loss import Loss
 
@@ -64,7 +64,7 @@ class TransformerCVAE(SuffixModel):
             pad_activity_index=codec.activity.pad_index,
             pad_resource_index=codec.resource.pad_index,
             eot_activity_index=codec.activity.eot_index,
-            stochastic=False,
+            # No sampler: the activity head is read at its mode, so a suffix is one draw of z.
             sampling=None,
         )
 
@@ -154,11 +154,10 @@ class TransformerCVAE(SuffixModel):
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 
-        The two time heads are read at their median alone: `Decoder(..., stochastic=False)` pins
-        their scale at 1, so the Laplace likelihood `time_nll` charges reduces exactly to the
-        absolute error, which is the simple regressor this architecture's decoder already is.
-        Everything the prefix leaves open is z's to carry, the spread of a wait included, so
-        nothing here is handed a scale of its own to widen instead.
+        The two time heads are point regressors scored by `time_mae`, which is the simple
+        regressor this architecture's decoder already is. Everything the prefix leaves open is z's
+        to carry, the spread of a wait included, so nothing here is handed a scale of its own to
+        widen instead.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -169,8 +168,8 @@ class TransformerCVAE(SuffixModel):
             reduction='sum',
         )
 
-        time_to_next_loss = time_nll(output.decoder.times_to_next, batch.times_to_next, batch)
-        remaining_time_loss = time_nll(output.decoder.remaining_times, batch.remaining_times, batch)
+        time_to_next_loss = time_mae(output.decoder.times_to_next, batch.times_to_next, batch)
+        remaining_time_loss = time_mae(output.decoder.remaining_times, batch.remaining_times, batch)
 
         reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 

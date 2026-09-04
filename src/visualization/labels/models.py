@@ -18,6 +18,7 @@ class ModelStyle:
     marker: str
     linestyle: str
 
+
 # How the log's own values are drawn, wherever a figure puts the log beside the models: the target
 LOG_STYLE = ModelStyle(label='Log', color='#8A8A8A', marker='o', linestyle='-.')
 

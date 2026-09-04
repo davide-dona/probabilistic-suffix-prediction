@@ -1,12 +1,11 @@
 # The same backbone with the latent path taken out: the arm the CVAE is read against. Every width
 # below matches config/models/cvae.yaml, so what separates the two runs is the latent and nothing
-# else. With no z conditioning the decoder, the draws have to come from the heads instead: the
-# activity is sampled from its logits at every step and both time heads emit a variance of their
-# own. That per-step noise is exactly what the latent exists to avoid, which is the comparison.
+# else. With no z conditioning the decoder, the draws have to come from the activity head instead,
+# sampled from its logits at every step. That per-step noise is exactly what the latent exists to
+# avoid, which is the comparison.
 #
-# Every non-architecture setting a run needs - the optimizer, the training loop - lives in this
-# one file too, so it and a dataset config together fully describe a run. There is no `loss`
-# section: with no latent there is no KL term to weigh.
+# Both time heads are point regressors, as the CVAE's are and as SuTraN's are, rather than heads
+# emitting a scale of their own to be drawn from.
 seed: 42
 
 dataloader:
@@ -38,14 +37,12 @@ model:
     num_heads: 8
     feedforward_dim: 128
     dropout: 0.1
-    # A device of the conditioned decoder alone: blanking a teacher-forced activity is what makes
-    # the CVAE lean on z, and there is no z here for it to lean on.
-    activity_dropout: 0.0
+    activity_dropout: 0.3
     head_hidden_dim: 128
 
   # How the activity logits are shaped before a draw reads them. Inference-time only: nothing here
   # reaches a gradient, and training and checkpoint selection run at whatever is written here.
-  # `pipelines.tune` searches the pair on the validation split once a run is trained, and what it
+  # `pipelines.tune` searches the pair of sampling parameters on the validation split once a run is trained, and what it
   # picks is written back here and handed to `pipelines.generate`.
   sampling:
     # Divides the logits. Above 1 flattens every step alike, the ones the process already
