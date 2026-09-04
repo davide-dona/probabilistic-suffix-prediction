@@ -33,7 +33,7 @@ class Plot:
 # point estimate and the sample mean are read against each other, and two figures of one quantity
 # carry two legends and two sets of lengths to say it.
 #
-# Every line drawn here carries the confidence interval `src.evaluation.bootstrap` bounds that
+# Every line drawn here carries the confidence interval `src.uncertainty.intervals` bounds that
 # length's mean by, so a panel says not only where each model sits but whether the models are
 # really apart there and whether one is really below the log's own line.
 FIGURES = (
