@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass, field, fields
 from enum import StrEnum
 from typing import Any, Self
 
+import numpy as np
 import wandb
 
 
@@ -60,6 +61,21 @@ class Direction(StrEnum):
     ZERO = 'zero'  # A gap, best at 0, either sign being a way of being wrong
     NONE = 'none'  # No better value, e.g. a spread or a property of the log
 
+    @property
+    def sign(self) -> float:
+        """Which way a value has to be turned for more to be better: `+1.0` or `-1.0`.
+
+        A gap is negative too, being read on its distance from 0 once `reads_absolute` has taken
+        that distance. A metric with no direction has no better value and is never turned, so it is
+        `+1.0` by convention rather than by meaning.
+        """
+        return -1.0 if self in (Direction.LOWER, Direction.ZERO) else 1.0
+
+    @property
+    def reads_absolute(self) -> bool:
+        """Whether the value is read on its distance from 0 rather than on its own sign."""
+        return self is Direction.ZERO
+
 
 class Owner(StrEnum):
     """Whose number one of a report's metrics is: the model that was run, or the log it was run
@@ -73,6 +89,26 @@ class Owner(StrEnum):
 
     MODEL = 'model'
     LOG = 'log'
+
+
+def oriented(values: np.ndarray, directions: Sequence[Direction]) -> np.ndarray:
+    """Rewrite a set of values so that more is better on every metric.
+
+    The one place a `Direction` becomes arithmetic, so a comparison reads the same way whichever
+    way the metric does.
+
+    Args:
+        values: Values whose last axis is the metrics, of any rank above that: `[..., metrics]`.
+        directions: Which way each of those metrics reads, in that same order.
+    Returns:
+        The same shape, each metric negated where lower is better and taken absolute first where it
+        is a gap. Applied to a mean rather than to one prefix's own score: the number a table
+        prints is the mean gap, so its distance from 0 is what a test reads.
+    """
+    # [metrics] each, so a call at any rank broadcasts over the leading axes.
+    sign = np.array([direction.sign for direction in directions], dtype=np.float64)
+    absolute = np.array([direction.reads_absolute for direction in directions], dtype=bool)
+    return sign * np.where(absolute, np.abs(values), values)
 
 
 @dataclass(frozen=True)

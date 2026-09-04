@@ -93,6 +93,27 @@ def read_prefix_scores(path: Path, *, columns: Sequence[str] | None = None) -> p
     return pq.read_table(source=path, columns=wanted).to_pandas()
 
 
+def require_columns(path: Path, columns: Sequence[str]) -> None:
+    """Check that a scores file carries every column a reader is about to ask for.
+
+    Checked against the schema rather than after the read, which would fail on the missing column
+    with nothing to say about why it is missing.
+
+    Args:
+        path: The scores file, from `paths.PREFIX_SCORES`.
+        columns: The columns the reader needs.
+    Raises:
+        ValueError: If any of them is absent, naming them, since a run scored before a metric
+            existed carries every other column and reads as a file that simply predates it.
+    """
+    absent = [key for key in columns if key not in pq.read_schema(where=path).names]
+    if absent:
+        raise ValueError(
+            f'{path} carries no {", ".join(absent)}, so it predates the scores now read. '
+            'Score it again with `python -m pipelines.evaluate`.'
+        )
+
+
 def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
     """Find the per-prefix scores beside each report and group them by the log they belong to.
 

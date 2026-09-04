@@ -8,8 +8,8 @@ from matplotlib.figure import Figure
 
 from src import paths
 from src.cli import banner, step
-from src.evaluation.bootstrap import INTERVAL_COLUMNS, read_intervals
 from src.evaluation.report import Axis, read_reports
+from src.uncertainty import INTERVAL_COLUMNS, read_intervals, test_significance
 from src.visualization import (
     FIGURES,
     TABLES,
@@ -17,7 +17,6 @@ from src.visualization import (
     compose_figure,
     latex_table,
     reported_models,
-    test_significance,
 )
 
 # Which metrics the figures draw, so the per-prefix scores are read for those alone. Named off the
