@@ -63,7 +63,9 @@ training:
   # Dual RTX A6000 workstation, 48GB GPU memory each; `cuda:0` pins one of the two.
   device: cuda:0
   max_steps: 10000
-  val_every_n_steps: 50
+  # Halved to pay for `inference.validation_samples`: the generation pass on every check now draws
+  # ten times what it did, and validating half as often leaves a run in the same wall clock.
+  val_every_n_steps: 100
   grad_clip_norm: 5.0  # null to leave gradients unclipped
   # Fixed slice of the evaluation set used for validation;
   # Using the full evaluation set for validation would be too slow
@@ -71,14 +73,19 @@ training:
   generation_pairs: 1024
 
 early_stopping:
-  patience: 30   # number of validation checks with no improvement after which training will be stopped
+  # Non-improving validation checks tolerated before training stops. Counted in checks, so it was
+  # halved alongside `training.val_every_n_steps`: the stall it sits through is the same 1500 steps.
+  patience: 15
   min_delta_perc: 0.005
 
-# Suffixes drawn per prefix, once for each of the two passes that generate them.
+# Suffixes drawn per prefix, once for each of the two passes that generate them. Both draw the same
+# number: EMSC read at a smaller budget is a different number rather than a noisier one, and the
+# shortfall falls hardest on the model whose draws are genuinely spread, which is the one this
+# selects for. What separates the two passes is which split they read and how much of it.
 inference:
-  # The pass inside the training loop, kept small: it is paid for on every validation.
-  validation_samples: 10
-  # The pass over the whole test split that a report is built from. Paid for once per run, and a
-  # hundred draws describe p(suffix | prefix) far better than ten.
+  # The pass inside the training loop, over a fixed slice of the validation split. A checkpoint is
+  # selected on it, so it is read at the budget the report it is answering for is read at.
+  validation_samples: 100
+  # The pass over the whole test split that a report is built from. Paid for once per run.
   evaluation_samples: 100
   generation_rows_upper_bound: 10240

@@ -7,8 +7,11 @@ class InferenceConfig(StrictModel):
     """How many suffixes a prefix is answered with on each of the two generation passes, and the
     decoder memory bound the two share.
 
-    The counts are separate because the passes are paid for on different schedules: validation
-    runs inside the training loop, evaluation runs once over the whole test split.
+    The two counts are set to the same number: EMSC read at a smaller budget is a different
+    number rather than a noisier one, so a checkpoint selected at a smaller one is selected on a
+    score the report never reports. They stay separate fields because they answer for different
+    populations - a fixed slice of the validation split against the whole test split - and because
+    `pipelines.generate`'s `-n/--num-samples` overrides the evaluation one alone.
     """
 
     validation_samples: int = Field(

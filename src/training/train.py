@@ -62,9 +62,8 @@ def train(
         generation_loader: Prefixes to generate suffixes for on the same cadence. A far smaller
             slice than `val_loader`, since a suffix costs one decoder pass per event.
         generation_samples: Suffixes to draw per prefix on that pass, normally
-            `inference.validation_samples`, which is smaller than the
-            `inference.evaluation_samples` a report is built from: a curve is read for its shape
-            over steps rather than against a report's numbers.
+            `inference.validation_samples`, which matches the `inference.evaluation_samples` a
+            report is built from: the selection score and the reported one are read at one budget.
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
         dataset: The log being trained on, naming the validation split's continuation index the

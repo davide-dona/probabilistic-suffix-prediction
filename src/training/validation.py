@@ -114,9 +114,9 @@ def validate_generation(
     declarative model, and to every continuation the split was observed to take.
 
     Scored through the same three families the final report is built from, over the same
-    population: every prefix counts here and in `pipelines/evaluate.py` alike. What differs is
-    which split is read, how much of it, and how many suffixes each prefix is answered with, so a
-    training curve is read for its shape over steps rather than against a report's numbers.
+    population: every prefix counts here and in `pipelines/evaluate.py` alike, and each is
+    answered with the same number of suffixes. What differs is which split is read and how much of
+    it, so a training curve sits on a report's scale without being a report's number.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
