@@ -4,14 +4,13 @@ import torch.nn.functional as F
 from src.configs.schema import CVAEConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
-from src.distributions.gaussian import Gaussian
+from src.distributions import Gaussian
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.latent import PosteriorNetwork, PriorNetwork
 from src.model.components.trace_encoder import TraceEncoder
 from src.model.models import Latents, ModelOutput, SuffixModel, time_mae
-from src.training.kl import LatentMetrics, free_bits_kl, gaussian_kl, linear_warmup_weight
-from src.training.loss import Loss
+from src.training import LatentMetrics, Loss, free_bits_kl, gaussian_kl, linear_warmup_weight
 
 
 class TransformerCVAE(SuffixModel):

@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import torch
 import wandb
@@ -7,14 +10,16 @@ from torch.utils.data import DataLoader
 from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
 from src.inference.generate import generate_batch
-from src.logs.conformance import ConformanceChecker
-from src.logs.continuations import ContinuationIndex
-from src.model import SuffixModel
+from src.logs import ContinuationIndex
+from src.logs.declare import ConformanceChecker
 from src.scalar_metrics import Owner
 from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
 from src.visualization.catalogue import TABLES
+
+if TYPE_CHECKING:
+    from src.model import SuffixModel
 
 # Which report table, if any, answers with each metric, read off the same catalogue a figure or a
 # table is composed from: the wandb chart a run is watched on and the paper's own tables read the

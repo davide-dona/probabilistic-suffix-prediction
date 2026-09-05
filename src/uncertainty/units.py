@@ -4,8 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.evaluation.prefix_scores import read_prefix_scores, require_columns
-from src.evaluation.report import Axis
+from src.evaluation import Axis, read_prefix_scores, require_columns
 from src.uncertainty.resampling import Units
 
 # Which length column each breakdown groups the prefixes by. `Axis.OVERALL` is not one of them, for

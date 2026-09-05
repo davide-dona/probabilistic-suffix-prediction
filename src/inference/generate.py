@@ -1,11 +1,17 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from src.configs.schema import InferenceConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.inference.generation import DecodedEvents, Draws, Generation
-from src.model import SuffixModel
 from src.suffixes import ActivityCodes
+
+if TYPE_CHECKING:
+    from src.model import SuffixModel
 
 
 def generation_batch_size(

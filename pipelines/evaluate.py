@@ -11,18 +11,15 @@ from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, duration, step
-from src.evaluation.prefix_scores import stream_prefix_scores
-from src.evaluation.report import EvaluationReport
-from src.evaluation.summary import EvaluationSummary, PrefixSummary
+from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
 from src.identity import read_run_identity
 from src.inference.generation_store import (
     read_generation_block,
     read_prefix_keys,
     read_vocabulary,
 )
-from src.logs.conformance import ConformanceChecker, discovery_settings
-from src.logs.continuations import ContinuationIndex
-from src.logs.keys import Split
+from src.logs import ContinuationIndex, Split
+from src.logs.declare import ConformanceChecker, discovery_settings
 from src.suffixes import ActivityCodes
 
 

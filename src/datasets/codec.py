@@ -11,7 +11,7 @@ from pydantic import Field
 
 from src import paths
 from src.configs.schema import DataConfig, StrictModel
-from src.logs.keys import (
+from src.logs import (
     ACTIVITY_KEY,
     EOT_TOKEN,
     EVENT_DELTA_KEY,

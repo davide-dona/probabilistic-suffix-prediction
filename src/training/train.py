@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 import wandb
 from torch import optim
@@ -7,14 +11,15 @@ from src import paths
 from src.configs.schema import EarlyStoppingConfig, OptimizerConfig, TrainingConfig
 from src.datasets.codec import DatasetCodec
 from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
-from src.logs.conformance import ConformanceChecker
-from src.logs.continuations import ContinuationIndex
-from src.logs.keys import Split
-from src.model import SuffixModel, save_checkpoint
+from src.logs import ContinuationIndex, Split
+from src.logs.declare import ConformanceChecker
 from src.suffixes import ActivityCodes
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
 from src.training.validation import validate, validate_generation
+
+if TYPE_CHECKING:
+    from src.model import SuffixModel
 
 
 def _lr_factor(step: int, *, warmup_steps: int) -> float:
@@ -80,6 +85,8 @@ def train(
         training: Step budget, validation cadence, gradient clipping and device.
         early_stopping_config: When to give up.
     """
+    from src.model import save_checkpoint
+
     device = torch.device(training.device)
 
     # The validation split's continuations, which the selection score is measured against. Read

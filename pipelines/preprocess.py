@@ -8,16 +8,7 @@ from src import paths
 from src.cli import banner, step
 from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
-from src.logs.continuations import build_index
-from src.logs.declare import discover_declare_model
-from src.logs.filters import (
-    case_durations,
-    drop_cases_by_duration,
-    drop_cases_by_length,
-    sort_log,
-)
-from src.logs.io import read_original_log, write_log
-from src.logs.keys import (
+from src.logs import (
     CASE_ELAPSED_KEY,
     CASE_KEY,
     DAY_COS_KEY,
@@ -31,13 +22,21 @@ from src.logs.keys import (
     SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
     Split,
+    build_index,
+    read_original_log,
+    write_log,
 )
-from src.logs.split import out_of_time_split
-from src.logs.temporal import (
+from src.logs.declare.discovery import discover_declare_model
+from src.logs.preprocessing import (
     add_calendar,
     add_case_elapsed,
     add_event_delta,
     add_remaining_time,
+    case_durations,
+    drop_cases_by_duration,
+    drop_cases_by_length,
+    out_of_time_split,
+    sort_log,
 )
 
 
@@ -137,13 +136,8 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
         seconds_sin_key=SECONDS_SIN_KEY,
         seconds_cos_key=SECONDS_COS_KEY,
     )
-    # The resource is a categorical channel whatever the log holds, so it is filled outright:
-    # a log that records no resource for an event states that much, and `DatasetCodec.fit` has a
-    # value to build a vocabulary row from rather than a gap it cannot sort.
     log[RESOURCE_KEY] = log[RESOURCE_KEY].fillna(MISSING_FEATURE).astype(str)
 
-    # Filling leaves these columns as strings, so the same test in `DatasetCodec.fit`
-    # sorts them into the same channels it would have before.
     for column in feature_columns:
         if not is_numeric_dtype(log[column]):
             log[column] = log[column].fillna(MISSING_FEATURE).astype(str)
@@ -251,10 +245,10 @@ def run(
     # Both held-out splits, since training selects on the validation split's continuations and
     # evaluation scores against the test split's.
     indexed = {}
-    for split, rows in ((Split.VAL, val), (Split.TEST, test)):
+    for split, data in ((Split.VAL, val), (Split.TEST, test)):
         with step(f'Indexing the continuations of the {split} split'):
             prefixes, occurrences = build_index(
-                rows,
+                data,
                 dataset=dataset,
                 split=split,
                 vocabulary=codec.activity.vocab,
@@ -266,17 +260,13 @@ def run(
                 flush=True,
             )
 
-    if skip_declare:
-        declare_summary = 'declarative model skipped (--skip-declare)'
-    else:
-        # The slowest step of the pipeline by a wide margin, and pm4py reports its own progress.
-        with step('Discovering the declarative model'):
-            constraints = discover_declare_model(
-                train,
-                dataset=dataset,
-                declare_config=declare_config,
-            )
-        declare_summary = f'{constraints} declarative constraints'
+    with step('Discovering the declarative model'):
+        constraints = discover_declare_model(
+            train,
+            dataset=dataset,
+            declare_config=declare_config,
+        )
+    declare_summary = f'{constraints} declarative constraints'
 
     print(
         f'Preprocessed "{dataset}": {len(train):,} train, {len(val):,} val, {len(test):,} test '
@@ -302,15 +292,10 @@ def main() -> None:
         required=True,
         help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
     )
-    parser.add_argument(
-        '--skip-declare',
-        action='store_true',
-        help='Skip discovering the declarative model, the slowest step here by a wide margin. '
-        'Evaluation is its only reader, so rerun without this flag before evaluating.',
-    )
     args = parser.parse_args()
 
     config = load_dataset_config(args.config)
+
     run(
         data_config=config.data,
         declare_config=config.declare,

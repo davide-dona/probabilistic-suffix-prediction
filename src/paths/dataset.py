@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.logs.keys import Split
+from src.logs import Split
 from src.paths.artifact import Artifact
 from src.paths.locations import DATA_DIR, dataset_config
 

@@ -23,9 +23,8 @@ from src.inference.tuning import (
     TuningReport,
     objective,
 )
-from src.logs.conformance import ConformanceChecker
-from src.logs.continuations import ContinuationIndex
-from src.logs.keys import Split
+from src.logs import ContinuationIndex, Split
+from src.logs.declare import ConformanceChecker
 from src.model import Transformer, load_checkpoint, model_from_checkpoint
 from src.suffixes import ActivityCodes
 

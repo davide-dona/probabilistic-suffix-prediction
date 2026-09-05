@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
-from src.logs.keys import EVENT_DELTA_KEY
+from src.logs import EVENT_DELTA_KEY
 
 from .base import NAME_PATTERN, StrictModel
 

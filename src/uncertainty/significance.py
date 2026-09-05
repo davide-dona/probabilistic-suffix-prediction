@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.evaluation.prefix_scores import score_files
+from src.evaluation import score_files
 from src.evaluation.scores import METRICS
 from src.scalar_metrics import Direction, oriented
 from src.uncertainty.resampling import SEED, Units, resample_means

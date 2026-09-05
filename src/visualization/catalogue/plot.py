@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.evaluation.report import Axis
+from src.evaluation import Axis
 from src.evaluation.scores import METRICS
 from src.visualization.catalogue.entry import MetricEntry
 

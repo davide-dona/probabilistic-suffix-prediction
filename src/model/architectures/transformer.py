@@ -8,8 +8,7 @@ from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.trace_encoder import TraceEncoder
 from src.model.models import ModelOutput, SuffixModel, time_mae
-from src.training.kl import LatentMetrics
-from src.training.loss import Loss
+from src.training import LatentMetrics, Loss
 
 
 class Transformer(SuffixModel):

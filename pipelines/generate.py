@@ -15,7 +15,7 @@ from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import open_generations, table_from_generations
 from src.inference.tuning import TuningReport
-from src.logs.keys import Split
+from src.logs import Split
 from src.model import load_checkpoint, model_from_checkpoint
 from src.suffixes import ActivityCodes
 

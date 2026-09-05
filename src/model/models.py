@@ -8,11 +8,10 @@ from torch import nn
 from src.configs.schema import CVAEConfig, ModelConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
-from src.distributions.gaussian import Gaussian
+from src.distributions import Gaussian
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
-from src.training.kl import LatentMetrics
-from src.training.loss import Loss
+from src.training import LatentMetrics, Loss
 
 # `ModelConfig` is a tagged union rather than a class, so a checkpoint's stored config is
 # validated through an adapter rather than by calling `model_validate` on it.

@@ -8,7 +8,7 @@ from scipy.stats import wasserstein_distance
 
 from src.evaluation.scores.accuracy import MINUTES_PER_DAY
 from src.inference.generation import Generation
-from src.logs.continuations import ContinuationIndex, References
+from src.logs import ContinuationIndex, References
 from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, metric
 from src.suffixes import distances, spread
 

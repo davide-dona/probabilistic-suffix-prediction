@@ -4,8 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.evaluation.prefix_scores import read_prefix_scores, require_columns, score_files
-from src.evaluation.report import Axis
+from src.evaluation import Axis, read_prefix_scores, require_columns, score_files
 from src.uncertainty.resampling import SEED, Units, resample_means
 from src.uncertainty.units import LENGTHS, by_length
 
