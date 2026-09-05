@@ -6,6 +6,7 @@ import pandas as pd
 from src import paths
 from src.cli import banner
 from src.configs import load_dataset_config
+from src.logs.filters import case_durations
 from src.logs.io import read_log
 from src.logs.keys import (
     ACTIVITY_KEY,
@@ -18,6 +19,7 @@ from src.logs.keys import (
     REMAINING_TIME_KEY,
     SECONDS_COS_KEY,
     SECONDS_SIN_KEY,
+    TIMESTAMP_KEY,
     Split,
 )
 
@@ -65,6 +67,8 @@ def summarize_dataset(dataset: str, *, event_features: list[str]) -> None:
         event_features: `data.event_features` from its config.
     """
     log = read_processed_log(dataset)
+    lengths = log.groupby(CASE_KEY).size()
+    durations = case_durations(log, case_key=CASE_KEY, timestamp_key=TIMESTAMP_KEY)
     variants = log.groupby(CASE_KEY)[ACTIVITY_KEY].agg(tuple).nunique()
 
     features = [column for column in event_features if column not in _DERIVED_COLUMNS]
@@ -73,10 +77,12 @@ def summarize_dataset(dataset: str, *, event_features: list[str]) -> None:
     banner(
         f'"{dataset}"',
         {
-            'cases': f'{log[CASE_KEY].nunique():,}',
+            'cases': f'{lengths.size:,}',
             'events': f'{len(log):,}',
             'variants': f'{variants:,}',
             'activities': f'{log[ACTIVITY_KEY].nunique():,}',
+            'case length': f'{lengths.mean():.1f} +/- {lengths.std():.1f} events',
+            'case duration': f'{durations.mean():.2f} +/- {durations.std():.2f} days',
             'case features': case_features,
             'event features': len(features) - case_features,
         },
