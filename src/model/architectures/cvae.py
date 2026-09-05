@@ -9,7 +9,7 @@ from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.latent import PosteriorNetwork, PriorNetwork
 from src.model.components.trace_encoder import TraceEncoder
-from src.model.models import Latents, ModelOutput, SuffixModel, time_mae
+from src.model.models import Latents, ModelOutput, SuffixModel, time_loss
 from src.training.kl import LatentMetrics, free_bits_kl, gaussian_kl, linear_warmup_weight
 from src.training.loss import Loss
 
@@ -154,10 +154,10 @@ class TransformerCVAE(SuffixModel):
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 
-        The two time heads are point regressors scored by `time_mae`, which is the simple
-        regressor this architecture's decoder already is. Everything the prefix leaves open is z's
-        to carry, the spread of a wait included, so nothing here is handed a scale of its own to
-        widen instead.
+        The two time heads emit a median alone, so `time_loss` charges each of them the plain
+        absolute error, which is the simple regressor this architecture's decoder already is.
+        Everything the prefix leaves open is z's to carry, the spread of a wait included, so
+        nothing here is handed a scale of its own to widen instead.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -168,8 +168,12 @@ class TransformerCVAE(SuffixModel):
             reduction='sum',
         )
 
-        time_to_next_loss = time_mae(output.decoder.times_to_next, batch.times_to_next, batch)
-        remaining_time_loss = time_mae(output.decoder.remaining_times, batch.remaining_times, batch)
+        # The scale halves are exactly 0.0 here and are not read: this decoder's heads emit no
+        # scale, so `time_loss` charges each the plain absolute error.
+        time_to_next_loss, _ = time_loss(output.decoder.times_to_next, batch.times_to_next, batch)
+        remaining_time_loss, _ = time_loss(
+            output.decoder.remaining_times, batch.remaining_times, batch
+        )
 
         reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
 
