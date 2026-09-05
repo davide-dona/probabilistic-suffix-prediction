@@ -7,7 +7,7 @@ from src.logs.keys import MIN_PREFIX_KEY
 def sort_log(log: pd.DataFrame, *, case_key: str, timestamp_key: str) -> pd.DataFrame:
     """Order a log by case start time, and the events of a case by their own timestamp.
 
-    Everything downstream reads a case as a run of consecutive rows in order: `add_event_delta`
+    Everything downstream reads a case as a run of consecutive rows in order: `add_cycle_time`
     differences neighbouring rows, and the prefix bounds count events by their position. This is
     where that becomes true rather than assumed.
 

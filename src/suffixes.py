@@ -9,7 +9,7 @@ from rapidfuzz.distance import OSA
 # Start of the Unicode private use area, where the activity codes are drawn from.
 _FIRST_CODE = 0xE000
 
-# How many rows of the pairwise matrix `spread` holds at once.
+# How many rows of the pairwise matrix `diversity` holds at once.
 _SPREAD_BLOCK = 256
 
 
@@ -114,17 +114,21 @@ def distances(
     return np.subtract(1.0, similarities, out=similarities)
 
 
-def spread(
+def diversity(
     sequences: Sequence[Sequence[Hashable]],
     *,
     weights: Sequence[float] | None = None,
 ) -> float:
     """How far apart two draws of one set of sequences are from each other, in `[0, 1]`.
 
-    The mean distance over every ordered pair of two distinct draws, which is the term a two-sample
-    energy score subtracts for a set's own spread. A weighted set is a set of distinct sequences
-    standing for that many draws, so a sequence drawn twice is twice as likely to be picked and
-    the pair it makes with itself sits at distance 0.
+    The mean distance over every ordered pair of two distinct draws. A weighted set is a set of
+    distinct sequences standing for that many draws, so a sequence drawn twice is twice as likely
+    to be picked and the pair it makes with itself sits at distance 0.
+
+    Read twice per prefix, on the same scale both times: over a model's draws it is
+    `sample_diversity`, and over the continuations a log took after one prefix it is
+    `reference_diversity`, which is the spread `sample_diversity` is judged against. Neither has a
+    good value of its own, which is why the two are only ever read as a pair.
 
     Args:
         sequences: The distinct sequences, either encoded suffixes or raw activity names.

@@ -92,7 +92,7 @@ def train(
     # The validation split's continuations, which the selection score is measured against. Read
     # once here rather than per validation, and never the test split's: selecting against those
     # would fold the held-out set into which checkpoint is kept.
-    continuations = ContinuationIndex(dataset=dataset, split=Split.VAL)
+    continuations = ContinuationIndex.read(dataset=dataset, split=Split.VAL)
 
     # The declarative model generated suffixes are checked against, built once and reused: it
     # caches a trace's rate across the run rather than rebuilding the constraints per validation.

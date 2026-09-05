@@ -180,7 +180,7 @@ def run(checkpoint_path: Path, *, device: str | None, pairs: int | None, samples
 
     with step(f'Reading the {Split.VAL} continuations and the declarative model'):
         codes = ActivityCodes.of(codec.activity.names)
-        index = ContinuationIndex(dataset=config.data.name, split=Split.VAL)
+        index = ContinuationIndex.read(dataset=config.data.name, split=Split.VAL)
         checker = ConformanceChecker(config.data.name, codes)
 
     points = []

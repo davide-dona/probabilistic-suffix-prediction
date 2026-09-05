@@ -11,9 +11,9 @@ from src.datasets.codec import DatasetCodec
 from src.logs import (
     CASE_ELAPSED_KEY,
     CASE_KEY,
+    CYCLE_TIME_KEY,
     DAY_COS_KEY,
     DAY_SIN_KEY,
-    EVENT_DELTA_KEY,
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
@@ -21,8 +21,8 @@ from src.logs import (
     SECONDS_COS_KEY,
     SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
+    ContinuationIndex,
     Split,
-    build_index,
     read_original_log,
     write_log,
 )
@@ -30,7 +30,7 @@ from src.logs.declare.discovery import discover_declare_model
 from src.logs.preprocessing import (
     add_calendar,
     add_case_elapsed,
-    add_event_delta,
+    add_cycle_time,
     add_remaining_time,
     case_durations,
     drop_cases_by_duration,
@@ -110,11 +110,11 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
         A copy of `log` with the two timestamp proxies, the remaining time and the four calendar
         columns added, and its categorical columns filled.
     """
-    log = add_event_delta(
+    log = add_cycle_time(
         log,
         case_key=CASE_KEY,
         timestamp_key=TIMESTAMP_KEY,
-        out_key=EVENT_DELTA_KEY,
+        out_key=CYCLE_TIME_KEY,
     )
     log = add_case_elapsed(
         log,
@@ -144,12 +144,7 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def run(
-    data_config: DataConfig,
-    declare_config: DeclareConfig,
-    *,
-    skip_declare: bool,
-) -> None:
+def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
 
@@ -164,15 +159,12 @@ def run(
     The continuations each held-out split takes after each of its prefixes are indexed next, one
     index per split, beside the splits: training selects checkpoints against the validation
     split's and evaluation scores against the test split's, so both are always built. The
-    declarative model discovered from the train split follows, and is the one artifact
-    `skip_declare` leaves unwritten: evaluation is its only reader, and discovery is the slowest
-    step here by a wide margin.
+    declarative model discovered from the train split follows, and is what evaluation checks
+    conformance against.
 
     Args:
         data_config: The `data` section of this dataset's experiment config.
         declare_config: The `declare` section, driving the discovery of the declarative model.
-        skip_declare: Whether to skip discovering the declarative model. Evaluation will fail
-            until preprocessing is rerun without this flag.
     """
     dataset = data_config.name
 
@@ -185,9 +177,7 @@ def run(
             'splits': paths.PROCESSED_SPLIT.directory(dataset),
             'codec': paths.CODEC.path(dataset),
             'continuations': paths.CONTINUATIONS.directory(dataset),
-            'declarative model': 'skipped (--skip-declare)'
-            if skip_declare
-            else paths.DECLARE_MODEL.path(dataset),
+            'declarative model': paths.DECLARE_MODEL.path(dataset),
         },
     )
 
@@ -247,16 +237,15 @@ def run(
     indexed = {}
     for split, data in ((Split.VAL, val), (Split.TEST, test)):
         with step(f'Indexing the continuations of the {split} split'):
-            prefixes, occurrences = build_index(
+            index = ContinuationIndex.of(
                 data,
-                dataset=dataset,
-                split=split,
                 vocabulary=codec.activity.vocab,
                 names=codec.activity.names,
             )
-            indexed[split] = prefixes
+            index.write(dataset=dataset, split=split)
+            indexed[split] = index.prefixes
             print(
-                f'  {occurrences:,} cut points over {prefixes:,} distinct prefixes',
+                f'  {index.occurrences:,} cut points over {index.prefixes:,} distinct prefixes',
                 flush=True,
             )
 
@@ -296,11 +285,7 @@ def main() -> None:
 
     config = load_dataset_config(args.config)
 
-    run(
-        data_config=config.data,
-        declare_config=config.declare,
-        skip_declare=args.skip_declare,
-    )
+    run(data_config=config.data, declare_config=config.declare)
 
 
 if __name__ == '__main__':

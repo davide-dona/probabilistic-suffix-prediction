@@ -138,8 +138,8 @@ class SuffixModel(nn.Module, ABC):
         return GeneratedSuffix(
             activities=generated.activities.view(batch_size, -1, generated.activities.size(dim=1)),
             lengths=generated.lengths.view(batch_size, -1),
-            times_to_next=generated.times_to_next.view(
-                batch_size, -1, generated.times_to_next.size(dim=1)
+            cycle_times=generated.cycle_times.view(
+                batch_size, -1, generated.cycle_times.size(dim=1)
             ),
             remaining_time=generated.remaining_time.view(batch_size, -1),
         )

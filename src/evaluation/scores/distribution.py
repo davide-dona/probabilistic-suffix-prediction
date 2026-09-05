@@ -8,9 +8,9 @@ from scipy.stats import wasserstein_distance
 
 from src.evaluation.scores.accuracy import MINUTES_PER_DAY
 from src.inference.generation import Generation
-from src.logs import ContinuationIndex, References
+from src.logs import ContinuationIndex, Continuations
 from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, metric
-from src.suffixes import distances, spread
+from src.suffixes import distances, diversity
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +31,7 @@ class DistributionScores(ScalarMetrics):
     continuation_recall: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     continuation_precision: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
 
-    # The comparison on the three marginals a suffix carries beyond its activities. The waits
+    # The comparison on the three marginals a suffix carries beyond its activities. The cycle times
     # are grouped by the activity they precede rather than by the position they fell at: a process
     # constrains how long an activity takes, where a position only means something once the
     # control flow is already right, which the three columns above are what answer.
@@ -66,7 +66,7 @@ class DistributionScores(ScalarMetrics):
             The prefix's scores.
         """
         samples = generation.samples
-        references = index.references(generation.prefix_activities)
+        references = index.continuations(generation.prefix_activities)
 
         # The distinct suffixes and how many draws each stands for. The generations are written on
         # the index's own scale, so nothing is encoded here.
@@ -76,8 +76,8 @@ class DistributionScores(ScalarMetrics):
         # Comparing a prefix's samples against each other is what measures the spread
         # `p(z | prefix)` claims the prefix leaves open. A suffix drawn twice is twice as likely to
         # be picked and the pair it makes with itself sits at distance 0, which is exactly what
-        # `spread` weighs.
-        sample_spread = spread(suffixes, weights=counts)
+        # `diversity` weighs.
+        sample_diversity = diversity(suffixes, weights=counts)
 
         observed, generated = set(references.suffixes), set(suffixes)
         covered = sum(
@@ -89,14 +89,17 @@ class DistributionScores(ScalarMetrics):
         lengths = [float(len(suffix)) for suffix in suffixes] or [0.0]
         remaining = [events.remaining_time_minutes for events in samples.events] or [0.0]
 
-        # A wait belongs to the activity it precedes, so a draw's suffix is read a character at a
-        # time against the waits that draw was written with. `_decode` cuts a run's activities and
-        # its waits to one length, so the two always pair up. Read per draw rather than per distinct
-        # suffix: two draws of one suffix came from different `z` and carry different waits.
+        # A cycle time belongs to the activity it precedes, so a draw's suffix is read a character
+        # at a time against the cycle times that draw was written with. `_decode` cuts a run's
+        # activities and its cycle times to one length, so the two always pair up. Read per draw
+        # rather than per distinct suffix: two draws of one suffix came from different `z` and carry
+        # different cycle times.
         drawn: dict[str, list[float]] = {}
         for events in samples.events:
-            for activity, wait in zip(events.activities, events.time_to_next_minutes, strict=True):
-                drawn.setdefault(activity, []).append(wait)
+            for activity, cycle_time in zip(
+                events.activities, events.cycle_time_minutes, strict=True
+            ):
+                drawn.setdefault(activity, []).append(cycle_time)
 
         return cls(
             emsc=emsc(suffixes=suffixes, counts=counts, references=references),
@@ -121,17 +124,17 @@ class DistributionScores(ScalarMetrics):
             )
             / MINUTES_PER_DAY,
             activity_time_wasserstein_days=activity_time_wasserstein_minutes(
-                generated=drawn, observed=references.waits
+                generated=drawn, observed=references.cycle_times
             )
             / MINUTES_PER_DAY,
-            sample_diversity=sample_spread,
+            sample_diversity=sample_diversity,
             unique_sample_rate=len(suffixes) / draws if draws else 0.0,
-            reference_diversity=references.dispersion,
+            reference_diversity=references.diversity,
             reference_size=float(len(references.suffixes)),
         )
 
 
-def emsc(suffixes: tuple[str, ...], counts: np.ndarray, references: References) -> float:
+def emsc(suffixes: tuple[str, ...], counts: np.ndarray, references: Continuations) -> float:
     """Earth Movers' Stochastic Conformance between generated and observed continuations.
 
     The two sets of suffixes are read as stochastic languages, the generated one uniform over the
@@ -173,21 +176,22 @@ def emsc(suffixes: tuple[str, ...], counts: np.ndarray, references: References) 
 def activity_time_wasserstein_minutes(
     generated: Mapping[str, Sequence[float]], observed: Mapping[str, np.ndarray]
 ) -> float:
-    """How far the waits a model puts before each activity are from the ones the log put there.
+    """How far the cycle times a model puts before each activity are from the ones the log put
+    there.
 
-    One 1-Wasserstein distance per activity, between the waits pooled over every draw and the ones
-    pooled over every occurrence of the prefix, averaged with each activity weighed by how often
-    the log ran it. Grouping by the activity is what makes each of them a comparison of two
+    One 1-Wasserstein distance per activity, between the cycle times pooled over every draw and the
+    ones pooled over every occurrence of the prefix, averaged with each activity weighed by how
+    often the log ran it. Grouping by the activity is what makes each of them a comparison of two
     conditional distributions, so a draw running longer or shorter than an occurrence normalizes
     away rather than leaking into the timing. Read by position instead, one inserted event shifts
-    every wait after it and the number reports as a timing error what the activities were wrong
-    about.
+    every cycle time after it and the number reports as a timing error what the activities were
+    wrong about.
 
     An activity only one side ran is skipped. Writing an activity the log never took after this
     prefix, or never writing one it did, is a control-flow error, and `emsc`,
     `continuation_precision` and `continuation_recall` are what charge for it; counting it here
-    would restate it as a timing error, which is the same mistake reading the waits by position
-    makes.
+    would restate it as a timing error, which is the same mistake reading the cycle times by
+    position makes.
 
     Both sides are small, so this is biased upward the way `length_wasserstein` and
     `remaining_time_wasserstein_days` are. The bias follows the draw count and the prefix's
@@ -195,7 +199,7 @@ def activity_time_wasserstein_minutes(
     models on rather than a distance to quote on its own.
 
     Args:
-        generated: The waits of every draw, pooled under the activity each of them precedes.
+        generated: The cycle times of every draw, pooled under the activity each of them precedes.
         observed: The same over every continuation the prefix was observed to take.
     Returns:
         The weighted mean distance, in minutes. Where the two share no activity the pools are
@@ -203,8 +207,11 @@ def activity_time_wasserstein_minutes(
         has no worst value of its own.
     """
     scored = [
-        (float(len(waits)), wasserstein_distance(u_values=generated[activity], v_values=waits))
-        for activity, waits in observed.items()
+        (
+            float(len(cycle_times)),
+            wasserstein_distance(u_values=generated[activity], v_values=cycle_times),
+        )
+        for activity, cycle_times in observed.items()
         if activity in generated
     ]
     if scored:
@@ -212,6 +219,7 @@ def activity_time_wasserstein_minutes(
             weight for weight, _ in scored
         )
     return wasserstein_distance(
-        u_values=[wait for waits in generated.values() for wait in waits] or [0.0],
-        v_values=[wait for waits in observed.values() for wait in waits],
+        u_values=[cycle_time for cycle_times in generated.values() for cycle_time in cycle_times]
+        or [0.0],
+        v_values=[cycle_time for cycle_times in observed.values() for cycle_time in cycle_times],
     )

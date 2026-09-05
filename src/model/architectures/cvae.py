@@ -29,7 +29,7 @@ class TransformerCVAE(SuffixModel):
         prefix summary      -> p(z | prefix)               (scored by the KL term only)
         + suffix summary    -> q(z | prefix, suffix)
         z ~ q(z | prefix, suffix)
-        z, prefix events, suffix -> an activity, the wait until it and a remaining time,
+        z, prefix events, suffix -> an activity, the cycle time before it and a remaining time,
                                    at every suffix position
     """
 
@@ -153,10 +153,10 @@ class TransformerCVAE(SuffixModel):
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 
-        The two time heads are point regressors scored by `time_mae`, which is the simple
-        regressor this architecture's decoder already is. Everything the prefix leaves open is z's
-        to carry, the spread of a wait included, so nothing here is handed a scale of its own to
-        widen instead.
+        The two time heads are point regressors scored by `time_mae`, which is the simple regressor
+        this architecture's decoder already is. Everything the prefix leaves open is z's to carry,
+        the spread of a cycle time included, so nothing here is handed a scale of its own to widen
+        instead.
         """
         batch_size = batch.suffix.activities.size(0)
 
@@ -167,10 +167,10 @@ class TransformerCVAE(SuffixModel):
             reduction='sum',
         )
 
-        time_to_next_loss = time_mae(output.decoder.times_to_next, batch.times_to_next, batch)
+        cycle_time_loss = time_mae(output.decoder.cycle_times, batch.cycle_times, batch)
         remaining_time_loss = time_mae(output.decoder.remaining_times, batch.remaining_times, batch)
 
-        reconstruction_loss = activity_loss + time_to_next_loss + remaining_time_loss
+        reconstruction_loss = activity_loss + cycle_time_loss + remaining_time_loss
 
         kl_per_dim = gaussian_kl(
             posterior=output.latents.posterior, prior=output.latents.prior
@@ -189,7 +189,7 @@ class TransformerCVAE(SuffixModel):
             reconstruction_loss=reconstruction_loss.item(),
             floored_kl_loss=floored_kl_loss.item(),
             activity_loss=activity_loss.item(),
-            time_to_next_loss=time_to_next_loss.item(),
+            cycle_time_loss=cycle_time_loss.item(),
             remaining_time_loss=remaining_time_loss.item(),
         )
         latent = LatentMetrics.of(

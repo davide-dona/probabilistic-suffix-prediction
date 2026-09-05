@@ -10,7 +10,7 @@ from src.logs.keys import (
     DAY_COS_KEY,
     DAY_SIN_KEY,
     EOT_TOKEN,
-    EVENT_DELTA_KEY,
+    CYCLE_TIME_KEY,
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     PAD_TOKEN,
@@ -23,7 +23,7 @@ from src.logs.keys import (
     UNK_TOKEN,
     Split,
 )
-from src.logs.continuations import ContinuationIndex, References, build_index
+from src.logs.continuations import ContinuationIndex, Continuations
 from src.logs.io import read_log, read_original_log, write_log
 # isort: on
 
@@ -35,7 +35,7 @@ __all__ = [
     'DAY_COS_KEY',
     'DAY_SIN_KEY',
     'EOT_TOKEN',
-    'EVENT_DELTA_KEY',
+    'CYCLE_TIME_KEY',
     'MIN_PREFIX_KEY',
     'MISSING_FEATURE',
     'PAD_TOKEN',
@@ -47,9 +47,8 @@ __all__ = [
     'TIMESTAMP_KEY',
     'UNK_TOKEN',
     'ContinuationIndex',
-    'References',
+    'Continuations',
     'Split',
-    'build_index',
     'read_log',
     'read_original_log',
     'write_log',

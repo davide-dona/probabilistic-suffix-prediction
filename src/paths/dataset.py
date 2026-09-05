@@ -82,7 +82,7 @@ CONTINUATIONS = SplitArtifact(
 )
 DECLARE_MODEL = DatasetArtifact(
     kind='declarative model',
-    remedy='Run `uv run python -m pipelines.preprocess -c {config}` without --skip-declare first.',
+    remedy='Run `uv run python -m pipelines.preprocess -c {config}` first.',
     relative='declare/model.decl',
 )
 

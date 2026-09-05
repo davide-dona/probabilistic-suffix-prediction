@@ -20,7 +20,7 @@ from src.scalar_metrics import (
     metrics_of,
     oriented,
 )
-from src.suffixes import ActivityCodes, distances, sequence_similarity, spread
+from src.suffixes import ActivityCodes, distances, diversity, sequence_similarity
 
 __all__ = [
     'WANDB_PROJECT',
@@ -41,7 +41,7 @@ __all__ = [
     'oriented',
     'read_run_identity',
     'sequence_similarity',
-    'spread',
+    'diversity',
     'stamped',
     'wandb_artifact',
     'wandb_id',

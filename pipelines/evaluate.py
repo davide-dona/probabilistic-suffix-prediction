@@ -6,18 +6,12 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, duration, step
 from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
-from src.identity import read_run_identity
-from src.inference.generation_store import (
-    read_generation_block,
-    read_prefix_keys,
-    read_vocabulary,
-)
+from src.inference.generation_store import Generations
 from src.logs import ContinuationIndex, Split
 from src.logs.declare import ConformanceChecker, discovery_settings
 from src.suffixes import ActivityCodes
@@ -27,7 +21,7 @@ from src.suffixes import ActivityCodes
 class _Worker:
     """What one pool process holds for the whole of its life, rather than per block."""
 
-    parquet: pq.ParquetFile
+    generations: Generations
     checker: ConformanceChecker
     index: ContinuationIndex
 
@@ -47,9 +41,9 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
             observed continuations the generated ones are compared with.
     """
     global _worker
-    generation_parquet = pq.ParquetFile(generations_file)
-    index = ContinuationIndex(dataset=dataset, split=Split.TEST)
-    vocabulary = read_vocabulary(generation_parquet)
+    generations = Generations(generations_file)
+    index = ContinuationIndex.read(dataset=dataset, split=Split.TEST)
+    vocabulary = generations.vocabulary
     # Check that the the vocabulary the generations were written under is the same
     # as the one of the dataset's continuation
     if vocabulary != index.vocabulary:
@@ -60,7 +54,7 @@ def _init_worker(generations_file: Path, dataset: str) -> None:
         )
 
     _worker = _Worker(
-        parquet=generation_parquet,
+        generations=generations,
         checker=ConformanceChecker(dataset, ActivityCodes.of(vocabulary)),
         index=index,
     )
@@ -76,7 +70,7 @@ def _score_block(block: int) -> list[PrefixSummary]:
     """
     return [
         PrefixSummary.of(generation, checker=_worker.checker, index=_worker.index)
-        for generation in read_generation_block(parquet=_worker.parquet, block=block)
+        for generation in _worker.generations.block(block)
     ]
 
 
@@ -132,9 +126,12 @@ def run(generations_file: Path, workers: int | None) -> None:
             declarative model is looked up under that dataset.
         workers: How many processes to score with, or `None` for one per available CPU.
     """
-    with pq.ParquetFile(generations_file) as generation_parquet:
-        run = read_run_identity(generation_parquet)
-        blocks, prefixes = generation_parquet.num_row_groups, generation_parquet.metadata.num_rows
+    with Generations(generations_file) as generations:
+        run = generations.run
+        blocks, prefixes = generations.blocks, generations.prefixes
+        # Which prefix each row answers, in the order the file holds them, which is the order the
+        # pool scores them in. Two columns, so this is cheap even on a quarter of a million rows.
+        keys = generations.prefix_keys()
 
     # Check that the dataset was preprocessed and that the test-split continuations were written
     dataset = run.dataset
@@ -171,9 +168,6 @@ def run(generations_file: Path, workers: int | None) -> None:
 
     started = time.perf_counter()
 
-    # Which prefix each row answers, in the order the file holds them, which is the order the pool
-    # scores them in. Two columns, so this is cheap even on a quarter of a million rows.
-    keys = read_prefix_keys(generations_file)
     scores_path = paths.PREFIX_SCORES.prepare(run)
 
     # Summarize the generation, folding each prefix's scores in as the pool hands them back and
