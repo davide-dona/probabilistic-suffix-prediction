@@ -9,7 +9,9 @@ from src.cli import banner
 from src.logs.io import read_log
 from src.logs.keys import (
     ACTIVITY_KEY,
+    CASE_ELAPSED_KEY,
     CASE_KEY,
+    CYCLE_TIME_KEY,
     DAY_COS_KEY,
     DAY_SIN_KEY,
     MIN_PREFIX_KEY,
@@ -24,6 +26,8 @@ from src.runtime import start_stage
 
 # Columns preprocessing derives from the timestamp rather than the raw dataset carrying them.
 _DERIVED_COLUMNS = {
+    CASE_ELAPSED_KEY,
+    CYCLE_TIME_KEY,
     REMAINING_TIME_KEY,
     MIN_PREFIX_KEY,
     DAY_SIN_KEY,

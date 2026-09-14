@@ -122,7 +122,7 @@ def _score_in_parallel(
 
 
 def run(generations_file: Path, workers: int | None) -> None:
-    """Score a run's generated suffixes and write the result under `outputs/eval/`.
+    """Score a run's generated suffixes and write the result in the active Hydra output directory.
 
     Args:
         generations_file: The generations to score, from `python -m pipelines.generate`. It says
@@ -202,8 +202,6 @@ def run(generations_file: Path, workers: int | None) -> None:
             )
         )
 
-    # The report is named after the run the generations carry, so it sits under `outputs/eval/`
-    # exactly where they sit under `outputs/generations/`.
     report = EvaluationReport(metadata=metadata, summary=summary)
     path = report.write(output_path('evaluation.json'))
     # The distributional scores are read over the prefixes the log ran often enough, so how many

@@ -54,7 +54,9 @@ class TuningReport:
         return _ADAPTER.validate_json(Path(path).read_bytes())
 
     def write(self, path: Path) -> Path:
-        path.write_text(json.dumps(asdict(self), indent=2))
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(asdict(self), indent=2))
+        temporary.replace(path)
         return path
 
     def sampling_for(self, checkpoint_sha256: str) -> DictConfig:

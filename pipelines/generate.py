@@ -45,10 +45,10 @@ def run(
             `inference.evaluation_samples`.
         tuning: A tuning report to read the sampler out of, or `None`. Named rather than looked
             up beside the checkpoint: which operating point a set of weights is read at is a
-            decision the caller makes, and the report is checked against this run's identity
+            decision the caller makes, and the report is checked against the checkpoint hash
             before it is used.
         sampling: The sampler to draw with, or `None` for the one the run trained under.
-            Mutually exclusive with `tuning`, which is enforced by the CLI.
+            Mutually exclusive with `tuning`.
     """
     # The run's own config. Read before the codec, since it is what says which dataset's codec
     # to read.
@@ -90,8 +90,6 @@ def run(
     paths.require_preprocessed(config.data.name)
     torch.manual_seed(config.seed)
 
-    # The output file is named after the run the checkpoint carries, not after the file it was
-    # read from, so the generations land under the run that produced them whatever it is called.
     path = output_path('generations.parquet')
     device = torch.device(config.training.device)
     batch_size = generation_batch_size(

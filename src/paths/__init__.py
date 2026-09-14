@@ -13,15 +13,11 @@ from src.paths.dataset import (
 from src.paths.locations import (
     CONFIG_DIR,
     DATA_DIR,
-    FIGURES_DIR,
     OUTPUTS_DIR,
     PRETRAINED_DIR,
     ROOT,
-    TABLES_DIR,
-    VISUAL_DIR,
-    dataset_config,
 )
-from src.paths.output import FIGURE, PRETRAINED, TABLE, NamedArtifact, PublishedArtifact
+from src.paths.output import PRETRAINED, PublishedArtifact
 
 __all__ = [
     'CODEC',
@@ -29,23 +25,16 @@ __all__ = [
     'CONTINUATIONS',
     'DATA_DIR',
     'DECLARE_MODEL',
-    'FIGURE',
-    'FIGURES_DIR',
     'ORIGINAL_LOG',
     'OUTPUTS_DIR',
     'PRETRAINED',
     'PRETRAINED_DIR',
     'PROCESSED_SPLIT',
     'ROOT',
-    'TABLE',
-    'TABLES_DIR',
-    'VISUAL_DIR',
     'Artifact',
     'DatasetArtifact',
-    'NamedArtifact',
     'PublishedArtifact',
     'SplitArtifact',
-    'dataset_config',
     'existing_directory',
     'existing_file',
     'require_preprocessed',

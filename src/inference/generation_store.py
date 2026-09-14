@@ -18,22 +18,22 @@ from src.inference.generation import DecodedEvents, Draws, Generation
 type PrefixKey = tuple[str, int]
 
 # How the activity head was read, for a file whose model drew from it, and absent for one whose
-# model read it at its mode. A metadata's identity does not settle this: the sampler is chosen after
-# training and can be changed without the weights moving, so two files of one metadata are told apart
-# by nothing else.
+# model read it at its mode. The checkpoint hash does not settle this: the sampler is chosen after
+# training and can be changed without the weights moving, so two files of one checkpoint are
+# distinguished by the recorded sampler.
 _SAMPLING = b'sampling'
 
-# One metadata of activities, one character each. A suffix is a string rather than a list of names: the
-# names live once in the file's vocabulary metadata, and an edit distance reads a string directly.
+# One sequence of activities, one character each. A suffix is a string rather than a list of
+# names. Activity names live once in the vocabulary metadata; edit distance reads the string.
 _SUFFIX = pa.string()
 
-# One metadata's cycle time before each of its activities. Timestamps are these accumulated, so they are
-# not written a second time. float32 because that is what the model emits: `denormalize` widens to
+# One model's cycle time before each of its activities. Timestamps are these accumulated, so
+# they are not written a second time. The model emits float32; `denormalize` widens to
 # float64 on the way out, and storing that width would double the largest column of the file to
 # carry digits the decoder never produced.
 _CYCLE_TIMES = pa.list_(pa.field(name='element', type=pa.float32()))
 
-# The schema of the Parquet file that holds a metadata's generations. One row per prefix: the samples
+# The schema of the Parquet file that holds a model's generations. One row per prefix: the samples
 # nest inside it, so nothing describing the prefix is written once per sample.
 _SCHEMA = pa.schema(
     [
@@ -95,7 +95,7 @@ _FLOAT_LEAVES = [
 class GenerationWriter:
     """A generations file, open for writing, one block per batch.
 
-    Used as a context manager: the file's footer is written when it closes, so a metadata that dies
+    Used as a context manager: the file's footer is written when it closes, so a model that dies
     mid-generation leaves nothing readable rather than a file that lies about its length.
     """
 
@@ -109,16 +109,14 @@ class GenerationWriter:
     ) -> None:
         """
         Args:
-            path: The file to write, its directory already made, from `paths.GENERATIONS.prepare`.
-                Overwritten if it already exists.
-            metadata: The metadata these generations come from, with_metadata into the file so evaluation can read
-                it back instead of guessing at it.
+            path: Destination file inside the active Hydra output directory.
+            metadata: Dataset/model labels and the source checkpoint hash.
             vocabulary: The activity names the suffixes are spelled on, in code order, from
                 `ActivityCodes.vocabulary`. Written into the file so it says what its own
                 characters mean.
             sampling: How the activity head was read, for a model that draws from it, or None for
                 one that reads it at its mode. Written in for the same reason the vocabulary is:
-                the sampler is chosen after training, so the metadata's identity alone does not say
+                the sampler is chosen after training, so the checkpoint hash alone does not say
                 which one produced this file.
         """
         schema = with_vocabulary(_SCHEMA, vocabulary)
@@ -128,8 +126,10 @@ class GenerationWriter:
                 | {_SAMPLING: json.dumps(OmegaConf.to_container(sampling, resolve=True))}
             )
         schema = with_metadata(schema, metadata)
+        self._path = path
+        self._temporary = path.with_suffix('.parquet.tmp')
         self._writer = pq.ParquetWriter(
-            where=path,
+            where=self._temporary,
             schema=schema,
             compression=_COMPRESSION,
             compression_level=_COMPRESSION_LEVEL,
@@ -150,6 +150,10 @@ class GenerationWriter:
         traceback: TracebackType | None,
     ) -> None:
         self._writer.close()
+        if exception_type is None:
+            self._temporary.replace(self._path)
+        else:
+            self._temporary.unlink(missing_ok=True)
 
     def write(self, generations: list[Generation]) -> None:
         """Write one batch's generations as one block of the file, one row per prefix.
@@ -212,7 +216,7 @@ class Generations:
 
     @property
     def metadata(self) -> dict[str, str]:
-        """Which metadata wrote this file, which is what its report is named after.
+        """Dataset/model labels and the source checkpoint hash.
 
         Raises:
             ValueError: If the file carries no identity, and so predates the one it should name
@@ -239,7 +243,8 @@ class Generations:
 
         A block is what one call to `GenerationWriter.write` wrote, held as a Parquet row group. A
         prefix cannot cross one, since a row holds one, which is what makes a block an independent
-        unit: what it costs to read and to score is set by the batch a metadata wrote rather than by the
+        unit: what it costs to read and to score is set by the batch a model wrote rather than
+        by the
         size of the split.
         """
         return self._parquet.num_row_groups

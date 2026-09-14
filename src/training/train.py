@@ -54,7 +54,7 @@ def train(
     Train a model on a dataset, logging to W&B and saving checkpoints.
 
     A validation that improves on the best selection score so far overwrites
-    `paths.BEST_CHECKPOINT`; no other step is kept. A run that ends, however it ends, is over:
+    `best.pt`; no other step is kept. A run that ends, however it ends, is over:
     there is no carrying one on, so nothing here writes the optimizer, early-stopping or random
     state a resume would have read.
 
@@ -70,7 +70,7 @@ def train(
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
         dataset: The log being trained on, naming the validation split's continuation index the
-            selection score is read against.
+            distribution diagnostics are read against.
         experiment_config: The whole `DictConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
         optimizer_config: The optimizer hyperparameters, its learning rate's warmup included.
@@ -80,11 +80,11 @@ def train(
     """
     from src.model import save_checkpoint
 
+    if not len(train_loader) or not len(val_loader) or not len(generation_loader):
+        raise ValueError('Training and validation loaders must all contain examples')
     device = torch.device(training.device)
 
-    # The validation split's continuations, which the selection score is measured against. Read
-    # once here rather than per validation, and never the test split's: selecting against those
-    # would fold the held-out set into which checkpoint is kept.
+    # Distribution diagnostics use the validation split exclusively.
     continuations = ContinuationIndex.read(dataset=dataset, split=Split.VAL)
 
     # The declarative model generated suffixes are checked against, built once and reused: it
@@ -109,11 +109,6 @@ def train(
     # say which step it is without anyone downloading it.
     best_step = 0
 
-    # `group` is the experiment, `dataset/model`, so runs of one model on one log sit together and
-    # a run is one attempt at it; `job_type` says which stage of the pipeline this is, leaving room
-    # for a later generate or evaluate stage on the same run. The tags repeat the two halves of the
-    # group so either can be filtered on alone, which one group string cannot do. The commit is
-    # W&B's own to record: it reads it off the working tree at `init`.
     tracking = wandb.init(
         project=experiment_config['wandb']['project'],
         mode=experiment_config['wandb']['mode'],
@@ -123,7 +118,7 @@ def train(
         tags=[dataset, experiment_config['model']['name']],
         config=experiment_config,
     )
-    print(f'Logging to {tracking.url or tracking.mode}')
+    print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
     tracking.define_metric('fidelity/energy_score', summary='min')
     try:
@@ -241,9 +236,6 @@ def train(
         tracking.summary['selection_score'] = early_stopper.min_validation_score
         tracking.summary['best_step'] = best_step
 
-        # One version per run, in the lineage its experiment shares, aliased with the run's own
-        # tag. The file is uploaded as it sits: a checkpoint holds nothing a downloader would want
-        # trimmed off it.
         artifact = wandb.Artifact(
             name=f'{dataset}-{experiment_config["model"]["name"]}',
             type='model',

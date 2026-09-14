@@ -35,18 +35,10 @@ _COMPARABLE = 'comparable'
 
 @dataclass(frozen=True, slots=True)
 class GenerationMetrics:
-    """What one generation pass measured: how close the suffixes are to the ground truth, whether
-    they are traces the process allows, and how the set of them compares against every
-    continuation the validation split took.
+    """Validation metrics, with energy score averaged over every generated example.
 
-    The three families a training run reads. Accuracy is the curve a run is watched on, and
-    `DistributionScores.emsc` is the score a checkpoint is selected on.
-
-    The distributional family is carried twice: over every prefix, which is what a checkpoint is
-    selected on, and over the prefixes the log ran often enough for what followed them to be a
-    distribution, which is what a report holds. The two are the same scores over two populations,
-    so a run shows whether the checkpoint it kept is the one the reported criterion would have
-    kept.
+    Distribution diagnostics are logged both over all examples and over prefixes
+    with enough reference occurrences for the final report's comparison.
     """
 
     accuracy: AccuracyScores
@@ -141,11 +133,8 @@ def validate_generation(
     answered with the same number of suffixes. What differs is which split is read and how much of
     it, so a training curve sits on a report's scale without being a report's number.
 
-    The distributional family is returned twice, over every prefix and over the prefixes a report
-    reads it on. The checkpoint is selected on the first, which is what every checkpoint in
-    `outputs/` was selected on; the second is logged beside it so a run says whether the two
-    criteria would have kept the same step, which is what deciding to move the selection needs and
-    a report cannot show.
+    Energy score is measured against each example's observed suffix. The distributional
+    diagnostics also include the comparable-prefix aggregate used in final reports.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
@@ -182,6 +171,8 @@ def validate_generation(
             codes=codes,
         )
     ]
+    if not generations:
+        raise ValueError('Validation generation subset is empty')
     distribution = [DistributionScores.of(one, index=index) for one in generations]
     return GenerationMetrics(
         accuracy=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]),

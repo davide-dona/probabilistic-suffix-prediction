@@ -25,8 +25,7 @@ def run(config: DictConfig) -> None:
         config: The validated experiment config.
     """
     paths.require_preprocessed(config.data.name)
-    # Checkpoints are selected on EMSC against the validation split's continuations, so the index
-    # is as much a precondition of training as the splits are.
+    # Distribution diagnostics read the validation continuation index.
     paths.CONTINUATIONS.require(dataset=config.data.name, split=Split.VAL)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.

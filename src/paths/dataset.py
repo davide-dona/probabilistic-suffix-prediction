@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.logs import Split
 from src.paths.artifact import Artifact
-from src.paths.locations import DATA_DIR, dataset_config
+from src.paths.locations import DATA_DIR
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class DatasetArtifact(Artifact):
 
     def require(self, dataset: str) -> Path:
         """That path, or a `FileNotFoundError` naming the dataset's config to rerun with."""
-        return self._found(self.path(dataset), self.remedy.format(config=dataset_config(dataset)))
+        return self._found(self.path(dataset), self.remedy.format(dataset=dataset))
 
     def prepare(self, dataset: str) -> Path:
         """That path, with the directory it goes in created."""
@@ -49,7 +49,7 @@ class SplitArtifact(Artifact):
         """That path, or a `FileNotFoundError` naming the dataset's config to rerun with."""
         return self._found(
             self.path(dataset=dataset, split=split),
-            self.remedy.format(config=dataset_config(dataset)),
+            self.remedy.format(dataset=dataset),
         )
 
     def prepare(self, dataset: str, split: Split) -> Path:
@@ -65,24 +65,24 @@ ORIGINAL_LOG = DatasetArtifact(
 )
 PROCESSED_SPLIT = SplitArtifact(
     kind='split',
-    remedy='Run `uv run python -m pipelines.preprocess -c {config}` first.',
+    remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
     subdirectory='processed',
     suffix='.csv',
 )
 CODEC = DatasetArtifact(
     kind='dataset codec',
-    remedy='Run `uv run python -m pipelines.preprocess -c {config}` first.',
+    remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
     relative='codec/dataset.json',
 )
 CONTINUATIONS = SplitArtifact(
     kind='continuation index',
-    remedy='Run `uv run python -m pipelines.preprocess -c {config}` first.',
+    remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
     subdirectory='continuations',
     suffix='.parquet',
 )
 DECLARE_MODEL = DatasetArtifact(
     kind='declarative model',
-    remedy='Run `uv run python -m pipelines.preprocess -c {config}` first.',
+    remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
     relative='declare/model.decl',
 )
 

@@ -27,7 +27,7 @@ def _save_figure(figure: Figure, path: Path) -> None:
     Args:
         figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
             all open.
-        path: Where to write it, from `paths.FIGURE.prepare`.
+        path: Where to write it, inside the active Hydra output directory.
     """
     figure.savefig(path)
     plt.close(figure)
@@ -39,7 +39,7 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     Args:
         frame: Every report read, from `read_reports`.
     Returns:
-        How many figures were written, under `outputs/visual/figures/`.
+        How many figures were written, under the invocation's `figures/`.
     """
     written = 0
     for plot in FIGURES:
@@ -52,7 +52,7 @@ def _draw_figures(frame: pd.DataFrame) -> int:
 
 
 def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
-    """Write every comparison table, over every log at once, under `outputs/visual/tables/`.
+    """Write every comparison table, over every log at once, under the invocation's `tables/`.
 
     Args:
         frame: Every report read, from `read_reports`.
@@ -66,7 +66,7 @@ def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
 
 
 def run(evaluation_files: Sequence[Path]) -> None:
-    """Draw a set of evaluation reports and tabulate them, under `outputs/visual/`.
+    """Draw a set of evaluation reports and tabulate them, under the active Hydra output directory.
 
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw

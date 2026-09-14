@@ -77,9 +77,9 @@ def _score(
             model=model, batch=batch.to(device), num_samples=num_samples, codec=codec, codes=codes
         )
     ]
-    # Over the prefixes a report reads these scores on, so the operating point is chosen on the
-    # numbers that will be reported for it rather than on a wider population where a comparison
-    # against a single observed continuation is an accuracy under another name.
+    if not generations:
+        raise ValueError('Tuning validation subset is empty')
+    # Distribution diagnostics use the final report's comparable-prefix population.
     scored = [DistributionScores.of(one, index=index) for one in generations]
     distribution = DistributionScores.mean([one for one in scored if one.comparable])
     conformance = ConformanceScores.mean(
@@ -110,7 +110,7 @@ def run(
 
     The stage between training and generation. It is separate from both because the sampler is
     neither trained nor a property of the test split: it is chosen after the weights are fixed,
-    against the same split and the same continuations the checkpoint itself was selected on.
+    against the validation split used for checkpoint selection.
 
     Args:
         checkpoint_path: The checkpoint to search for. Named rather than guessed at, as
@@ -187,7 +187,7 @@ def run(
         model.eval()
     if not isinstance(model, Transformer):
         raise ValueError(
-            f'{checkpoint_hash} is a {config.model.kind}, which reads its heads at their mode and draws '
+            f'{config.model.kind} has no activity sampler to tune. '
             'its variability from z. There is no sampler to search: giving it one would spread '
             'that variability over the decode steps, which is the arm it is measured against.'
         )

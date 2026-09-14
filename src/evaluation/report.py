@@ -15,7 +15,7 @@ from src.evaluation.summary import EvaluationSummary, LengthSummary, flatten_sco
 
 @dataclass(frozen=True)
 class EvaluationReport:
-    """Evaluation results for one metadata."""
+    """Evaluation results and source artifact provenance."""
 
     metadata: dict[str, str]
     summary: EvaluationSummary
@@ -42,7 +42,9 @@ class EvaluationReport:
             The written path.
         """
         path = Path(path)
-        path.write_text(json.dumps(asdict(self), indent=4))
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(asdict(self), indent=4))
+        temporary.replace(path)
         return path
 
 

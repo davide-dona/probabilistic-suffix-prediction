@@ -40,7 +40,7 @@ def stream_prefix_scores(
         summaries: Prefix summaries in generation order.
         keys: Prefix identities in the same order.
         path: Destination Parquet path.
-        metadata: Identity with_metadata into the Parquet schema.
+        metadata: Dataset/model labels and source artifact hashes.
 
     Yields:
         Each input summary unchanged.
@@ -57,7 +57,8 @@ def stream_prefix_scores(
         for values in columns.values():
             values.clear()
 
-    with pq.ParquetWriter(where=path, schema=with_metadata(_SCHEMA, metadata)) as writer:
+    temporary = path.with_suffix('.parquet.tmp')
+    with pq.ParquetWriter(where=temporary, schema=with_metadata(_SCHEMA, metadata)) as writer:
         for summary, (case_id, prefix_len) in zip(summaries, keys, strict=True):
             columns['case_id'].append(case_id)
             columns['prefix_len'].append(prefix_len)
@@ -68,6 +69,7 @@ def stream_prefix_scores(
                 flush(writer)
             yield summary
         flush(writer)
+    temporary.replace(path)
 
 
 def read_prefix_scores(path: Path, *, columns: Sequence[str] | None = None) -> pd.DataFrame:
@@ -112,20 +114,20 @@ def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
         Score files keyed by dataset and model.
 
     Raises:
-        ValueError: If a score file is missing, invalid, or duplicates a model metadata.
+        ValueError: If a score file is missing, invalid, or duplicates a model run.
     """
     files = [(report, report.with_name('prefix_scores.parquet')) for report in reports]
     missing = [str(report) for report, scores in files if not scores.exists()]
     if missing:
         raise ValueError(
-            'no per-prefix scores beside these reports, so how far a metadata’s means could be off '
+            "no per-prefix scores beside these reports, so how far a model's means could be off "
             'cannot be read:\n  '
             + '\n  '.join(missing)
             + '\nScore them again with `python -m pipelines.evaluate`, which writes them beside '
             'the report.'
         )
 
-    runs: list[tuple[Path]] = []
+    runs: list[tuple[dict[str, str], Path]] = []
     for _, scores in files:
         try:
             with pq.ParquetFile(scores) as parquet:

@@ -1,49 +1,54 @@
-# Batch queues
+# GPU queues
 
-Jobs staged for a batch run, one folder per pipeline. Copy in what to run, then hand the whole
-folder to the machine's GPUs.
+The file queues launch one job per GPU, defaulting to GPUs 0 and 1. Each worker masks its device
+with `CUDA_VISIBLE_DEVICES`, so a job uses `training.device=cuda:0` inside that worker.
 
 ## Training
 
+A `.txt` job holds one Hydra override argument per line. Blank lines and lines starting with `#`
+are ignored. Arguments are passed directly, without shell evaluation.
+
 ```bash
-cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
-scripts/train_queue.sh -m config/models/cvae.yaml
+mkdir -p queue/train
+cat > queue/train/sepsis-cvae.txt <<'JOB'
+dataset=sepsis
+model=cvae
+JOB
+scripts/train_queue.sh -g 0,1
 ```
 
-A job is a dataset config, and is named here by the config's own filename. One architecture per
-sweep, so comparing both means running the script again with `-m config/models/transformer.yaml`.
+Common overrides can follow the GPU option, for example `scripts/train_queue.sh wandb.mode=offline`.
+Job-specific overrides follow common overrides and take precedence. Jobs must select a dataset;
+the model defaults to CVAE. Each process writes its artifacts to its own Hydra output directory.
 
 ## Generation
 
-```bash
-cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
-scripts/generate_queue.sh   # -n 100 for every job in the batch, -d <device> to override
-```
-
-A job is a copy of a best checkpoint, since a checkpoint carries the config and the run identity
-of what wrote it and generation reads both from inside it. A best checkpoint is named after its
-run's tag alone, so what it is called here says nothing about which dataset or model it holds;
-the run inside it is what names its terminal lines and its log, whatever the copy is called.
-
-## What happens to a job
-
-One job runs per GPU at a time, and a GPU that finishes picks up the next rather than waiting on
-the job beside it.
-
-A job running right now is renamed `<name>.running`, and only a plain `.yaml` or `.pt` is ever
-picked up, so nothing is run twice.
-
-A job that succeeded is deleted from here. For a generation job that removes only the copy, never
-the checkpoint under `outputs/checkpoints/best/`. One that failed is renamed `<name>.failed` and
-stays, since a job a freed GPU could claim again would be retried on the spot rather than looked
-at. Its output is under `outputs/queue/train/` or `outputs/queue/generate/`, named in the summary
-the script prints. To try it again, drop the suffix:
+Copy checkpoints into the queue under distinct filenames. Successful jobs delete these copies,
+so keep the original checkpoints elsewhere.
 
 ```bash
-mv queue/train/bpic17.yaml.failed queue/train/bpic17.yaml
+mkdir -p queue/generate
+cp /path/to/best.pt queue/generate/sepsis-cvae.pt
+scripts/generate_queue.sh -g 0,1 num_samples=100
 ```
 
-A `.running` left behind after the script is gone is an interrupted job, and is re-queued the same
-way.
+The queue consumes the new checkpoint format. Existing legacy checkpoints require retraining
+or use of the older code revision.
 
-Everything here is gitignored except this file.
+## Evaluation
+
+```bash
+scripts/evaluate_queue.sh workers=4
+scripts/evaluate_queue.sh --force workers=4
+```
+
+Evaluation runs sequentially, using its own CPU process pool. It discovers `generations.parquet`
+under `outputs/` and `pinned/`, skipping source hashes already recorded in a completed evaluation.
+Use `--roots <directory> ...` for other roots; separate subsequent Hydra overrides with `--`.
+
+## Job lifecycle
+
+A GPU job is claimed by renaming it `.running`. Success deletes the queued job; failure renames
+it `.failed`. Requeue a failed job by removing that suffix after inspecting its log. Logs are
+under `outputs/queue/<stage>/`; the console prints starts, completions, and a final summary.
+Interrupting the queue stops new claims. Inspect any `.running` files before requeuing them.
