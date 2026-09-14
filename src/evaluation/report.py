@@ -8,16 +8,16 @@ from typing import Self
 import pandas as pd
 from pydantic import TypeAdapter, ValidationError
 
+from src.artifacts import group_by_model
 from src.evaluation.scores import COMPARABLE_METRICS
 from src.evaluation.summary import EvaluationSummary, LengthSummary, flatten_scores
-from src.identity import RunIdentity, group_by_model
 
 
 @dataclass(frozen=True)
 class EvaluationReport:
-    """Evaluation results for one run."""
+    """Evaluation results and source artifact provenance."""
 
-    run: RunIdentity
+    metadata: dict[str, str]
     summary: EvaluationSummary
 
     @classmethod
@@ -42,7 +42,9 @@ class EvaluationReport:
             The written path.
         """
         path = Path(path)
-        path.write_text(json.dumps(asdict(self), indent=4))
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(asdict(self), indent=4))
+        temporary.replace(path)
         return path
 
 
@@ -84,8 +86,8 @@ def _rows(report: EvaluationReport) -> list[dict[str, object]]:
     Returns:
         Report rows in the shared tabular schema.
     """
-    run, summary = report.run, report.summary
-    identity = {'dataset': run.dataset, 'model': run.model}
+    metadata, summary = report.metadata, report.summary
+    identity = {'dataset': metadata['dataset'], 'model': metadata['model']}
 
     rows: list[dict[str, object]] = [
         identity
@@ -136,7 +138,7 @@ def read_reports(files: Sequence[Path]) -> pd.DataFrame:
             raise ValueError(f'{file} is not an evaluation report: {error}') from error
 
     # Reject duplicate model runs for the same log.
-    group_by_model((report.run, file) for file, report in reports)
+    group_by_model((report.metadata, file) for file, report in reports)
 
     rows = [row for _, report in reports for row in _rows(report)]
     frame = pd.DataFrame(rows, columns=list(REPORT_COLUMNS))

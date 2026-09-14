@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pandas as pd
+from omegaconf import DictConfig
 
 from src import paths
 from src.logs.keys import (
@@ -13,9 +13,6 @@ from src.logs.keys import (
     RESOURCE_KEY,
     TIMESTAMP_KEY,
 )
-
-if TYPE_CHECKING:
-    from src.configs import DataConfig
 
 
 def read_log(
@@ -53,7 +50,7 @@ def read_log(
     return log
 
 
-def read_original_log(data_config: DataConfig) -> pd.DataFrame:
+def read_original_log(data_config: DictConfig) -> pd.DataFrame:
     """Read a dataset's raw log, renaming its structural columns to the canonical ones.
 
     Args:

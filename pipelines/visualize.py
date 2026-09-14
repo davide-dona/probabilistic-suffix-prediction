@@ -1,14 +1,15 @@
-import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+import hydra
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.figure import Figure
+from omegaconf import DictConfig
 
-from src import paths
 from src.cli import banner, step
 from src.evaluation import read_reports
+from src.runtime import output_path, start_stage
 from src.uncertainty import test_significance
 from src.visualization import (
     FIGURES,
@@ -26,7 +27,7 @@ def _save_figure(figure: Figure, path: Path) -> None:
     Args:
         figure: The figure to write, closed afterwards so a run drawing dozens does not hold them
             all open.
-        path: Where to write it, from `paths.FIGURE.prepare`.
+        path: Where to write it, inside the active Hydra output directory.
     """
     figure.savefig(path)
     plt.close(figure)
@@ -38,20 +39,20 @@ def _draw_figures(frame: pd.DataFrame) -> int:
     Args:
         frame: Every report read, from `read_reports`.
     Returns:
-        How many figures were written, under `outputs/visual/figures/`.
+        How many figures were written, under the invocation's `figures/`.
     """
     written = 0
     for plot in FIGURES:
         _save_figure(
             figure=compose_figure(frame[frame['axis'].isin(plot.breakdowns)], plot),
-            path=paths.FIGURE.prepare(plot.name),
+            path=output_path(f'figures/{plot.name}.pdf'),
         )
         written += 1
     return written
 
 
 def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
-    """Write every comparison table, over every log at once, under `outputs/visual/tables/`.
+    """Write every comparison table, over every log at once, under the invocation's `tables/`.
 
     Args:
         frame: Every report read, from `read_reports`.
@@ -60,12 +61,12 @@ def _write_tables(frame: pd.DataFrame, significance: pd.DataFrame) -> int:
         How many tables were written.
     """
     for table in TABLES:
-        paths.TABLE.prepare(table.name).write_text(latex_table(frame, table, significance))
+        output_path(f'tables/{table.name}.tex').write_text(latex_table(frame, table, significance))
     return len(TABLES)
 
 
 def run(evaluation_files: Sequence[Path]) -> None:
-    """Draw a set of evaluation reports and tabulate them, under `outputs/visual/`.
+    """Draw a set of evaluation reports and tabulate them, under the active Hydra output directory.
 
     Args:
         evaluation_files: The reports to compare, from `python -m pipelines.evaluate`. These draw
@@ -81,8 +82,8 @@ def run(evaluation_files: Sequence[Path]) -> None:
         'Drawing the figures and tables',
         {
             'reports': f'{len(evaluation_files)} file(s), with their per-prefix scores beside them',
-            'figures': paths.FIGURES_DIR,
-            'tables': paths.TABLES_DIR,
+            'figures': output_path('figures'),
+            'tables': output_path('tables'),
         },
     )
 
@@ -101,48 +102,24 @@ def run(evaluation_files: Sequence[Path]) -> None:
         tables = _write_tables(reports, significance)
 
     print(
-        f'\nWrote {drawn} figures in pdf to {paths.FIGURES_DIR} '
-        f'and {tables} tables in tex to {paths.TABLES_DIR}'
+        f'\nWrote {drawn} figures in pdf to {output_path("figures")} '
+        f'and {tables} tables in tex to {output_path("tables")}'
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description='Plot and tabulate a set of evaluation reports for a paper.'
-    )
-    # Either named file by file or swept out of a directory. Both at once could only name one
-    # file twice.
-    reports = parser.add_mutually_exclusive_group(required=True)
-    reports.add_argument(
-        '-e',
-        '--evaluations',
-        type=paths.existing_file,
-        metavar='REPORT',
-        nargs='+',
-        help='Paths to the evaluation reports to compare, from `pipelines.evaluate`. These draw '
-        'the metric figures and the comparison tables, and the per-prefix scores written beside '
-        "each of them are what the tables' emphasis is tested on.",
-    )
-    reports.add_argument(
-        '-E',
-        '--evaluations-dir',
-        type=paths.existing_directory,
-        metavar='DIR',
-        nargs='+',
-        help='Path(s) to a directory to compare every evaluation report under, at any depth, '
-        'e.g. `outputs/eval` for all of them or `outputs/eval/bpic17` for one log. Several '
-        'directories are swept together, e.g. `outputs/eval pinned/eval` to compare '
-        'in-progress runs against pinned ones. Each report says which model and log it belongs '
-        'to.',
-    )
-
-    args = parser.parse_args()
-
-    evaluations = args.evaluations or []
-    if args.evaluations_dir is not None:
-        evaluations = paths.EVALUATION.sweep(args.evaluations_dir)
-
-    run(evaluations)
+@hydra.main(version_base='1.3', config_path='../config', config_name='visualize')
+def main(cfg: DictConfig) -> None:
+    start_stage(cfg)
+    if bool(cfg.evaluations) == bool(cfg.evaluations_dir):
+        raise ValueError('Provide evaluations or evaluations_dir, exclusively')
+    files = [Path(path) for path in cfg.evaluations]
+    if cfg.evaluations_dir:
+        files = sorted(
+            path for folder in cfg.evaluations_dir for path in Path(folder).rglob('evaluation.json')
+        )
+    if not files:
+        raise ValueError('No evaluation reports found')
+    run(files)
 
 
 if __name__ == '__main__':

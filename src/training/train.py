@@ -4,15 +4,14 @@ from typing import TYPE_CHECKING
 
 import torch
 import wandb
+from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
-from src import paths
-from src.configs.schema import EarlyStoppingConfig, OptimizerConfig, TrainingConfig
 from src.datasets.codec import DatasetCodec
-from src.identity import WANDB_PROJECT, RunIdentity, experiment, wandb_artifact, wandb_id
 from src.logs import ContinuationIndex, Split
 from src.logs.declare import ConformanceChecker
+from src.runtime import output_path
 from src.suffixes import ActivityCodes
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
@@ -46,17 +45,16 @@ def train(
     generation_samples: int,
     codec: DatasetCodec,
     dataset: str,
-    run: RunIdentity,
     experiment_config: dict,
-    optimizer_config: OptimizerConfig,
-    training: TrainingConfig,
-    early_stopping_config: EarlyStoppingConfig,
+    optimizer_config: DictConfig,
+    training: DictConfig,
+    early_stopping_config: DictConfig,
 ) -> None:
     """
     Train a model on a dataset, logging to W&B and saving checkpoints.
 
     A validation that improves on the best selection score so far overwrites
-    `paths.BEST_CHECKPOINT`; no other step is kept. A run that ends, however it ends, is over:
+    `best.pt`; no other step is kept. A run that ends, however it ends, is over:
     there is no carrying one on, so nothing here writes the optimizer, early-stopping or random
     state a resume would have read.
 
@@ -72,13 +70,8 @@ def train(
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
         dataset: The log being trained on, naming the validation split's continuation index the
-            selection score is read against.
-        run: What every file this run writes is named after (see `src/paths.py`), what its W&B
-            run is identified by (`src.identity.wandb_id`) and, minus its tag, which group and
-            Artifact lineage it belongs to. One W&B run is one identity, so an identity reused
-            across runs overlays their curves instead of listing them side by side; what makes
-            its tag unique is the caller's business.
-        experiment_config: The whole `ExperimentConfig`, dumped to plain data, written into the
+            distribution diagnostics are read against.
+        experiment_config: The whole `DictConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
         optimizer_config: The optimizer hyperparameters, its learning rate's warmup included.
             The warmup is stepped per optimizer step, so it means the same on every dataset.
@@ -87,11 +80,11 @@ def train(
     """
     from src.model import save_checkpoint
 
+    if not len(train_loader) or not len(val_loader) or not len(generation_loader):
+        raise ValueError('Training and validation loaders must all contain examples')
     device = torch.device(training.device)
 
-    # The validation split's continuations, which the selection score is measured against. Read
-    # once here rather than per validation, and never the test split's: selecting against those
-    # would fold the held-out set into which checkpoint is kept.
+    # Distribution diagnostics use the validation split exclusively.
     continuations = ContinuationIndex.read(dataset=dataset, split=Split.VAL)
 
     # The declarative model generated suffixes are checked against, built once and reused: it
@@ -116,22 +109,18 @@ def train(
     # say which step it is without anyone downloading it.
     best_step = 0
 
-    # `group` is the experiment, `dataset/model`, so runs of one model on one log sit together and
-    # a run is one attempt at it; `job_type` says which stage of the pipeline this is, leaving room
-    # for a later generate or evaluate stage on the same run. The tags repeat the two halves of the
-    # group so either can be filtered on alone, which one group string cannot do. The commit is
-    # W&B's own to record: it reads it off the working tree at `init`.
-    wandb.init(
-        project=WANDB_PROJECT,
-        id=wandb_id(run),
-        name=str(run),
-        group=experiment(run),
+    tracking = wandb.init(
+        project=experiment_config['wandb']['project'],
+        mode=experiment_config['wandb']['mode'],
+        name=output_path('best.pt').parent.name,
+        group=f'{dataset}/{experiment_config["model"]["name"]}',
         job_type='train',
-        tags=[run.dataset, run.model],
+        tags=[dataset, experiment_config['model']['name']],
         config=experiment_config,
     )
-    print(f'Logging to {wandb.run.url}')
+    print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
+    tracking.define_metric('fidelity/energy_score', summary='min')
     try:
         while step < training.max_steps and not should_stop:
             for batch in train_loader:
@@ -198,15 +187,12 @@ def train(
                         f'val {val_metrics.loss:.4f}  '
                         f'gen_dls {gen_metrics.accuracy.dls_mean:.4f} mean / '
                         f'{gen_metrics.accuracy.dls_point:.4f} point  '
+                        f'energy {gen_metrics.accuracy.energy_score:.4f}  '
                         f'emsc {gen_metrics.distribution.emsc:.4f} all / '
                         f'{gen_metrics.comparable.emsc:.4f} compared',
                         flush=True,
                     )
-                    # The early stopper minimizes, and EMSC is a similarity, so it is the distance
-                    # that is tracked. Over every prefix rather than over the ones a report reads
-                    # it on, which is what every checkpoint under `outputs/` was selected on; the
-                    # comparable score is logged beside it rather than selected on.
-                    selection_score = 1.0 - gen_metrics.distribution.emsc
+                    selection_score = gen_metrics.accuracy.energy_score
 
                     # Read before `update` folds this score into it, since afterwards it can
                     # no longer tell an improvement from a step that just matched the best.
@@ -220,11 +206,11 @@ def train(
                         best_step = step
                         path = save_checkpoint(
                             model,
-                            experiment_config=experiment_config,
+                            config=experiment_config,
                             step=step,
                             selection_score=selection_score,
-                            run=run,
-                            path=paths.BEST_CHECKPOINT.prepare(run),
+                            wandb_id=tracking.id,
+                            path=output_path('best.pt'),
                         )
                         print(
                             f'New best model (step {step}, score {selection_score:.4f}) '
@@ -245,22 +231,26 @@ def train(
         )
         print(f'Finished training after {step} steps ({reason})')
 
-        # One version per run, in the lineage its experiment shares, aliased with the run's own
-        # tag. The file is uploaded as it sits: a checkpoint holds nothing a downloader would want
-        # trimmed off it.
+        tracking.summary['selection_metric'] = 'energy_score'
+        tracking.summary['selection_direction'] = 'min'
+        tracking.summary['selection_score'] = early_stopper.min_validation_score
+        tracking.summary['best_step'] = best_step
+
         artifact = wandb.Artifact(
-            name=wandb_artifact(run),
+            name=f'{dataset}-{experiment_config["model"]["name"]}',
             type='model',
             metadata={
-                'run': str(run),
+                'wandb_id': tracking.id,
+                'selection_metric': 'energy_score',
+                'selection_direction': 'min',
                 'step': best_step,
                 'selection_score': early_stopper.min_validation_score,
             },
         )
-        artifact.add_file(str(paths.BEST_CHECKPOINT.path(run)), name='model.pt')
-        wandb.log_artifact(artifact, aliases=[run.tag])
+        artifact.add_file(str(output_path('best.pt')), name='model.pt')
+        wandb.log_artifact(artifact, aliases=['best', tracking.id])
 
         # The alert is the one nobody has to be watching a terminal to get.
-        wandb.alert(title=f'Training finished: {run}', text=f'{step} steps, {reason}.')
+        wandb.alert(title=f'Training finished: {tracking.name}', text=f'{step} steps, {reason}.')
     finally:
         wandb.finish()
