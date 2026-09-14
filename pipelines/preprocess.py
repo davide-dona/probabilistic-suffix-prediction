@@ -1,12 +1,13 @@
-import argparse
+from __future__ import annotations
 
+import hydra
 import numpy as np
 import pandas as pd
+from omegaconf import DictConfig
 from pandas.api.types import is_numeric_dtype
 
 from src import paths
 from src.cli import banner, step
-from src.configs import DataConfig, DeclareConfig, load_dataset_config
 from src.datasets.codec import DatasetCodec
 from src.logs import (
     CASE_ELAPSED_KEY,
@@ -38,9 +39,11 @@ from src.logs.preprocessing import (
     out_of_time_split,
     sort_log,
 )
+from src.runtime import start_stage
+from src.validation import validate_data, validate_declare
 
 
-def case_length_cutoff(log: pd.DataFrame, *, data_config: DataConfig) -> int:
+def case_length_cutoff(log: pd.DataFrame, *, data_config: DictConfig) -> int:
     """Find the cutoff in events for dropping cases too long to fit the model's sequence tensors.
 
     Args:
@@ -54,7 +57,7 @@ def case_length_cutoff(log: pd.DataFrame, *, data_config: DataConfig) -> int:
     return int(np.ceil(np.percentile(lengths, data_config.max_seq_len_percentile)))
 
 
-def case_duration_cutoff(log: pd.DataFrame, *, data_config: DataConfig) -> float:
+def case_duration_cutoff(log: pd.DataFrame, *, data_config: DictConfig) -> float:
     """Find the cutoff in days for dropping the cases whose duration is not a real one.
 
     Args:
@@ -144,7 +147,7 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
     return log
 
 
-def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
+def run(data_config: DictConfig, declare_config: DictConfig) -> None:
     """
     Preprocess and split a dataset, writing outputs next to the input.
 
@@ -269,23 +272,12 @@ def run(data_config: DataConfig, declare_config: DeclareConfig) -> None:
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description='Turn a raw event log into the train/val/test CSVs the model consumes.'
-    )
-    parser.add_argument(
-        '-c',
-        '--config',
-        type=paths.existing_file,
-        metavar='CONFIG',
-        required=True,
-        help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
-    )
-    args = parser.parse_args()
-
-    config = load_dataset_config(args.config)
-
-    run(data_config=config.data, declare_config=config.declare)
+@hydra.main(version_base='1.3', config_path='../config', config_name='preprocess')
+def main(cfg: DictConfig) -> None:
+    start_stage(cfg)
+    validate_data(cfg.data)
+    validate_declare(cfg.declare)
+    run(data_config=cfg.data, declare_config=cfg.declare)
 
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@
 #
 #   QUEUE_DIR          the folder jobs are staged in
 #   LOGS               the folder a job's output is written to
-#   SUFFIX             what a staged job's filename ends in, `.yaml` or `.pt`
+#   SUFFIX             what a staged job's filename ends in, `.txt` or `.pt`
 #   job_name <claimed> what the terminal lines and the log filename call this job
 #   run_job <claimed>  the command to run, with its output already redirected to the log
 

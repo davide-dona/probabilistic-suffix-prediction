@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from omegaconf import DictConfig
 
-from src.configs.schema import InferenceConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.inference.generation import DecodedEvents, Draws, Generation
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def generation_batch_size(
-    inference: InferenceConfig, num_samples: int, prefixes_upper_bound: int
+    inference: DictConfig, num_samples: int, prefixes_upper_bound: int
 ) -> int:
     """How many prefixes to hand the decoder at once, to protect its memory.
 

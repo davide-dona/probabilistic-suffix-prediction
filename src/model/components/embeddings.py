@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import math
 
 import torch
+from omegaconf import DictConfig
 from torch import nn
 
-from src.configs.schema import EmbeddingConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import Events
 
@@ -18,7 +20,7 @@ class EventEmbeddings(nn.Module):
     reading it; nothing here does, so that the encoder's norm and the decoder's stay their own.
     """
 
-    def __init__(self, config: EmbeddingConfig, codec: DatasetCodec, *, d_model: int):
+    def __init__(self, config: DictConfig, codec: DatasetCodec, *, d_model: int):
         super().__init__()
         self.activity_embedding = nn.Embedding(
             num_embeddings=codec.activity.num_rows,
