@@ -9,6 +9,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
+from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
 from src.runtime import output_path
 from src.suffixes import ActivityCodes
@@ -43,7 +44,7 @@ def train(
     generation_loader: DataLoader,
     generation_samples: int,
     codec: DatasetCodec,
-    dataset: str,
+    run: RunIdentity,
     experiment_config: dict,
     optimizer_config: DictConfig,
     training: DictConfig,
@@ -68,8 +69,7 @@ def train(
             report is built from: the selection score and the reported one are read at one budget.
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
-        dataset: The log being trained on, naming the declarative model generated suffixes are
-            checked against.
+        run: The stable identity shared by the checkpoint and its downstream artifacts.
         experiment_config: The whole `DictConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
         optimizer_config: The optimizer hyperparameters, its learning rate's warmup included.
@@ -85,7 +85,7 @@ def train(
 
     # The declarative model generated suffixes are checked against, built once and reused: it
     # caches a trace's rate across the run rather than rebuilding the constraints per validation.
-    checker = ConformanceChecker(dataset, ActivityCodes.of(codec.activity.names))
+    checker = ConformanceChecker(run.dataset, ActivityCodes.of(codec.activity.names))
 
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_config.lr, weight_decay=optimizer_config.weight_decay
@@ -108,10 +108,11 @@ def train(
     tracking = wandb.init(
         project=experiment_config['wandb']['project'],
         mode=experiment_config['wandb']['mode'],
-        name=output_path('best.pt').parent.name,
-        group=f'{dataset}/{experiment_config["model"]["name"]}',
+        id=f'{run.dataset}-{run.model}-{run.run_id}',
+        name=str(run),
+        group=f'{run.dataset}/{run.model}',
         job_type='train',
-        tags=[dataset, experiment_config['model']['name']],
+        tags=[run.dataset, run.model],
         config=experiment_config,
     )
     print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
@@ -203,6 +204,7 @@ def train(
                             step=step,
                             selection_score=selection_score,
                             wandb_id=tracking.id,
+                            run=run,
                             path=output_path('best.pt'),
                         )
                         print(
@@ -230,9 +232,10 @@ def train(
         tracking.summary['best_step'] = best_step
 
         artifact = wandb.Artifact(
-            name=f'{dataset}-{experiment_config["model"]["name"]}',
+            name=f'{run.dataset}-{run.model}',
             type='model',
             metadata={
+                'run': run.as_dict(),
                 'wandb_id': tracking.id,
                 'selection_metric': 'energy_score_dls',
                 'selection_direction': 'min',
@@ -241,9 +244,9 @@ def train(
             },
         )
         artifact.add_file(str(output_path('best.pt')), name='model.pt')
-        wandb.log_artifact(artifact, aliases=['best', tracking.id])
+        wandb.log_artifact(artifact, aliases=['best', run.run_id])
 
         # The alert is the one nobody has to be watching a terminal to get.
-        wandb.alert(title=f'Training finished: {tracking.name}', text=f'{step} steps, {reason}.')
+        wandb.alert(title=f'Training finished: {run}', text=f'{step} steps, {reason}.')
     finally:
         wandb.finish()

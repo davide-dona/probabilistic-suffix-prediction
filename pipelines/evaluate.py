@@ -116,6 +116,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     """
     with Generations(generations_file) as generations:
         metadata = generations.metadata
+        run = generations.run
         blocks, prefixes = generations.blocks, generations.prefixes
         # Which prefix each row answers, in the order the file holds them, which is the order the
         # pool scores them in. Two columns, so this is cheap even on a quarter of a million rows.
@@ -148,6 +149,7 @@ def run(generations_file: Path, workers: int | None) -> None:
         'Scoring generated suffixes',
         {
             'source': metadata,
+            'run': run,
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',

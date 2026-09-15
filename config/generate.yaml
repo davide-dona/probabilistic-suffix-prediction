@@ -7,3 +7,9 @@ num_samples: null
 num_workers: null
 tuning: null
 sampling: null
+hydra:
+  run:
+    dir: ${checkpoint_output:generate,${checkpoint}}
+  sweep:
+    dir: outputs/generate
+    subdir: ${checkpoint_subdir:generate,${checkpoint}}

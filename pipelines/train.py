@@ -9,6 +9,7 @@ from src import paths
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
+from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs import Split
 from src.model import build_model
@@ -17,12 +18,13 @@ from src.training import train
 from src.validation import validate_training
 
 
-def run(config: DictConfig) -> None:
+def run(config: DictConfig, run: RunIdentity) -> None:
     """
     Train the model an experiment config describes, on the dataset it names.
     The dataset must have been preprocessed already.
     Args:
         config: The validated experiment config.
+        run: The stable identity assigned to this training invocation.
     """
     paths.require_preprocessed(config.data.name)
 
@@ -34,6 +36,7 @@ def run(config: DictConfig) -> None:
         'Training a suffix-prediction model',
         {
             'output': output_path('best.pt').parent,
+            'run': run,
             'dataset': config.data.name,
             'model': config.model.name,
             'device': config.training.device,
@@ -108,15 +111,19 @@ def run(config: DictConfig) -> None:
         f'generating for {len(generation_loader.dataset):,}'
     )
 
+    experiment_config = OmegaConf.to_container(config, resolve=True)
+    assert isinstance(experiment_config, dict)
+    experiment_config.pop('run_id')
+
     train(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         generation_loader=generation_loader,
-        experiment_config=OmegaConf.to_container(config, resolve=True),
+        experiment_config=experiment_config,
         generation_samples=config.inference.validation_samples,
         codec=codec,
-        dataset=config.data.name,
+        run=run,
         optimizer_config=config.optimizer,
         training=config.training,
         early_stopping_config=config.early_stopping,
@@ -127,7 +134,10 @@ def run(config: DictConfig) -> None:
 def main(cfg: DictConfig) -> None:
     start_stage(cfg)
     validate_training(cfg)
-    run(cfg)
+    run(
+        cfg,
+        RunIdentity(dataset=cfg.data.name, model=cfg.model.name, run_id=cfg.run_id),
+    )
 
 
 if __name__ == '__main__':

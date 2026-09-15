@@ -40,7 +40,7 @@ def stream_prefix_scores(
         summaries: Prefix summaries in generation order.
         keys: Prefix identities in the same order.
         path: Destination Parquet path.
-        metadata: Dataset/model labels and source artifact hashes.
+        metadata: Stable run identity and source artifact hashes.
 
     Yields:
         Each input summary unchanged.

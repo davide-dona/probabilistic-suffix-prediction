@@ -2,3 +2,10 @@ defaults:
 - output/default
 - dataset: ???
 - _self_
+run_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: ${dataset_output:preprocess,${data.name},${run_id}}
+  sweep:
+    dir: outputs/preprocess
+    subdir: ${dataset_subdir:preprocess,${data.name},${run_id}}
