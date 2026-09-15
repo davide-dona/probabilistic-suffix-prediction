@@ -5,7 +5,7 @@ import re
 
 from omegaconf import DictConfig
 
-from src.logs.keys import CYCLE_TIME_KEY
+from src.logs.keys import INTER_EVENT_TIME_KEY
 
 
 def _number(
@@ -29,6 +29,11 @@ def _name(value: str, name: str) -> None:
         raise ValueError(f'{name} must contain only lowercase letters, digits, and hyphens')
 
 
+def _model_identifier(value: str, name: str) -> None:
+    if not isinstance(value, str) or not re.fullmatch(r'[a-z0-9][a-z0-9_]*', value):
+        raise ValueError(f'{name} must contain only lowercase letters, digits, and underscores')
+
+
 def validate_data(data: DictConfig) -> None:
     _name(data.name, 'data.name')
     splits = [data.train_split, data.val_split, data.test_split]
@@ -42,8 +47,8 @@ def validate_data(data: DictConfig) -> None:
             raise ValueError(f'data.{key} must not exceed 100')
     if not set(data.log_scaled_features) <= set(data.event_features):
         raise ValueError('log_scaled_features must be event_features')
-    if CYCLE_TIME_KEY in data.event_features:
-        raise ValueError('cycle_time must not also be an event_feature')
+    if INTER_EVENT_TIME_KEY in data.event_features:
+        raise ValueError('inter_event_time must not also be an event_feature')
     if not isinstance(data.separator, str) or not data.separator:
         raise ValueError('data.separator must be a nonempty string')
 
@@ -68,8 +73,8 @@ def validate_sampling(config: DictConfig) -> None:
 
 
 def validate_model(model: DictConfig) -> None:
-    _name(model.name, 'model.name')
-    if model.kind not in ('cvae', 'transformer'):
+    _model_identifier(model.name, 'model.name')
+    if model.kind not in ('transformer_cvae', 'head_sampling_transformer'):
         raise ValueError(f'Unknown model kind: {model.kind}')
     _number(model.d_model, 'model.d_model', integer=True)
     for key, value in model.embeddings.items():
@@ -86,13 +91,15 @@ def validate_model(model: DictConfig) -> None:
                 if section[key] >= 1:
                     raise ValueError(f'model.{name}.{key} must be below 1')
     _number(model.decoder.head_hidden_dim, 'model.decoder.head_hidden_dim', integer=True)
-    if model.kind == 'transformer':
+    if model.kind == 'head_sampling_transformer':
         if any(key in model for key in ('prior', 'latent', 'loss')):
-            raise ValueError('transformer does not accept prior, latent, or loss settings')
+            raise ValueError(
+                'head_sampling_transformer does not accept prior, latent, or loss settings'
+            )
         validate_sampling(model.sampling)
     else:
         if 'sampling' in model:
-            raise ValueError('cvae does not accept sampling settings')
+            raise ValueError('transformer_cvae does not accept sampling settings')
         _number(model.latent.latent_dim, 'model.latent.latent_dim', integer=True)
         for width in model.prior.hidden_dims:
             _number(width, 'model.prior.hidden_dims', integer=True)

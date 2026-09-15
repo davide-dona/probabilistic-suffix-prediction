@@ -29,7 +29,15 @@ class EvaluationReport:
         Returns:
             The validated report.
         """
-        return _ADAPTER.validate_json(Path(path).read_bytes())
+        path = Path(path)
+        payload = json.loads(path.read_bytes())
+        summary = payload.get('summary', {})
+        if 'accuracy' in summary:
+            raise ValueError(
+                f'{path} uses the legacy evaluation schema. Score its generations again with '
+                '`python -m pipelines.evaluate`.'
+            )
+        return _ADAPTER.validate_python(payload)
 
     def write(self, path: str | Path) -> Path:
         """Write the report as JSON.

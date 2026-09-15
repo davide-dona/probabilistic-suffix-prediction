@@ -54,7 +54,7 @@ def add_remaining_time(
     return log
 
 
-def add_cycle_time(
+def add_inter_event_time(
     log: pd.DataFrame,
     *,
     case_key: str,

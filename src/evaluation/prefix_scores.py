@@ -82,6 +82,7 @@ def read_prefix_scores(path: Path, *, columns: Sequence[str] | None = None) -> p
     Returns:
         Per-prefix score dataframe.
     """
+    require_columns(path, columns or (*PREFIX_SCORE_KEYS, *METRICS.entries))
     wanted = None if columns is None else list(columns)
     return pq.read_table(source=path, columns=wanted).to_pandas()
 
@@ -130,6 +131,7 @@ def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
     runs: list[tuple[dict[str, str], Path]] = []
     for _, scores in files:
         try:
+            require_columns(scores, (*PREFIX_SCORE_KEYS, *METRICS.entries))
             with pq.ParquetFile(scores) as parquet:
                 runs.append((read_metadata(parquet), scores))
         except (ValueError, TypeError, KeyError) as error:

@@ -21,7 +21,7 @@ class PublishedArtifact(Artifact):
 
         Args:
             dataset: The log the model was trained on.
-            model: The model's name, as `model.name` in its config, e.g. `cvae`.
+            model: The model's name, as `model.name` in its config, e.g. `transformer_cvae`.
         Returns:
             The path that model's published checkpoint is fetched to.
         """

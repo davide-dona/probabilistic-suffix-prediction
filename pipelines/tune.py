@@ -14,7 +14,8 @@ from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.evaluation.scores import AccuracyScores, ConformanceScores
+from src.evaluation.scores import ConformanceScores, SamplePredictionScores
+from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.tuning import (
     SearchPass,
@@ -23,7 +24,7 @@ from src.inference.tuning import (
 )
 from src.logs import Split
 from src.logs.declare import ConformanceChecker
-from src.model import Transformer, load_checkpoint, model_from_checkpoint
+from src.model import HeadSamplingTransformer, load_checkpoint, model_from_checkpoint
 from src.runtime import output_path, save_config, start_stage
 from src.suffixes import ActivityCodes
 from src.validation import validate_sampling, validate_training
@@ -31,7 +32,7 @@ from src.validation import validate_sampling, validate_training
 
 @torch.no_grad()
 def _score(
-    model: Transformer,
+    model: HeadSamplingTransformer,
     loader: DataLoader,
     *,
     sampling: DictConfig,
@@ -75,13 +76,15 @@ def _score(
     ]
     if not generations:
         raise ValueError('Tuning validation subset is empty')
-    conformance = ConformanceScores.mean(
-        [ConformanceScores.of(one, checker=checker) for one in generations]
-    )
+    summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
     return TuningPoint(
         sampling=OmegaConf.to_container(sampling, resolve=True),
-        score=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]).energy_score,
-        conformance_mean=conformance.conformance_mean,
+        score=SamplePredictionScores.mean(
+            [summary.sample for summary in summaries]
+        ).energy_score_dls,
+        conformance_sample_mean=ConformanceScores.mean(
+            [summary.conformance for summary in summaries]
+        ).conformance_sample_mean,
     )
 
 
@@ -163,7 +166,7 @@ def run(
             'device': torch_device,
             'split': f'{Split.VAL}, {pairs:,} prefixes, {samples} suffixes each',
             'grid': f'{len(grid)} points over temperature {temperatures} and top_p {top_ps}',
-            'chosen on': 'minimum activity-sequence energy score',
+            'chosen on': 'minimum activity-sequence DLS energy score',
             'report': report_path,
         },
     )
@@ -174,11 +177,10 @@ def run(
     with step(f'Building the model and moving it onto {torch_device}'):
         model = model_from_checkpoint(checkpoint, codec, device=config.training.device)
         model.eval()
-    if not isinstance(model, Transformer):
+    if not isinstance(model, HeadSamplingTransformer):
         raise ValueError(
-            f'{config.model.kind} has no activity sampler to tune. '
-            'its variability from z. There is no sampler to search: giving it one would spread '
-            'that variability over the decode steps, which is the arm it is measured against.'
+            f'{config.model.kind} has no output-head sampler to tune. Transformer CVAE draws '
+            'its variability from z instead.'
         )
 
     with step(f'Reading and encoding the {Split.VAL} split'):
@@ -219,7 +221,7 @@ def run(
         )
         points.append(point)
         print(
-            f'  energy {point.score:.4f}  conformance {point.conformance_mean:.4f}',
+            f'  energy {point.score:.4f}  conformance {point.conformance_sample_mean:.4f}',
             flush=True,
         )
 

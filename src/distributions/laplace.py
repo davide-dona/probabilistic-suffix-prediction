@@ -17,7 +17,7 @@ class Laplace:
     `*_ae_*_days` columns score. A squared error would fit the conditional mean instead, over
     durations that are standardized raw minutes with nothing but a 99.9-percentile filter guarding
     their tail, and the tail would set the fit. The same tail is why the family matters now that a
-    head is drawn from: an `exp(-|x|)` tail reaches a long cycle time without the scale being
+    head is drawn from: an `exp(-|x|)` tail reaches a long inter-event time without the scale being
     widened everywhere to buy it, where a Gaussian pays for that reach with mass below zero, which
     `inference.generate` can only clamp onto a spike at 0 minutes.
 

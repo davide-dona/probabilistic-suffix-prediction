@@ -143,8 +143,8 @@ class SuffixModel(nn.Module, ABC):
         return GeneratedSuffix(
             activities=generated.activities.view(batch_size, -1, generated.activities.size(dim=1)),
             lengths=generated.lengths.view(batch_size, -1),
-            cycle_times=generated.cycle_times.view(
-                batch_size, -1, generated.cycle_times.size(dim=1)
+            inter_event_times=generated.inter_event_times.view(
+                batch_size, -1, generated.inter_event_times.size(dim=1)
             ),
             remaining_time=generated.remaining_time.view(batch_size, -1),
         )
@@ -153,7 +153,9 @@ class SuffixModel(nn.Module, ABC):
 # Imported after `SuffixModel` is defined: both modules import it back, so the base class has to
 # already be bound in this module's namespace by the time they run.
 from src.model.architectures.cvae import TransformerCVAE  # noqa: E402
-from src.model.architectures.transformer import Transformer  # noqa: E402
+from src.model.architectures.head_sampling_transformer import (  # noqa: E402
+    HeadSamplingTransformer,
+)
 
 
 def build_model(config: DictConfig, codec: DatasetCodec) -> SuffixModel:
@@ -165,10 +167,10 @@ def build_model(config: DictConfig, codec: DatasetCodec) -> SuffixModel:
     Returns:
         The model, on the CPU and in training mode.
     """
-    if config.kind == 'cvae':
+    if config.kind == 'transformer_cvae':
         return TransformerCVAE(config=config, codec=codec)
-    if config.kind == 'transformer':
-        return Transformer(config=config, codec=codec)
+    if config.kind == 'head_sampling_transformer':
+        return HeadSamplingTransformer(config=config, codec=codec)
     raise ValueError(f'Unknown model kind: {config.kind}')
 
 

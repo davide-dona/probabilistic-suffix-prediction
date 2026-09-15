@@ -8,13 +8,13 @@ import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 from pandas.api.types import is_numeric_dtype
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src import paths
 from src.logs import (
     ACTIVITY_KEY,
-    CYCLE_TIME_KEY,
     EOT_TOKEN,
+    INTER_EVENT_TIME_KEY,
     PAD_TOKEN,
     REMAINING_TIME_KEY,
     RESOURCE_KEY,
@@ -264,9 +264,9 @@ class DatasetCodec(StrictModel):
 
     activity: CategoricalColumn
     resource: CategoricalColumn
-    # cycle_time is read by both the encoders and the decoder; remaining_time is
+    # inter_event_time is read by both the encoders and the decoder; remaining_time is
     # decoder-only.
-    cycle_time: NumericColumn
+    inter_event_time: NumericColumn
     remaining_time: NumericColumn
 
     # The columns `data.event_features` names, sorted by dtype into the two kinds.
@@ -314,8 +314,8 @@ class DatasetCodec(StrictModel):
             resource=CategoricalColumn.fit(
                 train, column=RESOURCE_KEY, special_tokens=RESOURCE_TOKENS
             ),
-            cycle_time=NumericColumn.fit(
-                train, column=CYCLE_TIME_KEY, log=data_config.log_scaled_cycle_time
+            inter_event_time=NumericColumn.fit(
+                train, column=INTER_EVENT_TIME_KEY, log=data_config.log_scaled_inter_event_time
             ),
             remaining_time=NumericColumn.fit(
                 train, column=REMAINING_TIME_KEY, log=data_config.log_scaled_remaining_time
@@ -343,7 +343,15 @@ class DatasetCodec(StrictModel):
         """
         name = data_config.name
         path = paths.CODEC.require(name)
-        return cls.model_validate(json.loads(path.read_text()) | {'dataset': name})
+        payload = json.loads(path.read_text())
+        try:
+            return cls.model_validate(payload | {'dataset': name})
+        except ValidationError as error:
+            if 'cycle_time' in payload:
+                raise ValueError(
+                    f'{path} uses the legacy cycle_time schema. Preprocess {name} again.'
+                ) from error
+            raise
 
     def save(self) -> Path:
         """Write this codec to its own directory, and return where it went."""

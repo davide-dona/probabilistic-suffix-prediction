@@ -2,7 +2,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from typing import Self
 
-from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores
+from src.evaluation.scores import (
+    FAMILIES,
+    CalibrationScores,
+    ConformanceScores,
+    PointPredictionScores,
+    SamplePredictionScores,
+    ScoringContext,
+)
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
 
@@ -13,7 +20,9 @@ class PrefixSummary:
 
     prefix_len: int
     suffix_len: int
-    accuracy: AccuracyScores
+    point: PointPredictionScores
+    sample: SamplePredictionScores
+    calibration: CalibrationScores
     conformance: ConformanceScores
 
     @classmethod
@@ -32,10 +41,13 @@ class PrefixSummary:
         Returns:
             Scores for the prefix.
         """
+        context = ScoringContext.of(generation)
         return cls(
             prefix_len=generation.prefix_len,
             suffix_len=len(generation.truth),
-            accuracy=AccuracyScores.of(generation),
+            point=PointPredictionScores.of(context),
+            sample=SamplePredictionScores.of(context),
+            calibration=CalibrationScores.of(context),
             conformance=ConformanceScores.of(generation, checker=checker),
         )
 
@@ -46,7 +58,9 @@ class LengthSummary:
 
     length: int
     prefixes: int
-    accuracy: AccuracyScores
+    point: PointPredictionScores
+    sample: SamplePredictionScores
+    calibration: CalibrationScores
     conformance: ConformanceScores
 
     @classmethod
@@ -63,7 +77,9 @@ class LengthSummary:
         return cls(
             length=length,
             prefixes=len(prefixes),
-            accuracy=AccuracyScores.mean([prefix.accuracy for prefix in prefixes]),
+            point=PointPredictionScores.mean([prefix.point for prefix in prefixes]),
+            sample=SamplePredictionScores.mean([prefix.sample for prefix in prefixes]),
+            calibration=CalibrationScores.mean([prefix.calibration for prefix in prefixes]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in prefixes]),
         )
 
@@ -85,7 +101,9 @@ class EvaluationSummary:
     """Aggregate evaluation scores for one run."""
 
     prefixes: int
-    accuracy: AccuracyScores
+    point: PointPredictionScores
+    sample: SamplePredictionScores
+    calibration: CalibrationScores
     conformance: ConformanceScores
     # Sorted by prefix length.
     by_prefix_length: list[LengthSummary]
@@ -114,7 +132,11 @@ class EvaluationSummary:
         every_prefix = [prefix for bucket in prefix_buckets.values() for prefix in bucket]
         return cls(
             prefixes=len(every_prefix),
-            accuracy=AccuracyScores.mean([prefix.accuracy for prefix in every_prefix]),
+            point=PointPredictionScores.mean([prefix.point for prefix in every_prefix]),
+            sample=SamplePredictionScores.mean([prefix.sample for prefix in every_prefix]),
+            calibration=CalibrationScores.mean(
+                [prefix.calibration for prefix in every_prefix]
+            ),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
@@ -140,7 +162,9 @@ def flatten_scores(summary: Summarized) -> dict[str, float]:
     return {
         name: getattr(family, name)
         for family in (
-            summary.accuracy,
+            summary.point,
+            summary.sample,
+            summary.calibration,
             summary.conformance,
         )
         for name in _FIELD_NAMES[type(family)]

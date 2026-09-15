@@ -17,7 +17,7 @@ class Events(NamedTuple):
 
     activities: torch.Tensor  # int64, [..., seq_len]
     resources: torch.Tensor  # int64, [..., seq_len]
-    cycle_times: torch.Tensor  # float32, standardized, [..., seq_len]
+    inter_event_times: torch.Tensor  # float32, standardized, [..., seq_len]
     categorical_attributes: torch.Tensor  # int64, [..., seq_len, num_categorical]
     numeric_attributes: torch.Tensor  # float32, standardized, [..., seq_len, num_numeric]
     numeric_attributes_present: (
@@ -90,8 +90,8 @@ class SplitTrace(NamedTuple):
 
     # Standardized minutes until the event written at each suffix position, and until the case
     # ends. Both measure from the last prefix event at position 0.
-    cycle_times: torch.Tensor  # float32, [max_trace_length], batched [batch_size, ...]
-    remaining_times: torch.Tensor  # float32, shaped like `cycle_times`
+    inter_event_times: torch.Tensor  # float32, [max_trace_length], batched [batch_size, ...]
+    remaining_times: torch.Tensor  # float32, shaped like `inter_event_times`
 
     def to(self, device: torch.device) -> SplitTrace:
         """Move a whole batch in one call"""
@@ -99,7 +99,7 @@ class SplitTrace(NamedTuple):
             case_id=self.case_id,
             prefix=self.prefix.to(device),
             suffix=self.suffix.to(device),
-            cycle_times=self.cycle_times.to(device),
+            inter_event_times=self.inter_event_times.to(device),
             remaining_times=self.remaining_times.to(device),
         )
 
@@ -195,7 +195,7 @@ class TraceDataset(Dataset):
             suffix=suffix,
             # Both run the suffix's content only: the EOT has no time of its own, and the loss
             # masks it out with the padding behind it.
-            cycle_times=self._pad_target(case.events.cycle_times[k : k + suffix_len]),
+            inter_event_times=self._pad_target(case.events.inter_event_times[k : k + suffix_len]),
             remaining_times=self._pad_target(case.remaining_times[k - 1 : k + suffix_len - 1]),
         )
 
@@ -285,7 +285,7 @@ def _encode_events(codec: DatasetCodec, log: pd.DataFrame) -> Events:
         # own block for some dtypes, which torch would wrap rather than copy.
         activities=torch.tensor(data=codec.activity.encode(log), dtype=torch.long),
         resources=torch.tensor(data=codec.resource.encode(log), dtype=torch.long),
-        cycle_times=torch.from_numpy(codec.cycle_time.encode(log)),
+        inter_event_times=torch.from_numpy(codec.inter_event_time.encode(log)),
         categorical_attributes=_encode_categorical_attributes(codec, log),
         numeric_attributes=numeric_attributes,
         numeric_attributes_present=numeric_attributes_present,

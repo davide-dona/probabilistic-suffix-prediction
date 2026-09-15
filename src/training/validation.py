@@ -8,7 +8,13 @@ import wandb
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.evaluation.scores import AccuracyScores, ConformanceScores
+from src.evaluation.scores import (
+    CalibrationScores,
+    ConformanceScores,
+    PointPredictionScores,
+    SamplePredictionScores,
+)
+from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
 from src.scalar_metrics import Owner
@@ -22,8 +28,7 @@ if TYPE_CHECKING:
 
 # Which report table, if any, answers with each metric, read off the same catalogue a figure or a
 # table is composed from: the wandb chart a run is watched on and the paper's own tables read the
-# same grouping by construction. A metric no table holds (e.g. the `_ae_mean` columns) falls into
-# a namespace of its own instead.
+# same grouping by construction. A metric no table holds falls into a namespace of its own.
 _TABLE_OF_METRIC = {entry.key: table.name for table in TABLES for entry in table.columns}
 _DIAGNOSTICS = 'diagnostics'
 
@@ -32,17 +37,18 @@ _DIAGNOSTICS = 'diagnostics'
 class GenerationMetrics:
     """Validation metrics, with energy score averaged over every generated example."""
 
-    accuracy: AccuracyScores
+    point: PointPredictionScores
+    sample: SamplePredictionScores
+    calibration: CalibrationScores
     conformance: ConformanceScores
 
     def log(self, step: int) -> None:
         """Log every model-owned score to the active W&B run, namespaced by the report table it
-        answers (`accuracy-point`, `generative-accuracy`, `calibration`) or `diagnostics` for the
+        answers (`point-prediction`, `sample-prediction`, `calibration`) or `diagnostics` for the
         ones no table holds.
 
-        A `Owner.LOG` field (e.g. `suffix_length`) is a property of the fixed slice this run
-        generates for, constant across every validation of one run, so it is dropped here rather
-        than logged as a flat line: it already sits in every report and per-prefix file.
+        A log-owned field is a property of the fixed slice this run generates for, so it is
+        dropped here rather than logged as a flat line.
 
         Args:
             step: The training step this pass scores.
@@ -52,7 +58,9 @@ class GenerationMetrics:
         # of the two goals a run is judged on, so it keeps a namespace of its own rather than
         # falling into `diagnostics` beside unrelated per-run diagnostics.
         families = (
-            (self.accuracy, None),
+            (self.point, None),
+            (self.sample, None),
+            (self.calibration, None),
             (self.conformance, 'conformance'),
         )
         payload = {}
@@ -148,9 +156,10 @@ def validate_generation(
     ]
     if not generations:
         raise ValueError('Validation generation subset is empty')
+    summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
     return GenerationMetrics(
-        accuracy=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]),
-        conformance=ConformanceScores.mean(
-            [ConformanceScores.of(one, checker=checker) for one in generations]
-        ),
+        point=PointPredictionScores.mean([summary.point for summary in summaries]),
+        sample=SamplePredictionScores.mean([summary.sample for summary in summaries]),
+        calibration=CalibrationScores.mean([summary.calibration for summary in summaries]),
+        conformance=ConformanceScores.mean([summary.conformance for summary in summaries]),
     )

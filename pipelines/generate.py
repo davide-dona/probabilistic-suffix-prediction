@@ -71,8 +71,8 @@ def run(
     if num_workers is not None:
         config.dataloader.num_workers = num_workers
     if sampling is not None:
-        if config.model.kind != 'transformer':
-            raise ValueError('Only transformer supports sampling overrides')
+        if config.model.kind != 'head_sampling_transformer':
+            raise ValueError('Only head_sampling_transformer supports sampling overrides')
         validate_sampling(sampling)
         config.model.sampling = sampling
     validate_training(config)
