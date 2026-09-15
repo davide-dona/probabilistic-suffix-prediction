@@ -36,11 +36,19 @@ Inspect settings without running a pipeline:
 uv run python -m pipelines.train dataset=sepsis model=cvae --cfg job --resolve
 ```
 
-Hydra multirun uses the basic sequential launcher. For parallel GPU jobs use the
-[file queues](queue/README.md).
+Hydra multirun uses the basic sequential launcher. Sweep every combination of comma-separated
+values in one command:
 
 ```bash
 uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae,transformer
+```
+
+To use GPUs concurrently, start one multirun command per GPU in separate terminals. Each command
+runs its own jobs sequentially on the specified device:
+
+```bash
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae training.device=cuda:0
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=transformer training.device=cuda:1
 ```
 
 ## Pipeline
@@ -72,6 +80,16 @@ Use explicit input artifact paths for the subsequent stages:
 uv run python -m pipelines.generate checkpoint=/path/to/best.pt device=cpu num_samples=100
 uv run python -m pipelines.evaluate generations=/path/to/generations.parquet workers=4
 uv run python -m pipelines.visualize 'evaluations=[/path/to/evaluation.json]'
+```
+
+Batch generation and evaluation use the same sequential multirun interface. List the artifacts
+explicitly, and split commands by GPU when generating concurrently:
+
+```bash
+uv run python -m pipelines.generate --multirun \
+  checkpoint=/path/to/first.pt,/path/to/second.pt device=cuda:0 num_samples=100
+uv run python -m pipelines.evaluate --multirun \
+  generations=/path/to/first/generations.parquet,/path/to/second/generations.parquet workers=4
 ```
 
 Generation writes `generations.parquet`. Evaluation writes `evaluation.json` and

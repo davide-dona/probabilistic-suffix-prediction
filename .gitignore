@@ -15,7 +15,7 @@ CLAUDE.md
 pretrained/
 
 # Runs pinned by hand, moved out of outputs/ so a wipe of it cannot touch them. Mirrors
-# outputs/ own layout, and scripts/evaluate_queue.sh walks it alongside outputs/generations/.
+# outputs/ own layout.
 pinned/
 
 
@@ -32,11 +32,6 @@ data/*
 data/*/*
 !data/*/original.csv
 
-
-# Jobs staged for a batch run, kept out of the repo like the runs they produce;
-# queue/README.md is what makes the directory exist on a fresh clone
-queue/*
-!queue/README.md
 
 # Temporary scripts
 tmp/
