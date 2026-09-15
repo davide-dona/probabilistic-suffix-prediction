@@ -1,5 +1,5 @@
 defaults:
-- hydra/default
+- output/default
 - _self_
 evaluations: []
 evaluations_dir: []

@@ -1,4 +1,4 @@
 defaults:
-- hydra/default
+- output/default
 - dataset: ???
 - _self_

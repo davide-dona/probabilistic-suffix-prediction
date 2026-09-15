@@ -23,10 +23,10 @@ uv run python -m pipelines.train dataset=sepsis model=cvae
 uv run python -m pipelines.train dataset=bpic17 model=transformer optimizer.lr=0.0005
 ```
 
-The groups are `dataset`, `model`, `training`, `runtime`, and `experiment`. The two architectures
-share `model/backbone.yaml`; optimizer, stopping, and inference defaults live in
-`training/default.yaml`. `runtime=local` uses CUDA and online W&B; `runtime=cpu` uses CPU,
-zero loader workers, and disabled W&B. Override individual settings with dotted keys.
+The groups are `dataset`, `model`, `training`, and `runtime`. The two architectures share
+`model/backbone.yaml`; optimizer, stopping, and inference defaults live in
+`training/default.yaml`. `runtime=cuda` uses CUDA and online W&B. Override individual settings
+with dotted keys.
 Unknown ordinary override keys are rejected; semantic checks catch invalid dimensions,
 split fractions, budgets, and sampling parameters.
 

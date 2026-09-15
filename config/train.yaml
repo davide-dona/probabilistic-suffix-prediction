@@ -1,8 +1,7 @@
 defaults:
-- hydra/default
+- output/default
 - dataset: ???
 - model: cvae
 - training: default
-- runtime: local
-- experiment: null
+- runtime: cuda
 - _self_
