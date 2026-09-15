@@ -8,11 +8,9 @@ from matplotlib.figure import Figure
 # IEEE conference text widths in inches.
 COLUMN_WIDTH = 3.487  # (43pc - 1pc) / 2 = 252pt
 PAGE_WIDTH = 7.140  # 43pc = 516pt
-# Figure height-to-width ratio.
-ASPECT = 0.618
-
-# Height reserved for the shared legend.
-LEGEND_HEIGHT = 0.40
+# Height per dataset and space for headings, legend, and axis labels, in inches.
+DATASET_HEIGHT = 1.0
+FIGURE_OVERHEAD = 0.8
 # Title wrapping width and maximum x-axis bins.
 TITLE_WIDTH = 22
 PANEL_X_BINS = 5
@@ -53,7 +51,7 @@ _PAPER_RC = {
     'legend.columnspacing': 0.9,
     # Resolution for rasterized output.
     'savefig.dpi': 400,
-    'savefig.bbox': 'tight',
+    'savefig.bbox': None,
     'savefig.pad_inches': 0.01,
     # Keep PDF text selectable.
     'pdf.fonttype': 42,
