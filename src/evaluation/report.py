@@ -10,6 +10,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from src.artifacts import group_by_model
 from src.evaluation.summary import EvaluationSummary, flatten_scores
+from src.identity import RunIdentity
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,14 @@ class EvaluationReport:
                 f'{path} uses the legacy evaluation schema. Score its generations again with '
                 '`python -m pipelines.evaluate`.'
             )
-        return _ADAPTER.validate_python(payload)
+        report = _ADAPTER.validate_python(payload)
+        try:
+            RunIdentity.from_metadata(report.metadata)
+        except ValueError as error:
+            raise ValueError(
+                f'{path} predates stable run identity. Evaluate its generations again.'
+            ) from error
+        return report
 
     def write(self, path: str | Path) -> Path:
         """Write the report as JSON.

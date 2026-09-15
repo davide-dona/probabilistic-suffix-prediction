@@ -24,7 +24,12 @@ from src.inference.tuning import (
 )
 from src.logs import Split
 from src.logs.declare import ConformanceChecker
-from src.model import HeadSamplingTransformer, load_checkpoint, model_from_checkpoint
+from src.model import (
+    HeadSamplingTransformer,
+    checkpoint_identity,
+    load_checkpoint,
+    model_from_checkpoint,
+)
 from src.runtime import output_path, save_config, start_stage
 from src.suffixes import ActivityCodes
 from src.validation import validate_sampling, validate_training
@@ -118,6 +123,7 @@ def run(
     """
     with step(f'Reading the checkpoint at {checkpoint_path}'):
         checkpoint = load_checkpoint(checkpoint_path)
+    run = checkpoint_identity(checkpoint)
     checkpoint_hash = sha256(checkpoint_path)
     config = OmegaConf.create(checkpoint['config'])
     if device is not None:
@@ -134,6 +140,7 @@ def run(
             {
                 'checkpoint': str(checkpoint_path.resolve()),
                 'checkpoint_sha256': checkpoint_hash,
+                'run': run.as_dict(),
                 'effective': OmegaConf.to_container(config, resolve=True),
                 'temperatures': temperatures,
                 'top_ps': top_ps,
@@ -161,6 +168,7 @@ def run(
         'Tuning the sampler',
         {
             'checkpoint_sha256': checkpoint_hash,
+            'run': run,
             'dataset': config.data.name,
             'model': config.model.name,
             'device': torch_device,
@@ -226,6 +234,7 @@ def run(
         )
 
     report = TuningReport.of(
+        run,
         checkpoint_hash,
         search=SearchPass(pairs=len(subset), samples=samples, seed=config.seed),
         grid=points,

@@ -10,6 +10,8 @@ from typing import Self
 from omegaconf import DictConfig, OmegaConf
 from pydantic import TypeAdapter, ValidationError
 
+from src.identity import RunIdentity
+
 
 @dataclass(frozen=True)
 class TuningPoint:
@@ -27,6 +29,7 @@ class SearchPass:
 
 @dataclass(frozen=True)
 class TuningReport:
+    run: RunIdentity
     checkpoint_sha256: str
     search: SearchPass
     chosen: dict[str, float]
@@ -35,10 +38,18 @@ class TuningReport:
     selection_direction: str = 'min'
 
     @classmethod
-    def of(cls, checkpoint_sha256: str, *, search: SearchPass, grid: Sequence[TuningPoint]) -> Self:
+    def of(
+        cls,
+        run: RunIdentity,
+        checkpoint_sha256: str,
+        *,
+        search: SearchPass,
+        grid: Sequence[TuningPoint],
+    ) -> Self:
         if not grid or any(not math.isfinite(point.score) for point in grid):
             raise ValueError('Tuning requires a nonempty grid of finite energy scores')
         return cls(
+            run=run,
             checkpoint_sha256=checkpoint_sha256,
             search=search,
             chosen=min(grid, key=lambda point: point.score).sampling,
@@ -52,6 +63,11 @@ class TuningReport:
         if payload.get('selection_metric') != 'energy_score_dls':
             raise ValueError(
                 f'{path} uses the legacy tuning schema. Tune the checkpoint again with '
+                '`python -m pipelines.tune`.'
+            )
+        if 'run' not in payload:
+            raise ValueError(
+                f'{path} predates stable run identity. Tune the checkpoint again with '
                 '`python -m pipelines.tune`.'
             )
         try:
@@ -68,7 +84,9 @@ class TuningReport:
         temporary.replace(path)
         return path
 
-    def sampling_for(self, checkpoint_sha256: str) -> DictConfig:
+    def sampling_for(self, run: RunIdentity, checkpoint_sha256: str) -> DictConfig:
+        if self.run != run:
+            raise ValueError('Tuning report belongs to a different training run')
         if self.checkpoint_sha256 != checkpoint_sha256:
             raise ValueError('Tuning report belongs to a different checkpoint')
         return OmegaConf.create(self.chosen)

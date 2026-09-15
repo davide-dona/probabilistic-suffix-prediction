@@ -5,3 +5,10 @@ defaults:
 - training: default
 - runtime: cuda
 - _self_
+run_id: ${now:%Y%m%d-%H%M%S-%f}
+hydra:
+  run:
+    dir: ${model_output:train,${data.name},${model.name},${run_id}}
+  sweep:
+    dir: outputs/train
+    subdir: ${model_subdir:train,${data.name},${model.name},${run_id}}

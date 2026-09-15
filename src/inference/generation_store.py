@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 from omegaconf import DictConfig, OmegaConf
 
 from src.artifacts import read_metadata, read_vocabulary, with_metadata, with_vocabulary
+from src.identity import RunIdentity
 from src.inference.generation import DecodedEvents, Draws, Generation
 
 # Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
@@ -109,7 +110,7 @@ class GenerationWriter:
         """
         Args:
             path: Destination file inside the active Hydra output directory.
-            metadata: Dataset/model labels and the source checkpoint hash.
+            metadata: Stable run identity and the source checkpoint hash.
             vocabulary: The activity names the suffixes are spelled on, in code order, from
                 `ActivityCodes.vocabulary`. Written into the file so it says what its own
                 characters mean.
@@ -222,13 +223,17 @@ class Generations:
 
     @property
     def metadata(self) -> dict[str, str]:
-        """Dataset/model labels and the source checkpoint hash.
+        """Stable run identity and the source checkpoint hash.
 
         Raises:
             ValueError: If the file carries no identity, and so predates the one it should name
                 itself by.
         """
         return read_metadata(self._parquet)
+
+    @property
+    def run(self) -> RunIdentity:
+        return RunIdentity.from_metadata(self.metadata)
 
     @property
     def vocabulary(self) -> tuple[str, ...]:

@@ -3,3 +3,9 @@ defaults:
 - _self_
 generations: ???
 workers: null
+hydra:
+  run:
+    dir: ${generations_output:evaluate,${generations}}
+  sweep:
+    dir: outputs/evaluate
+    subdir: ${generations_subdir:evaluate,${generations}}

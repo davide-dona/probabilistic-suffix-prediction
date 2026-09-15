@@ -39,7 +39,7 @@ def run(model_paths: list[Path]) -> None:
     there is nothing to trim off one before it is published.
 
     Args:
-        model_paths: The checkpoints to publish, from `outputs/checkpoints/best/`. Named rather
+        model_paths: The checkpoints to publish, from `outputs/train/`. Named rather
             than searched for: every run of one config is a candidate and choosing between them
             is the whole point of this step.
     Raises:
@@ -126,7 +126,7 @@ def main() -> None:
         metavar='CHECKPOINT',
         nargs='+',
         required=True,
-        help='Path(s) to the checkpoint(s) to publish, from `outputs/checkpoints/best/`.',
+        help='Path(s) to the checkpoint(s) to publish, from `outputs/train/`.',
     )
     args = parser.parse_args()
 

@@ -1,4 +1,10 @@
-from src.model.checkpoint import CHECKPOINT_KEYS, load_checkpoint, require_keys, save_checkpoint
+from src.model.checkpoint import (
+    CHECKPOINT_KEYS,
+    checkpoint_identity,
+    load_checkpoint,
+    require_keys,
+    save_checkpoint,
+)
 from src.model.models import (
     HeadSamplingTransformer,
     Latents,
@@ -17,6 +23,7 @@ __all__ = [
     'HeadSamplingTransformer',
     'TransformerCVAE',
     'build_model',
+    'checkpoint_identity',
     'load_checkpoint',
     'model_from_checkpoint',
     'require_keys',

@@ -18,3 +18,9 @@ top_ps:
 - 0.95
 - 0.98
 - 1.0
+hydra:
+  run:
+    dir: ${checkpoint_output:tune,${checkpoint}}
+  sweep:
+    dir: outputs/tune
+    subdir: ${checkpoint_subdir:tune,${checkpoint}}

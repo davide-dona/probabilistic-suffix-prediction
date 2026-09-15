@@ -17,7 +17,7 @@ from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import GenerationWriter
 from src.inference.tuning import TuningReport
 from src.logs import Split
-from src.model import load_checkpoint, model_from_checkpoint
+from src.model import checkpoint_identity, load_checkpoint, model_from_checkpoint
 from src.runtime import output_path, save_config, start_stage
 from src.suffixes import ActivityCodes
 from src.validation import validate_sampling, validate_training
@@ -54,15 +54,15 @@ def run(
     # to read.
     with step(f'Reading the checkpoint at {checkpoint_path}'):
         checkpoint = load_checkpoint(checkpoint_path)
+    run = checkpoint_identity(checkpoint)
     metadata = {
-        'dataset': checkpoint['config']['data']['name'],
-        'model': checkpoint['config']['model']['name'],
+        **run.as_dict(),
         'checkpoint_sha256': sha256(checkpoint_path),
     }
     if tuning is not None and sampling is not None:
         raise ValueError('Choose either tuning or sampling overrides')
     if tuning is not None:
-        sampling = TuningReport.read(tuning).sampling_for(metadata['checkpoint_sha256'])
+        sampling = TuningReport.read(tuning).sampling_for(run, metadata['checkpoint_sha256'])
     config = OmegaConf.create(checkpoint['config'])
     if device is not None:
         config.training.device = device
@@ -81,6 +81,7 @@ def run(
             {
                 'checkpoint': str(checkpoint_path.resolve()),
                 'checkpoint_sha256': metadata['checkpoint_sha256'],
+                'run': run.as_dict(),
                 'effective': OmegaConf.to_container(config, resolve=True),
                 'tuning': str(tuning) if tuning is not None else None,
             }
@@ -106,6 +107,7 @@ def run(
         'Generating suffixes',
         {
             'checkpoint_sha256': metadata['checkpoint_sha256'],
+            'run': run,
             'dataset': config.data.name,
             'model': f'{config.model.name} (step {trained_step}, selection score {score:.4f})'
             if trained_step is not None and score is not None

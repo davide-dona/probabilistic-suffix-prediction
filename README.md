@@ -25,48 +25,18 @@ Training logs to [W&B](https://wandb.ai/). Sign in once per machine:
 uv run wandb login
 ```
 
-## Reproducibility
+## Run the pipeline
 
 The pipeline stages below run in sequence, each reading an explicit artifact written by the
 previous stage. Hydra composes the YAML files under `config/` and accepts overrides directly on
 the command line.
 
-Every invocation records its resolved configuration under `outputs/<stage>/<date>/<time>/`.
-Stage artifacts are described below.
+Every invocation records its resolved configuration beside the stage artifacts described below.
 
-### 1. Preprocessing
+### Run multiple jobs
 
-Run once per dataset:
-
-```bash
-uv run python -m pipelines.preprocess dataset=sepsis
-```
-
-The original log is read from `data/sepsis/original.csv`. The out-of-time splits, fitted codec,
-and declarative model are written under `data/sepsis/` and reused by later stages.
-
-> [!WARNING]
-> Training, generation, and evaluation stop if their required preprocessing artifacts are
-> missing.
-
-### 2. Training
-
-Choose the dataset and architecture independently:
-
-```bash
-uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
-```
-
-The available architectures are `transformer_cvae` and `head_sampling_transformer`. Training
-writes the best validation checkpoint to `outputs/train/<date>/<time>/best.pt`. Runs cannot be
-resumed, but an interrupted run retains its last successfully saved best checkpoint.
-
-Training curves are logged to the `suffix-generation` W&B project. On normal completion, the
-selected checkpoint is also uploaded to W&B.
-
-#### Running multiple jobs in sequence
-
-Hydra multirun executes the Cartesian product of comma-separated values, one job at a time:
+Hydra multirun executes the Cartesian product of comma-separated values, one job at a time.
+Use it to process a batch at any pipeline stage:
 
 ```bash
 uv run python -m pipelines.preprocess --multirun dataset=sepsis,bpic13,bpic17,bpic19
@@ -86,7 +56,41 @@ uv run python -m pipelines.evaluate --multirun \
   generations=/path/to/first/generations.parquet,/path/to/second/generations.parquet workers=4
 ```
 
-Each multirun job receives its own numbered output directory.
+Each multirun job receives its own dataset, model, and run ID directory. Batch runs do not
+transfer artifacts between stages automatically, so supply each stage's input artifact
+explicitly.
+
+### 1. Preprocessing
+
+Run once per dataset:
+
+```bash
+uv run python -m pipelines.preprocess dataset=sepsis
+```
+
+The original log is read from `data/sepsis/original.csv`. The out-of-time splits, fitted codec,
+and declarative model are written under `data/sepsis/` and reused by later stages. Invocation
+records are written under `outputs/preprocess/sepsis/<timestamp>/`.
+
+> [!WARNING]
+> Training, generation, and evaluation stop if their required preprocessing artifacts are
+> missing.
+
+### 2. Training
+
+Choose the dataset and architecture independently:
+
+```bash
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
+```
+
+The available architectures are `transformer_cvae` and `head_sampling_transformer`. Training
+writes the best validation checkpoint to
+`outputs/train/<dataset>/<model>/<run-id>/best.pt`. Runs cannot be resumed, but an interrupted run
+retains its last successfully saved best checkpoint.
+
+Training curves are logged to the `suffix-generation` W&B project. On normal completion, the
+selected checkpoint is also uploaded to W&B.
 
 ### 3. Sampler tuning
 
@@ -96,8 +100,9 @@ Tune a Head-sampling Transformer on the validation split before test generation:
 uv run python -m pipelines.tune checkpoint=/path/to/best.pt device=cpu
 ```
 
-The selected sampler is written to `outputs/tune/<date>/<time>/tuning.json`. This stage does not
-apply to the Transformer CVAE.
+The selected sampler is written to
+`outputs/tune/<dataset>/<model>/<run-id>/tuning.json`. This stage does not apply to the
+Transformer CVAE.
 
 ### 4. Inference
 
@@ -114,7 +119,8 @@ uv run python -m pipelines.generate checkpoint=/path/to/best.pt \
   tuning=/path/to/tuning.json device=cpu num_samples=100
 ```
 
-The generations are written to `outputs/generate/<date>/<time>/generations.parquet`.
+The generations are written to
+`outputs/generate/<dataset>/<model>/<run-id>/generations.parquet`.
 
 ### 5. Evaluation
 
@@ -124,25 +130,11 @@ Evaluate a generations file:
 uv run python -m pipelines.evaluate generations=/path/to/generations.parquet workers=4
 ```
 
-The report and its per-prefix scores are written to
-`outputs/evaluate/<date>/<time>/evaluation.json` and `prefix_scores.parquet`.
+The report and its per-prefix scores are written under
+`outputs/evaluate/<dataset>/<model>/<run-id>/` as `evaluation.json` and
+`prefix_scores.parquet`.
 
-### 6. Publishing
-
-Once a run has been evaluated, propose its checkpoint as a published model:
-
-```bash
-uv run python -m scripts.publish -m /path/to/best.pt
-```
-
-This opens a pull request against the Hugging Face model repository. Published checkpoints can
-be downloaded to `pretrained/<dataset>/<model>.pt` with:
-
-```bash
-uv run python -m scripts.fetch
-```
-
-## Visualization
+### 6. Visualization
 
 Plot and tabulate one or more evaluation reports:
 
@@ -161,6 +153,14 @@ To visualize every report below one or more directories instead:
 uv run python -m pipelines.visualize 'evaluations_dir=[outputs/evaluate,pinned]'
 ```
 
+## Published checkpoints
+
+Download all published checkpoints to `pretrained/<dataset>/<model>.pt`:
+
+```bash
+uv run python -m scripts.fetch
+```
+
 ## Configuration
 
 Datasets, models, training defaults, and runtime profiles live in the corresponding groups under
@@ -176,3 +176,15 @@ Inspect the fully resolved configuration without starting a run:
 ```bash
 uv run python -m pipelines.train dataset=sepsis model=transformer_cvae --cfg job --resolve
 ```
+
+## Maintainer operations
+
+### Publish a checkpoint
+
+Once a run has been evaluated, propose its checkpoint as a published model:
+
+```bash
+uv run python -m scripts.publish -m /path/to/best.pt
+```
+
+This opens a pull request against the Hugging Face model repository.

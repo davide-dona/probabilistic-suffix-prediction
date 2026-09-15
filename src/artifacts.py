@@ -8,6 +8,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from src.identity import RunIdentity
+
 
 def sha256(path: Path) -> str:
     with path.open('rb') as file:
@@ -15,6 +17,7 @@ def sha256(path: Path) -> str:
 
 
 def with_metadata(schema: pa.Schema, metadata: dict[str, str]) -> pa.Schema:
+    RunIdentity.from_metadata(metadata)
     return schema.with_metadata(
         (schema.metadata or {}) | {b'provenance': json.dumps(metadata).encode()}
     )
@@ -25,11 +28,16 @@ def read_metadata(parquet: pq.ParquetFile) -> dict[str, str]:
     if raw is None:
         raise ValueError('Missing artifact provenance; regenerate this file.')
     metadata = json.loads(raw)
+    if not isinstance(metadata, dict) or 'run_id' not in metadata:
+        raise ValueError(
+            'Artifact predates stable run identity; regenerate it with the current pipeline.'
+        )
     if not isinstance(metadata, dict) or not all(
         isinstance(metadata.get(key), str) and metadata[key]
-        for key in ('dataset', 'model', 'checkpoint_sha256')
+        for key in ('dataset', 'model', 'run_id', 'checkpoint_sha256')
     ):
         raise ValueError('Invalid artifact provenance.')
+    RunIdentity.from_metadata(metadata)
     return metadata
 
 
