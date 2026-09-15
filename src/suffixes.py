@@ -178,8 +178,7 @@ def _bigram_distances(
     """
     counted = [bigrams(sequence) for sequence in (*queries, *choices)]
     vocabulary = {pair: column for column, pair in enumerate({pair for c in counted for pair in c})}
-    # Dense over the pairs these two sets happen to hold, which is what keeps this to a prefix's
-    # draws rather than to a whole log's continuations.
+    # Dense over the pairs these two sets happen to hold, which keeps the representation compact.
     matrix = np.zeros((len(counted), len(vocabulary)), dtype=np.float64)
     for row, held in enumerate(counted):
         for pair, count in held.items():
@@ -210,8 +209,8 @@ def distances(
         choices: The sequences to measure them against, one column each.
         metric: How far apart two sequences are held to be. `DLS` is what a transport cost and the
             per-prefix similarities read on; the other two are read by `energy_score` alone, and
-            `BIGRAM` holds a dense row over the bigrams both sets hold, so it is meant for a
-            prefix's draws rather than for a whole log's continuations.
+            `BIGRAM` holds a dense row over the bigrams both sets hold, so it is intended for
+            small sets of draws.
         dtype: What to accumulate in. The default halves a matrix that can run to hundreds of
             megabytes; a caller measuring a handful of sequences has no such matrix and may ask for
             `np.float64` instead.
@@ -250,12 +249,8 @@ def diversity(
     distinct sequences standing for that many draws, so a sequence drawn twice is twice as likely
     to be picked and the pair it makes with itself sits at distance 0.
 
-    Read twice per prefix, on the same scale both times: over a model's draws it is
-    `sample_diversity`, and over the continuations a log took after one prefix it is
-    `reference_diversity`, which is the spread `sample_diversity` is judged against. Neither has a
-    good value of its own, which is why the two are only ever read as a pair. It is the same
-    `E[d(X, X')]` that `energy_score` subtracts, taken over a set that can run to thousands rather
-    than over one prefix's draws, which is why it walks in blocks where that one holds a matrix.
+    It is the same `E[d(X, X')]` that `energy_score` subtracts. It walks in blocks so callers can
+    also use it on large collections without materializing the full pairwise matrix.
 
     Args:
         sequences: The distinct sequences, either encoded suffixes or raw activity names.
@@ -274,8 +269,7 @@ def diversity(
     if draws < 2 or len(sequences) < 2:
         return 0.0
 
-    # Walked in blocks: the full matrix of a prefix the log ran thousands of times is the largest
-    # thing this would hold, and only one block of its rows is needed at a time.
+    # Only one block of rows is needed at a time.
     total = 0.0
     for first in range(0, len(sequences), _SPREAD_MATRIX_SIZE):
         block = sequences[first : first + _SPREAD_MATRIX_SIZE]
@@ -326,7 +320,7 @@ def energy_score(
     # Both terms come off one matrix over the draws and the truth together: its last column is
     # every distance to the truth and the block above-left of it is every distance between two
     # draws. A prefix draws at most a few hundred suffixes, so the matrix is small enough to hold
-    # whole, which is what `diversity` walks in blocks to avoid over a whole log's continuations.
+    # whole, whereas `diversity` walks in blocks for large collections.
     pairs = distances(
         queries=(*sequences, truth),
         choices=(*sequences, truth),

@@ -13,9 +13,7 @@ from src import paths
 from src.artifacts import sha256
 from src.cli import banner, duration, step
 from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
-from src.evaluation.scores import MIN_REFERENCE_OCCURRENCES
 from src.inference.generation_store import Generations
-from src.logs import ContinuationIndex, Split
 from src.logs.declare import ConformanceChecker, discovery_settings
 from src.runtime import output_path, start_stage
 from src.suffixes import ActivityCodes
@@ -27,7 +25,6 @@ class _Worker:
 
     generations: Generations
     checker: ConformanceChecker
-    index: ContinuationIndex
 
 
 # Set by `_init_worker` in each pool process, and read by `_score_block` there. Left
@@ -36,31 +33,18 @@ _worker: _Worker
 
 
 def _init_worker(generations_file: Path, dataset: str) -> None:
-    """Open the file, prepare the declarative model and read the continuation index once for this
-    process.
+    """Open the file and prepare the declarative model once for this process.
 
     Args:
         generations_file: The generations every task of this process reads from.
-        dataset: The dataset whose declarative model conformance is checked against, and whose
-            observed continuations the generated ones are compared with.
+        dataset: The dataset whose declarative model conformance is checked against.
     """
     global _worker
     generations = Generations(generations_file)
-    index = ContinuationIndex.read(dataset=dataset, split=Split.TEST)
     vocabulary = generations.vocabulary
-    # Check that the the vocabulary the generations were written under is the same
-    # as the one of the dataset's continuation
-    if vocabulary != index.vocabulary:
-        raise ValueError(
-            f'{generations_file} spells its activities on a different scale than the continuation '
-            f'index of {dataset}: the two were built from different preprocessings. Rerun '
-            'pipelines.preprocess, then pipelines.generate.'
-        )
-
     _worker = _Worker(
         generations=generations,
         checker=ConformanceChecker(dataset, ActivityCodes.of(vocabulary)),
-        index=index,
     )
 
 
@@ -73,7 +57,7 @@ def _score_block(block: int) -> list[PrefixSummary]:
         One entry per prefix of the block, in the order it was written.
     """
     return [
-        PrefixSummary.of(generation, checker=_worker.checker, index=_worker.index)
+        PrefixSummary.of(generation, checker=_worker.checker)
         for generation in _worker.generations.block(block)
     ]
 
@@ -143,10 +127,9 @@ def run(generations_file: Path, workers: int | None) -> None:
     if prefixes == 0:
         raise ValueError('Cannot evaluate an empty generations file')
 
-    # Check that the dataset was preprocessed and that the test-split continuations were written
+    # Check that the dataset was preprocessed.
     dataset = metadata['dataset']
     paths.require_preprocessed(dataset)
-    paths.CONTINUATIONS.require(dataset=dataset, split=Split.TEST)
 
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
@@ -168,7 +151,6 @@ def run(generations_file: Path, workers: int | None) -> None:
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'continuations': paths.CONTINUATIONS.path(dataset=dataset, split=Split.TEST),
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
             'report': output_path('evaluation.json'),
@@ -185,7 +167,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # than a second scoring pass.
     with step(
         f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
-        'declarative model and the continuation index first'
+        'declarative model first'
     ):
         summary = EvaluationSummary.of(
             stream_prefix_scores(
@@ -204,13 +186,8 @@ def run(generations_file: Path, workers: int | None) -> None:
 
     report = EvaluationReport(metadata=metadata, summary=summary)
     path = report.write(output_path('evaluation.json'))
-    # The distributional scores are read over the prefixes the log ran often enough, so how many
-    # of them there were is part of what the report says rather than something to go looking for.
-    share = summary.compared / summary.prefixes if summary.prefixes else 0.0
     print(
         f'Scored {summary.prefixes:,} prefixes in {duration(time.perf_counter() - started)}, '
-        f'{summary.compared:,} of them ({share:.0%}) run at least {MIN_REFERENCE_OCCURRENCES} '
-        f'times by the log, which is what the distributional scores are read over. '
         f'Wrote evaluation report to {path} and its per-prefix scores to {scores_path}'
     )
 

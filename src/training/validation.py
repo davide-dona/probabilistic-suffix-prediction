@@ -8,9 +8,8 @@ import wandb
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
+from src.evaluation.scores import AccuracyScores, ConformanceScores
 from src.inference.generate import generate_batch
-from src.logs import ContinuationIndex
 from src.logs.declare import ConformanceChecker
 from src.scalar_metrics import Owner
 from src.suffixes import ActivityCodes
@@ -23,39 +22,27 @@ if TYPE_CHECKING:
 
 # Which report table, if any, answers with each metric, read off the same catalogue a figure or a
 # table is composed from: the wandb chart a run is watched on and the paper's own tables read the
-# same grouping by construction. A metric no table holds (a diagnostic, e.g. `sample_diversity` or
-# the `_ae_mean` columns) falls into a namespace of its own instead.
+# same grouping by construction. A metric no table holds (e.g. the `_ae_mean` columns) falls into
+# a namespace of its own instead.
 _TABLE_OF_METRIC = {entry.key: table.name for table in TABLES for entry in table.columns}
 _DIAGNOSTICS = 'diagnostics'
-# Where the distributional scores read over the prefixes a report reads them on are logged, so
-# the criterion a checkpoint is selected on and the one a report holds can be read against each
-# other over a run without either being renamed.
-_COMPARABLE = 'comparable'
 
 
 @dataclass(frozen=True, slots=True)
 class GenerationMetrics:
-    """Validation metrics, with energy score averaged over every generated example.
-
-    Distribution diagnostics are logged both over all examples and over prefixes
-    with enough reference occurrences for the final report's comparison.
-    """
+    """Validation metrics, with energy score averaged over every generated example."""
 
     accuracy: AccuracyScores
     conformance: ConformanceScores
-    distribution: DistributionScores
-    # The same as `distribution`, over the prefixes `DistributionScores.comparable` admits
-    comparable: DistributionScores
 
     def log(self, step: int) -> None:
         """Log every model-owned score to the active W&B run, namespaced by the report table it
-        answers (`accuracy-point`, `fidelity`, `generative-accuracy`, `calibration`) or
-        `diagnostics` for the ones no table holds.
+        answers (`accuracy-point`, `generative-accuracy`, `calibration`) or `diagnostics` for the
+        ones no table holds.
 
-        A `Owner.LOG` field (e.g. `suffix_length`, `reference_diversity`) is a property of the
-        fixed slice this run generates for, constant across every validation of one run, so it is
-        dropped here rather than logged as a flat line: it already sits in every report and
-        per-prefix file.
+        A `Owner.LOG` field (e.g. `suffix_length`) is a property of the fixed slice this run
+        generates for, constant across every validation of one run, so it is dropped here rather
+        than logged as a flat line: it already sits in every report and per-prefix file.
 
         Args:
             step: The training step this pass scores.
@@ -63,14 +50,10 @@ class GenerationMetrics:
         # Conformance has no report table of its own (`visualization.md`: a whole-split mean says
         # nothing a reader can act on there, so it is drawn by length instead), but it is still one
         # of the two goals a run is judged on, so it keeps a namespace of its own rather than
-        # falling into `diagnostics` beside unrelated per-run diagnostics. The comparable scores
-        # keep one for the same reason a table would: they are the same metrics over a different
-        # population and would otherwise overwrite the ones above them.
+        # falling into `diagnostics` beside unrelated per-run diagnostics.
         families = (
             (self.accuracy, None),
             (self.conformance, 'conformance'),
-            (self.distribution, None),
-            (self.comparable, _COMPARABLE),
         )
         payload = {}
         for family, table_namespace in families:
@@ -121,34 +104,28 @@ def validate_generation(
     *,
     num_samples: int,
     codec: DatasetCodec,
-    index: ContinuationIndex,
     checker: ConformanceChecker,
     device: torch.device,
 ) -> GenerationMetrics:
     """
-    Generate suffixes from the prefixes in `loader` and compare them to the ground truth, to the
-    declarative model, and to every continuation the split was observed to take.
+    Generate suffixes from the prefixes in `loader` and compare them to the ground truth and the
+    declarative model.
 
-    Scored through the same three families the final report is built from, and each prefix is
-    answered with the same number of suffixes. What differs is which split is read and how much of
-    it, so a training curve sits on a report's scale without being a report's number.
+    Scored through the same families the final report is built from, and each prefix is answered
+    with the same number of suffixes. What differs is which split is read and how much of it, so a
+    training curve sits on a report's scale without being a report's number.
 
-    Energy score is measured against each example's observed suffix. The distributional
-    diagnostics also include the comparable-prefix aggregate used in final reports.
+    Energy score is measured against each example's observed suffix.
 
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
         loader: The prefixes to generate for, from a `TraceDataset`.
-        num_samples: Suffixes to draw per prefix. The spread across them is what
-            `sample_diversity` measures, and `generate` puts `len(batch) * num_samples` rows
+        num_samples: Suffixes to draw per prefix. `generate` puts `len(batch) * num_samples` rows
             through the decoder at once, so it is also what the caller sizes its batches by.
-        codec: The codec the split was encoded through, read here to put the
-            generations back into the log's own units. Passed rather than read off
+        codec: The codec the split was encoded through, read here to put the generations back into
+            the log's own units. Passed rather than read off
             `loader.dataset`, which is a `Subset` wherever the split is bigger than the slice
             validated on.
-        index: The continuations the validation split takes after each of its prefixes. The
-            validation split's and never the test split's: selecting a checkpoint against the
-            test split's continuations would fold the held-out set into what gets kept.
         checker: The declarative model to check generated suffixes against.
         device: The device to run the computations on.
     Returns:
@@ -156,8 +133,6 @@ def validate_generation(
     """
     model.eval()
 
-    # The same codebook the index was seeded from, so a generated suffix is spelled the way the
-    # continuations it is scored against are and nothing is translated per prefix.
     codes = ActivityCodes.of(codec.activity.names)
 
     generations = [
@@ -173,12 +148,9 @@ def validate_generation(
     ]
     if not generations:
         raise ValueError('Validation generation subset is empty')
-    distribution = [DistributionScores.of(one, index=index) for one in generations]
     return GenerationMetrics(
         accuracy=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]),
         conformance=ConformanceScores.mean(
             [ConformanceScores.of(one, checker=checker) for one in generations]
         ),
-        distribution=DistributionScores.mean(distribution),
-        comparable=DistributionScores.mean([one for one in distribution if one.comparable]),
     )

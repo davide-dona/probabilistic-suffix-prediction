@@ -23,10 +23,10 @@ uv run python -m pipelines.train dataset=sepsis model=cvae
 uv run python -m pipelines.train dataset=bpic17 model=transformer optimizer.lr=0.0005
 ```
 
-The groups are `dataset`, `model`, `training`, `runtime`, and `experiment`. The two architectures
-share `model/backbone.yaml`; optimizer, stopping, and inference defaults live in
-`training/default.yaml`. `runtime=local` uses CUDA and online W&B; `runtime=cpu` uses CPU,
-zero loader workers, and disabled W&B. Override individual settings with dotted keys.
+The groups are `dataset`, `model`, `training`, and `runtime`. The two architectures share
+`model/backbone.yaml`; optimizer, stopping, and inference defaults live in
+`training/default.yaml`. `runtime=cuda` uses CUDA and online W&B. Override individual settings
+with dotted keys.
 Unknown ordinary override keys are rejected; semantic checks catch invalid dimensions,
 split fractions, budgets, and sampling parameters.
 
@@ -36,11 +36,19 @@ Inspect settings without running a pipeline:
 uv run python -m pipelines.train dataset=sepsis model=cvae --cfg job --resolve
 ```
 
-Hydra multirun uses the basic sequential launcher. For parallel GPU jobs use the
-[file queues](queue/README.md).
+Hydra multirun uses the basic sequential launcher. Sweep every combination of comma-separated
+values in one command:
 
 ```bash
 uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae,transformer
+```
+
+To use GPUs concurrently, start one multirun command per GPU in separate terminals. Each command
+runs its own jobs sequentially on the specified device:
+
+```bash
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae training.device=cuda:0
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=transformer training.device=cuda:1
 ```
 
 ## Pipeline
@@ -72,6 +80,16 @@ Use explicit input artifact paths for the subsequent stages:
 uv run python -m pipelines.generate checkpoint=/path/to/best.pt device=cpu num_samples=100
 uv run python -m pipelines.evaluate generations=/path/to/generations.parquet workers=4
 uv run python -m pipelines.visualize 'evaluations=[/path/to/evaluation.json]'
+```
+
+Batch generation and evaluation use the same sequential multirun interface. List the artifacts
+explicitly, and split commands by GPU when generating concurrently:
+
+```bash
+uv run python -m pipelines.generate --multirun \
+  checkpoint=/path/to/first.pt,/path/to/second.pt device=cuda:0 num_samples=100
+uv run python -m pipelines.evaluate --multirun \
+  generations=/path/to/first/generations.parquet,/path/to/second/generations.parquet workers=4
 ```
 
 Generation writes `generations.parquet`. Evaluation writes `evaluation.json` and
@@ -106,8 +124,8 @@ mean_i d(sample_i, truth) - 0.5 * mean_{i != j} d(sample_i, sample_j)
 
 `d` is normalized optimal string alignment distance. The pairwise term uses `N(N-1)` and retains
 duplicate-draw multiplicities. Scores are averaged over every example in the fixed validation
-subset, without a minimum-reference-count filter. The same score is reported on test examples.
-EMSC, continuation precision/recall, conformance, and timing metrics remain diagnostics.
+subset. The same score is reported on test examples. Conformance and timing metrics remain
+diagnostics.
 
 Finite-sample energy estimates can be negative; they are not clipped. Strict propriety is not
 established for this sequence distance. Both sample-count defaults remain 100, with at least
@@ -120,10 +138,8 @@ Hydra does not change the learned weights or require retraining by itself. Legac
 use a different file schema and are not accepted by the new loader. Preserve them with the code
 revision that produced them; no legacy reader or automatic conversion is provided.
 
-Old best checkpoints were selected using EMSC. To obtain models selected and early-stopped with
-energy score, train fresh runs using the new configs. Rescoring an old best checkpoint cannot
-recover earlier training steps that were not saved. Existing preprocessed data need not be
-regenerated merely because configuration moved to Hydra.
+Rescoring an old best checkpoint cannot recover earlier training steps that were not saved.
+Existing preprocessed data need not be regenerated merely because configuration moved to Hydra.
 
 ## Utilities
 

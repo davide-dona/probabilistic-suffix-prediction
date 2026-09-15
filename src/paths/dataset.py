@@ -74,12 +74,6 @@ CODEC = DatasetArtifact(
     remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
     relative='codec/dataset.json',
 )
-CONTINUATIONS = SplitArtifact(
-    kind='continuation index',
-    remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',
-    subdirectory='continuations',
-    suffix='.parquet',
-)
 DECLARE_MODEL = DatasetArtifact(
     kind='declarative model',
     remedy='Run `uv run python -m pipelines.preprocess dataset={dataset}` first.',

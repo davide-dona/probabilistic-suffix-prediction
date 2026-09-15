@@ -59,30 +59,11 @@ TABLES = (
             MetricEntry(METRICS['cycle_time_ae_point_days'], 'Event time'),
         ),
     ),
-    # Distributional fidelity to observed continuations.
-    Table(
-        name='fidelity',
-        axis=Axis.OVERALL,
-        note='Exact-match rate is the share of generated samples that exactly match the observed '
-        'suffix. W1 is the 1-Wasserstein distance; length in events, times in days.',
-        columns=(
-            MetricEntry(METRICS['energy_score'], 'Energy score'),
-            MetricEntry(METRICS['emsc'], 'EMSC'),
-            MetricEntry(METRICS['continuation_precision'], 'Precision'),
-            MetricEntry(METRICS['continuation_recall'], 'Recall'),
-            MetricEntry(METRICS['hit_share'], 'Exact-match rate'),
-            MetricEntry(METRICS['length_wasserstein'], 'Length W1'),
-            MetricEntry(METRICS['remaining_time_wasserstein_days'], 'Rem. time W1'),
-            MetricEntry(METRICS['activity_time_wasserstein_days'], 'Event time W1'),
-        ),
-    ),
     # The samples themselves against the one continuation the log took.
     Table(
         name='generative-accuracy',
         axis=Axis.OVERALL,
-        note="Read over every prefix scored rather than over the fidelity block's population, "
-        'and against the one continuation the log took rather than against the continuation '
-        "index. An energy score is E d(X, y) - 0.5 E d(X, X') over the samples, CRPS generalized "
+        note="An energy score is E d(X, y) - 0.5 E d(X, X') over the samples, CRPS generalized "
         'off the real line, which charges the spread against the accuracy it buys where the '
         'sampled DLS beside it is won by putting every sample on one suffix. Exact is 1 for any '
         'two suffixes that are not the same and bigram is the multiset Jaccard distance over the '

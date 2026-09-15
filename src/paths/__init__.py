@@ -2,7 +2,6 @@ from src.paths.arguments import existing_directory, existing_file
 from src.paths.artifact import Artifact
 from src.paths.dataset import (
     CODEC,
-    CONTINUATIONS,
     DECLARE_MODEL,
     ORIGINAL_LOG,
     PROCESSED_SPLIT,
@@ -22,7 +21,6 @@ from src.paths.output import PRETRAINED, PublishedArtifact
 __all__ = [
     'CODEC',
     'CONFIG_DIR',
-    'CONTINUATIONS',
     'DATA_DIR',
     'DECLARE_MODEL',
     'ORIGINAL_LOG',

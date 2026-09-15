@@ -9,7 +9,6 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.logs import ContinuationIndex, Split
 from src.logs.declare import ConformanceChecker
 from src.runtime import output_path
 from src.suffixes import ActivityCodes
@@ -69,8 +68,8 @@ def train(
             report is built from: the selection score and the reported one are read at one budget.
         codec: The codec the splits were encoded through, passed on to the
             generation pass so its remaining times are scored in minutes.
-        dataset: The log being trained on, naming the validation split's continuation index the
-            distribution diagnostics are read against.
+        dataset: The log being trained on, naming the declarative model generated suffixes are
+            checked against.
         experiment_config: The whole `DictConfig`, dumped to plain data, written into the
             checkpoint so the model can be rebuilt from the file alone.
         optimizer_config: The optimizer hyperparameters, its learning rate's warmup included.
@@ -83,9 +82,6 @@ def train(
     if not len(train_loader) or not len(val_loader) or not len(generation_loader):
         raise ValueError('Training and validation loaders must all contain examples')
     device = torch.device(training.device)
-
-    # Distribution diagnostics use the validation split exclusively.
-    continuations = ContinuationIndex.read(dataset=dataset, split=Split.VAL)
 
     # The declarative model generated suffixes are checked against, built once and reused: it
     # caches a trace's rate across the run rather than rebuilding the constraints per validation.
@@ -120,7 +116,7 @@ def train(
     )
     print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
-    tracking.define_metric('fidelity/energy_score', summary='min')
+    tracking.define_metric('generative-accuracy/energy_score', summary='min')
     try:
         while step < training.max_steps and not should_stop:
             for batch in train_loader:
@@ -170,7 +166,6 @@ def train(
                         generation_loader,
                         num_samples=generation_samples,
                         codec=codec,
-                        index=continuations,
                         checker=checker,
                         device=device,
                     )
@@ -187,9 +182,7 @@ def train(
                         f'val {val_metrics.loss:.4f}  '
                         f'gen_dls {gen_metrics.accuracy.dls_mean:.4f} mean / '
                         f'{gen_metrics.accuracy.dls_point:.4f} point  '
-                        f'energy {gen_metrics.accuracy.energy_score:.4f}  '
-                        f'emsc {gen_metrics.distribution.emsc:.4f} all / '
-                        f'{gen_metrics.comparable.emsc:.4f} compared',
+                        f'energy {gen_metrics.accuracy.energy_score:.4f}',
                         flush=True,
                     )
                     selection_score = gen_metrics.accuracy.energy_score

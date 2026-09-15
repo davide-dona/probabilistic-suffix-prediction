@@ -9,8 +9,7 @@ import pandas as pd
 from pydantic import TypeAdapter, ValidationError
 
 from src.artifacts import group_by_model
-from src.evaluation.scores import COMPARABLE_METRICS
-from src.evaluation.summary import EvaluationSummary, LengthSummary, flatten_scores
+from src.evaluation.summary import EvaluationSummary, flatten_scores
 
 
 @dataclass(frozen=True)
@@ -64,19 +63,6 @@ class Axis(StrEnum):
 REPORT_COLUMNS = ('dataset', 'model', 'axis', 'length', 'prefixes', 'metric', 'value')
 
 
-def _over(summary: EvaluationSummary | LengthSummary, metric: str) -> int:
-    """Return the population used to aggregate a metric.
-
-    Args:
-        summary: Aggregate containing the metric.
-        metric: Metric key.
-
-    Returns:
-        Prefix count used for the metric's mean.
-    """
-    return summary.compared if metric in COMPARABLE_METRICS else summary.prefixes
-
-
 def _rows(report: EvaluationReport) -> list[dict[str, object]]:
     """Flatten a report into one row per metric and breakdown.
 
@@ -94,7 +80,7 @@ def _rows(report: EvaluationReport) -> list[dict[str, object]]:
         | {
             'axis': Axis.OVERALL,
             'length': None,
-            'prefixes': _over(summary, metric),
+            'prefixes': summary.prefixes,
             'metric': metric,
             'value': value,
         }
@@ -106,7 +92,7 @@ def _rows(report: EvaluationReport) -> list[dict[str, object]]:
         | {
             'axis': axis,
             'length': entry.length,
-            'prefixes': _over(entry, metric),
+            'prefixes': entry.prefixes,
             'metric': metric,
             'value': value,
         }

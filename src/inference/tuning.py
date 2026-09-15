@@ -15,11 +15,7 @@ from pydantic import TypeAdapter
 class TuningPoint:
     sampling: dict[str, float]
     score: float
-    continuation_precision: float
-    continuation_recall: float
-    emsc: float
     conformance_mean: float
-    unique_sample_rate: float
 
 
 @dataclass(frozen=True)
