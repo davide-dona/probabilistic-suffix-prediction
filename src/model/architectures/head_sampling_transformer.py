@@ -13,7 +13,7 @@ from src.model.models import ModelOutput, SuffixModel, time_loss
 from src.training import LatentMetrics, Loss
 
 
-class Transformer(SuffixModel):
+class HeadSamplingTransformer(SuffixModel):
     """An encoder-decoder transformer that predicts a trace's suffix from its prefix, with no
     latent at all: the same backbone as `TransformerCVAE` with the latent path taken out.
 
@@ -36,7 +36,7 @@ class Transformer(SuffixModel):
 
     Flow, with `prefix` and `suffix` both padded to `max_seq_len`:
         prefix                -> prefix events (for the decoder) prefix events, suffix -> an
-        activity, the cycle time before it and a remaining time, at every
+        activity, the inter-event time before it and a remaining time, at every
                                  suffix position
     """
 
@@ -117,7 +117,9 @@ class Transformer(SuffixModel):
             max_steps=item.prefix.activities.size(dim=1),
             sample=sample,
         )
-        return self._per_sample(generated, batch_size=item.prefix.length.size(dim=0))
+        return self._per_sample(
+            generated=generated, batch_size=item.prefix.length.size(dim=0)
+        )
 
     def compute_loss(
         self, output: ModelOutput, batch: SplitTrace, *, step: int
@@ -132,28 +134,32 @@ class Transformer(SuffixModel):
         batch_size = batch.suffix.activities.size(0)
 
         activity_loss = F.cross_entropy(
-            output.decoder.activity_logits.transpose(1, 2),
-            batch.suffix.activities,
+            input=output.decoder.activity_logits.transpose(1, 2),
+            target=batch.suffix.activities,
             ignore_index=self.pad_activity_index,
             reduction='sum',
         )
 
-        cycle_time_loss, cycle_time_scale = time_loss(
-            output.decoder.cycle_times, batch.cycle_times, batch
+        inter_event_time_loss, inter_event_time_scale = time_loss(
+            prediction=output.decoder.inter_event_times,
+            target=batch.inter_event_times,
+            batch=batch,
         )
         remaining_time_loss, remaining_time_scale = time_loss(
-            output.decoder.remaining_times, batch.remaining_times, batch
+            prediction=output.decoder.remaining_times,
+            target=batch.remaining_times,
+            batch=batch,
         )
 
-        reconstruction_loss = activity_loss + cycle_time_loss + remaining_time_loss
+        reconstruction_loss = activity_loss + inter_event_time_loss + remaining_time_loss
 
         metrics = Loss(
             loss=reconstruction_loss.item(),
             reconstruction_loss=reconstruction_loss.item(),
             activity_loss=activity_loss.item(),
-            cycle_time_loss=cycle_time_loss.item(),
+            inter_event_time_loss=inter_event_time_loss.item(),
             remaining_time_loss=remaining_time_loss.item(),
-            cycle_time_scale_loss=cycle_time_scale.item(),
+            inter_event_time_scale_loss=inter_event_time_scale.item(),
             remaining_time_scale_loss=remaining_time_scale.item(),
         )
         return reconstruction_loss / batch_size, metrics, None

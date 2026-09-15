@@ -11,9 +11,9 @@ from src.logs.keys import (
     ACTIVITY_KEY,
     CASE_ELAPSED_KEY,
     CASE_KEY,
-    CYCLE_TIME_KEY,
     DAY_COS_KEY,
     DAY_SIN_KEY,
+    INTER_EVENT_TIME_KEY,
     MIN_PREFIX_KEY,
     REMAINING_TIME_KEY,
     SECONDS_COS_KEY,
@@ -27,7 +27,7 @@ from src.runtime import start_stage
 # Columns preprocessing derives from the timestamp rather than the raw dataset carrying them.
 _DERIVED_COLUMNS = {
     CASE_ELAPSED_KEY,
-    CYCLE_TIME_KEY,
+    INTER_EVENT_TIME_KEY,
     REMAINING_TIME_KEY,
     MIN_PREFIX_KEY,
     DAY_SIN_KEY,

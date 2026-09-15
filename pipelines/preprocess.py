@@ -12,9 +12,9 @@ from src.datasets.codec import DatasetCodec
 from src.logs import (
     CASE_ELAPSED_KEY,
     CASE_KEY,
-    CYCLE_TIME_KEY,
     DAY_COS_KEY,
     DAY_SIN_KEY,
+    INTER_EVENT_TIME_KEY,
     MIN_PREFIX_KEY,
     MISSING_FEATURE,
     REMAINING_TIME_KEY,
@@ -30,7 +30,7 @@ from src.logs.declare.discovery import discover_declare_model
 from src.logs.preprocessing import (
     add_calendar,
     add_case_elapsed,
-    add_cycle_time,
+    add_inter_event_time,
     add_remaining_time,
     case_durations,
     drop_cases_by_duration,
@@ -112,11 +112,11 @@ def preprocess(log: pd.DataFrame, *, feature_columns: list[str]) -> pd.DataFrame
         A copy of `log` with the two timestamp proxies, the remaining time and the four calendar
         columns added, and its categorical columns filled.
     """
-    log = add_cycle_time(
+    log = add_inter_event_time(
         log,
         case_key=CASE_KEY,
         timestamp_key=TIMESTAMP_KEY,
-        out_key=CYCLE_TIME_KEY,
+        out_key=INTER_EVENT_TIME_KEY,
     )
     log = add_case_elapsed(
         log,

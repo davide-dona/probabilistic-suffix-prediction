@@ -1,8 +1,8 @@
 defaults:
 - backbone
 - _self_
-kind: transformer
-name: transformer
+kind: head_sampling_transformer
+name: head_sampling_transformer
 sampling:
   temperature: 1.0
   top_p: 1.0

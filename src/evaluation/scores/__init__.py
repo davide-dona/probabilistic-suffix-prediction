@@ -1,10 +1,20 @@
-from src.evaluation.scores.accuracy import AccuracyScores
 from src.evaluation.scores.conformance import ConformanceScores
+from src.evaluation.scores.prediction import (
+    CalibrationScores,
+    PointPredictionScores,
+    SamplePredictionScores,
+    ScoringContext,
+)
 from src.registry import Registry
 from src.scalar_metrics import Metric
 
 # Score families in report order.
-FAMILIES = (AccuracyScores, ConformanceScores)
+FAMILIES = (
+    PointPredictionScores,
+    SamplePredictionScores,
+    CalibrationScores,
+    ConformanceScores,
+)
 
 
 def _declared() -> dict[str, Metric]:
@@ -38,6 +48,9 @@ METRICS = Registry[Metric](
 __all__ = [
     'FAMILIES',
     'METRICS',
-    'AccuracyScores',
+    'CalibrationScores',
     'ConformanceScores',
+    'PointPredictionScores',
+    'SamplePredictionScores',
+    'ScoringContext',
 ]

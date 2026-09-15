@@ -72,15 +72,15 @@ def generate_batch(
     activities = generated.activities.cpu().numpy()  # [batch_size, num_samples, steps]
     lengths = generated.lengths.cpu().numpy()  # [batch_size, num_samples]
     # [batch_size, num_samples, steps]
-    cycle_times = generated.cycle_times.cpu().numpy()
+    inter_event_times = generated.inter_event_times.cpu().numpy()
     remaining_time = generated.remaining_time.cpu().numpy()  # [batch_size, num_samples]
     point_activities = point.activities.squeeze(dim=1).cpu().numpy()  # [batch_size, steps]
     point_lengths = point.lengths.squeeze(dim=1).cpu().numpy()  # [batch_size]
     # [batch_size, steps]
-    point_cycle_times = point.cycle_times.squeeze(dim=1).cpu().numpy()
+    point_inter_event_times = point.inter_event_times.squeeze(dim=1).cpu().numpy()
     point_remaining_time = point.remaining_time.squeeze(dim=1).cpu().numpy()  # [batch_size]
     true_activities = batch.suffix.activities.cpu().numpy()  # [batch_size, seq_len]
-    true_cycle_times = batch.cycle_times.cpu().numpy()  # [batch_size, seq_len]
+    true_inter_event_times = batch.inter_event_times.cpu().numpy()  # [batch_size, seq_len]
     # Position 0 answers for the last prefix event, which is what a remaining time is measured
     # from.
     true_remaining_time = batch.remaining_times[:, 0].cpu().numpy()  # [batch_size]
@@ -99,7 +99,7 @@ def generate_batch(
                         codec,
                         codes,
                         activities=activities[position, sample],
-                        cycle_times=cycle_times[position, sample],
+                        inter_event_times=inter_event_times[position, sample],
                         length=lengths[position, sample],
                         remaining_time=remaining_time[position, sample],
                         clamp=True,
@@ -111,7 +111,7 @@ def generate_batch(
                 codec,
                 codes,
                 activities=point_activities[position],
-                cycle_times=point_cycle_times[position],
+                inter_event_times=point_inter_event_times[position],
                 length=point_lengths[position],
                 remaining_time=point_remaining_time[position],
                 clamp=True,
@@ -120,7 +120,7 @@ def generate_batch(
                 codec,
                 codes,
                 activities=true_activities[position],
-                cycle_times=true_cycle_times[position],
+                inter_event_times=true_inter_event_times[position],
                 length=true_lengths[position],
                 remaining_time=true_remaining_time[position],
             ),
@@ -134,7 +134,7 @@ def _decode(
     codes: ActivityCodes,
     *,
     activities: np.ndarray,
-    cycle_times: np.ndarray,
+    inter_event_times: np.ndarray,
     length: int,
     remaining_time: float,
     clamp: bool = False,
@@ -145,7 +145,8 @@ def _decode(
         codec: The codec the split was encoded through, read here in the decode direction.
         codes: The dataset's codebook, which the decoded names are spelled onto.
         activities: The run's activity indices, `[steps]`.
-        cycle_times: The run's standardized cycle time before each of `activities`, `[steps]`.
+        inter_event_times: The run's standardized inter-event time before each activity,
+            `[steps]`.
         length: How many of them are events, the rest being the EOT and the padding behind it.
         remaining_time: The run's standardized remaining time.
         clamp: Whether to floor the denormalized times at 0, matching the baselines' behaviour on
@@ -153,13 +154,13 @@ def _decode(
     Returns:
         The run as the report and the generations file hold it.
     """
-    cycle_time_minutes = codec.cycle_time.denormalize(cycle_times[:length])
+    inter_event_time_minutes = codec.inter_event_time.denormalize(inter_event_times[:length])
     remaining_time_minutes = float(codec.remaining_time.denormalize(remaining_time))
     if clamp:
-        cycle_time_minutes = np.maximum(cycle_time_minutes, 0.0)
+        inter_event_time_minutes = np.maximum(inter_event_time_minutes, 0.0)
         remaining_time_minutes = max(remaining_time_minutes, 0.0)
     return DecodedEvents(
         activities=codes.encode(codec.activity.decode(activities, length=length)),
-        cycle_time_minutes=cycle_time_minutes.tolist(),
+        inter_event_time_minutes=inter_event_time_minutes.tolist(),
         remaining_time_minutes=remaining_time_minutes,
     )

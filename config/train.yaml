@@ -1,7 +1,7 @@
 defaults:
 - output/default
 - dataset: ???
-- model: cvae
+- model: transformer_cvae
 - training: default
 - runtime: cuda
 - _self_

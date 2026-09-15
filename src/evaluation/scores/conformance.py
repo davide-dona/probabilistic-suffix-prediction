@@ -11,18 +11,16 @@ class ConformanceScores(ScalarMetrics):
     """Conformance of generated suffixes to process constraints."""
 
     # Mean constraint-satisfaction share over draws.
-    conformance_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
+    conformance_sample_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     # Constraint-satisfaction share of the point prediction.
     conformance_point: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     # Constraint-satisfaction share of the observed suffix.
-    conformance_truth: float = metric(unit=Unit.SHARE, owner=Owner.LOG)
+    conformance_observed: float = metric(unit=Unit.SHARE, owner=Owner.LOG)
 
     # Fraction of draws satisfying every constraint.
-    full_conformance_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
-    # Whether the point prediction satisfies every constraint.
-    full_conformance_point: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
+    full_conformance_sample_rate: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
     # Whether the observed suffix satisfies every constraint.
-    full_conformance_truth: float = metric(unit=Unit.SHARE, owner=Owner.LOG)
+    full_conformance_observed: float = metric(unit=Unit.SHARE, owner=Owner.LOG)
 
     @classmethod
     def of(cls, generation: Generation, *, checker: ConformanceChecker) -> Self:
@@ -51,10 +49,9 @@ class ConformanceScores(ScalarMetrics):
         truth = checker.check(prefix + generation.truth.activities)
 
         return cls(
-            conformance_mean=over_draws([check.share for check in checks]),
+            conformance_sample_mean=over_draws([check.share for check in checks]),
             conformance_point=point.share,
-            conformance_truth=truth.share,
-            full_conformance_mean=over_draws([check.full for check in checks]),
-            full_conformance_point=point.full,
-            full_conformance_truth=truth.full,
+            conformance_observed=truth.share,
+            full_conformance_sample_rate=over_draws([check.full for check in checks]),
+            full_conformance_observed=truth.full,
         )

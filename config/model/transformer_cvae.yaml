@@ -1,8 +1,8 @@
 defaults:
 - backbone
 - _self_
-kind: cvae
-name: cvae
+kind: transformer_cvae
+name: transformer_cvae
 prior:
   hidden_dims:
   - 128

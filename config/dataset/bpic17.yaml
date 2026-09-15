@@ -33,7 +33,7 @@ data:
   - seconds_cos
   log_scaled_features: []
   log_scaled_remaining_time: false
-  log_scaled_cycle_time: false
+  log_scaled_inter_event_time: false
 declare:
   consider_vacuity: false
   min_support: 0.8

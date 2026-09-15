@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 import numpy as np
 from rapidfuzz import process
-from rapidfuzz.distance import OSA
+from rapidfuzz.distance import DamerauLevenshtein
 from scipy.spatial.distance import cdist
 
 # Start of the Unicode private use area, where the activity codes are drawn from.
@@ -34,10 +34,10 @@ class SuffixMetric(StrEnum):
     it violates negative type on about 45% of real draw sets, where a distribution that drops part
     of its support can beat the true one by around half a percent of the score. It is reported
     because it is the scale the rest of the project reads on and because it is the sample-side
-    counterpart of `dls_mean`, not because it settles the question the other two settle.
+    counterpart of `dls_sample_mean`, not because it settles the question the other two settle.
     """
 
-    DLS = 'dls'  # 1 - the normalized Damerau-Levenshtein (OSA) similarity
+    DLS = 'dls'  # 1 - normalized Damerau-Levenshtein similarity
     EXACT = 'exact'  # 1 for any two suffixes that are not the same
     BIGRAM = 'bigram'  # Multiset Jaccard distance over padded activity pairs
 
@@ -103,7 +103,10 @@ def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable])
         1.0 for identical sequences (two empty ones included), down to 0.0 for sequences
         sharing nothing.
     """
-    return OSA.normalized_similarity(predicted, true)
+    return DamerauLevenshtein.normalized_similarity(
+        (*predicted, _END),
+        (*true, _END),
+    )
 
 
 def bigrams(sequence: Sequence[Hashable]) -> Counter[tuple[Hashable, Hashable]]:
@@ -224,9 +227,9 @@ def distances(
         return _bigram_distances(queries, choices, dtype=dtype)
 
     similarities = process.cdist(
-        queries=queries,
-        choices=choices,
-        scorer=OSA.normalized_similarity,
+        queries=[(*sequence, _END) for sequence in queries],
+        choices=[(*sequence, _END) for sequence in choices],
+        scorer=DamerauLevenshtein.normalized_similarity,
         dtype=dtype,
     )
     # In place: the matrix is already the largest thing here, and a second copy of it is what a

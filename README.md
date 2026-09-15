@@ -1,7 +1,7 @@
-# C-VAE for Suffix Generation
+# Suffix Generation
 
 Conditional suffix generation for predictive process monitoring. The repository compares a
-conditional VAE with a Transformer that samples its output heads.
+Transformer CVAE with a Head-sampling Transformer.
 
 ## Install
 
@@ -19,8 +19,8 @@ uv run wandb login
 Hydra composes plain YAML under `config/`. Choose a dataset and model independently:
 
 ```bash
-uv run python -m pipelines.train dataset=sepsis model=cvae
-uv run python -m pipelines.train dataset=bpic17 model=transformer optimizer.lr=0.0005
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
+uv run python -m pipelines.train dataset=bpic17 model=head_sampling_transformer optimizer.lr=0.0005
 ```
 
 The groups are `dataset`, `model`, `training`, and `runtime`. The two architectures share
@@ -33,22 +33,25 @@ split fractions, budgets, and sampling parameters.
 Inspect settings without running a pipeline:
 
 ```bash
-uv run python -m pipelines.train dataset=sepsis model=cvae --cfg job --resolve
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae --cfg job --resolve
 ```
 
 Hydra multirun uses the basic sequential launcher. Sweep every combination of comma-separated
 values in one command:
 
 ```bash
-uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae,transformer
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 \
+  model=transformer_cvae,head_sampling_transformer
 ```
 
 To use GPUs concurrently, start one multirun command per GPU in separate terminals. Each command
 runs its own jobs sequentially on the specified device:
 
 ```bash
-uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=cvae training.device=cuda:0
-uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 model=transformer training.device=cuda:1
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 \
+  model=transformer_cvae training.device=cuda:0
+uv run python -m pipelines.train --multirun dataset=sepsis,bpic13 \
+  model=head_sampling_transformer training.device=cuda:1
 ```
 
 ## Pipeline
@@ -59,7 +62,7 @@ have not changed. The codec, splits, continuation indices, and declarative model
 
 ```bash
 uv run python -m pipelines.preprocess dataset=sepsis
-uv run python -m pipelines.train dataset=sepsis model=cvae
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
 ```
 
 Each invocation writes to `outputs/<stage>/<date>/<time-with-microseconds>/`; multirun jobs receive
@@ -69,7 +72,7 @@ revision, dirty state, command, and Python version. Relative inputs remain relat
 launch directory. Override `hydra.run.dir` for an explicit destination; an already reserved
 invocation directory is rejected.
 
-Training writes `best.pt` whenever validation energy score improves. It contains weights, the
+Training writes `best.pt` whenever validation DLS energy score improves. It contains weights, the
 resolved training config, selection metric/direction, score, step, and W&B ID. W&B groups runs by
 dataset/model and uploads the selected checkpoint on normal completion. Runs cannot be resumed;
 interrupted runs retain their last successfully saved best checkpoint.
@@ -98,17 +101,18 @@ inside its own invocation directory. Compare explicit reports or use
 `'evaluations_dir=[outputs/evaluate,pinned]'`; include only one run per dataset/model.
 Move each evaluation report together with its `prefix_scores.parquet`.
 
-Transformer sampler tuning uses the validation split, before test generation:
+Head-sampling Transformer tuning uses the validation split, before test generation:
 
 ```bash
-uv run python -m pipelines.tune checkpoint=/path/to/transformer/best.pt device=cpu
-uv run python -m pipelines.generate checkpoint=/path/to/transformer/best.pt tuning=/path/to/tuning.json
+uv run python -m pipelines.tune checkpoint=/path/to/head_sampling_transformer/best.pt device=cpu
+uv run python -m pipelines.generate checkpoint=/path/to/head_sampling_transformer/best.pt \
+  tuning=/path/to/tuning.json
 ```
 
 Override the grid with `temperatures=[0.9,1.0,1.1]` and `top_ps=[0.95,1.0]`; `pairs` and `samples`
 control the validation budget. Generation accepts an explicit
 `'sampling={temperature:1.1,top_p:0.95}'` instead of a tuning report. Both stages accept
-`num_workers=0`. Sampling overrides apply only to the Transformer.
+`num_workers=0`. Sampling overrides apply only to the Head-sampling Transformer.
 
 Artifacts carry dataset/model labels and source content hashes. A tuning report must match the
 exact checkpoint bytes, even after files are moved. There is no custom run identity or
@@ -116,30 +120,41 @@ path-derived model selection.
 
 ## Model selection
 
-Checkpoint selection, early stopping, and sampler tuning minimize activity-sequence energy score:
+Checkpoint selection, early stopping, and sampler tuning minimize activity-sequence DLS energy
+score:
 
 ```text
 mean_i d(sample_i, truth) - 0.5 * mean_{i != j} d(sample_i, sample_j)
 ```
 
-`d` is normalized optimal string alignment distance. The pairwise term uses `N(N-1)` and retains
-duplicate-draw multiplicities. Scores are averaged over every example in the fixed validation
-subset. The same score is reported on test examples. Conformance and timing metrics remain
-diagnostics.
+`d` is normalized Damerau-Levenshtein distance over the activity suffix and its terminal token.
+The pairwise term uses `N(N-1)` and retains duplicate-draw multiplicities. Scores are first
+reduced within each prefix and then averaged with every prefix receiving equal weight. The same
+score is reported on test examples.
 
 Finite-sample energy estimates can be negative; they are not clipped. Strict propriety is not
 established for this sequence distance. Both sample-count defaults remain 100, with at least
 10 required by the full metric bundle. Sampling and accelerator kernels can introduce variation;
 the seed does not promise bitwise equivalence across hardware.
 
-## Existing checkpoints
+## Evaluation metrics
 
-Hydra does not change the learned weights or require retraining by itself. Legacy checkpoints
-use a different file schema and are not accepted by the new loader. Preserve them with the code
-revision that produced them; no legacy reader or automatic conversion is provided.
+Reports separate point prediction, sample prediction, calibration, and conformance. “Timestamp
+suffix” follows the task name used in the literature; internally it is represented precisely as
+the inter-event duration before each predicted event. Timestamp-suffix MAE, CRPS, and coverage
+are reduced within each prefix before prefixes are averaged equally. Remaining-time values are
+predicted independently rather than reconstructed from inter-event durations.
+
+## Existing artifacts
+
+Legacy prepared datasets, checkpoints, tuning reports, generations, evaluation reports, and
+per-prefix score files use different schemas and are not accepted by the new readers. Preserve
+them with the code revision that produced them; no legacy reader or automatic conversion is
+provided.
 
 Rescoring an old best checkpoint cannot recover earlier training steps that were not saved.
-Existing preprocessed data need not be regenerated merely because configuration moved to Hydra.
+Run preprocessing, training, optional sampler tuning, generation, and evaluation again before
+comparing final results.
 
 ## Utilities
 

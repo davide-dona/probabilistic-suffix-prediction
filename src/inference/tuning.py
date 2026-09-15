@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Self
 
 from omegaconf import DictConfig, OmegaConf
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 
 @dataclass(frozen=True)
 class TuningPoint:
     sampling: dict[str, float]
     score: float
-    conformance_mean: float
+    conformance_sample_mean: float
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class TuningReport:
     search: SearchPass
     chosen: dict[str, float]
     grid: tuple[TuningPoint, ...]
-    selection_metric: str = 'energy_score'
+    selection_metric: str = 'energy_score_dls'
     selection_direction: str = 'min'
 
     @classmethod
@@ -47,7 +47,20 @@ class TuningReport:
 
     @classmethod
     def read(cls, path: str | Path) -> Self:
-        return _ADAPTER.validate_json(Path(path).read_bytes())
+        path = Path(path)
+        payload = json.loads(path.read_bytes())
+        if payload.get('selection_metric') != 'energy_score_dls':
+            raise ValueError(
+                f'{path} uses the legacy tuning schema. Tune the checkpoint again with '
+                '`python -m pipelines.tune`.'
+            )
+        try:
+            return _ADAPTER.validate_python(payload)
+        except ValidationError as error:
+            raise ValueError(
+                f'{path} uses an incompatible tuning schema. Tune the checkpoint again with '
+                '`python -m pipelines.tune`.'
+            ) from error
 
     def write(self, path: Path) -> Path:
         temporary = path.with_suffix('.json.tmp')

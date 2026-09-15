@@ -42,7 +42,7 @@ def save_checkpoint(
             'model_state_dict': model.state_dict(),
             'step': step,
             'selection_score': selection_score,
-            'selection_metric': 'energy_score',
+            'selection_metric': 'energy_score_dls',
             'selection_direction': 'min',
             'wandb_id': wandb_id,
         },
@@ -55,4 +55,13 @@ def save_checkpoint(
 def load_checkpoint(model_path: str | Path) -> dict:
     checkpoint = torch.load(f=Path(model_path), map_location='cpu', weights_only=True)
     require_keys(checkpoint, CHECKPOINT_KEYS, purpose='loaded', remedy='Train a new checkpoint.')
+    model = checkpoint.get('config', {}).get('model', {})
+    if (
+        checkpoint['selection_metric'] != 'energy_score_dls'
+        or model.get('kind') not in ('transformer_cvae', 'head_sampling_transformer')
+    ):
+        raise ValueError(
+            'Checkpoint uses the legacy metric or model schema. Train a new checkpoint with '
+            'transformer_cvae or head_sampling_transformer.'
+        )
     return checkpoint

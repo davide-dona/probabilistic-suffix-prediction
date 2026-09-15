@@ -49,19 +49,20 @@ class Table:
 TABLES = (
     # Point prediction against the observed suffix.
     Table(
-        name='accuracy-point',
+        name='point-prediction',
         axis=Axis.OVERALL,
-        note='Mean absolute error per prefix; length in events, times in days.',
+        note='Means weight every prefix equally. Timestamp suffix MAE is computed over the '
+        'inter-event durations of the observed suffix; length is in events and times are in days.',
         columns=(
             MetricEntry(METRICS['dls_point'], 'DLS'),
-            MetricEntry(METRICS['length_ae_point'], 'Length'),
-            MetricEntry(METRICS['remaining_time_ae_point_days'], 'Rem. time'),
-            MetricEntry(METRICS['cycle_time_ae_point_days'], 'Event time'),
+            MetricEntry(METRICS['suffix_length_ae_point'], 'Suffix length MAE'),
+            MetricEntry(METRICS['inter_event_time_ae_point_days'], 'Timestamp suffix MAE'),
+            MetricEntry(METRICS['remaining_time_ae_point_days'], 'Remaining time MAE'),
         ),
     ),
     # The samples themselves against the one continuation the log took.
     Table(
-        name='generative-accuracy',
+        name='sample-prediction',
         axis=Axis.OVERALL,
         note="An energy score is E d(X, y) - 0.5 E d(X, X') over the samples, CRPS generalized "
         'off the real line, which charges the spread against the accuracy it buys where the '
@@ -72,10 +73,17 @@ TABLES = (
         'type, so its column is the sample-side counterpart of the DLS beside it rather than a '
         'proper score.',
         columns=(
-            MetricEntry(METRICS['dls_mean'], 'DLS (sample mean)'),
+            MetricEntry(METRICS['dls_sample_mean'], 'DLS (sample mean)'),
             MetricEntry(METRICS['energy_score_dls'], 'ES (DLS)'),
             MetricEntry(METRICS['energy_score_exact'], 'ES (exact)'),
             MetricEntry(METRICS['energy_score_bigram'], 'ES (bigram)'),
+            MetricEntry(METRICS['suffix_length_crps'], 'Suffix length CRPS'),
+            MetricEntry(METRICS['inter_event_time_crps_days'], 'Timestamp suffix CRPS'),
+            MetricEntry(METRICS['remaining_time_crps_days'], 'Remaining time CRPS'),
+        ),
+        column_groups=(
+            ColumnGroup('Activity suffix', 4),
+            ColumnGroup('Scalar outputs', 3),
         ),
     ),
     # Calibration gaps at three central-interval levels.
@@ -87,20 +95,20 @@ TABLES = (
         'interval read off a finite sample is narrow, which costs a calibrated model a point or '
         'two on every column.',
         columns=(
-            MetricEntry(METRICS['length_coverage_gap_50'], r'50\%'),
-            MetricEntry(METRICS['length_coverage_gap_75'], r'75\%'),
-            MetricEntry(METRICS['length_coverage_gap_95'], r'95\%'),
+            MetricEntry(METRICS['suffix_length_coverage_gap_50'], r'50\%'),
+            MetricEntry(METRICS['suffix_length_coverage_gap_75'], r'75\%'),
+            MetricEntry(METRICS['suffix_length_coverage_gap_95'], r'95\%'),
+            MetricEntry(METRICS['inter_event_time_coverage_gap_50'], r'50\%'),
+            MetricEntry(METRICS['inter_event_time_coverage_gap_75'], r'75\%'),
+            MetricEntry(METRICS['inter_event_time_coverage_gap_95'], r'95\%'),
             MetricEntry(METRICS['remaining_time_coverage_gap_50'], r'50\%'),
             MetricEntry(METRICS['remaining_time_coverage_gap_75'], r'75\%'),
             MetricEntry(METRICS['remaining_time_coverage_gap_95'], r'95\%'),
-            MetricEntry(METRICS['cycle_time_coverage_gap_50'], r'50\%'),
-            MetricEntry(METRICS['cycle_time_coverage_gap_75'], r'75\%'),
-            MetricEntry(METRICS['cycle_time_coverage_gap_95'], r'95\%'),
         ),
         column_groups=(
-            ColumnGroup('Length', 3),
+            ColumnGroup('Suffix length', 3),
+            ColumnGroup('Timestamp suffix', 3),
             ColumnGroup('Remaining time', 3),
-            ColumnGroup('Event time', 3),
         ),
     ),
 )

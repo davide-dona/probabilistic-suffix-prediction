@@ -116,7 +116,7 @@ def train(
     )
     print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
-    tracking.define_metric('generative-accuracy/energy_score', summary='min')
+    tracking.define_metric('sample-prediction/energy_score_dls', summary='min')
     try:
         while step < training.max_steps and not should_stop:
             for batch in train_loader:
@@ -180,12 +180,12 @@ def train(
                         f'Step {step:>{len(str(training.max_steps))}}/{training.max_steps}  '
                         f'{kl_info}train {train_metrics.loss:.4f}  '
                         f'val {val_metrics.loss:.4f}  '
-                        f'gen_dls {gen_metrics.accuracy.dls_mean:.4f} mean / '
-                        f'{gen_metrics.accuracy.dls_point:.4f} point  '
-                        f'energy {gen_metrics.accuracy.energy_score:.4f}',
+                        f'gen_dls {gen_metrics.sample.dls_sample_mean:.4f} mean / '
+                        f'{gen_metrics.point.dls_point:.4f} point  '
+                        f'energy {gen_metrics.sample.energy_score_dls:.4f}',
                         flush=True,
                     )
-                    selection_score = gen_metrics.accuracy.energy_score
+                    selection_score = gen_metrics.sample.energy_score_dls
 
                     # Read before `update` folds this score into it, since afterwards it can
                     # no longer tell an improvement from a step that just matched the best.
@@ -224,7 +224,7 @@ def train(
         )
         print(f'Finished training after {step} steps ({reason})')
 
-        tracking.summary['selection_metric'] = 'energy_score'
+        tracking.summary['selection_metric'] = 'energy_score_dls'
         tracking.summary['selection_direction'] = 'min'
         tracking.summary['selection_score'] = early_stopper.min_validation_score
         tracking.summary['best_step'] = best_step
@@ -234,7 +234,7 @@ def train(
             type='model',
             metadata={
                 'wandb_id': tracking.id,
-                'selection_metric': 'energy_score',
+                'selection_metric': 'energy_score_dls',
                 'selection_direction': 'min',
                 'step': best_step,
                 'selection_score': early_stopper.min_validation_score,
