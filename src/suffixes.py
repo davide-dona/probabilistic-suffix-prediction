@@ -12,8 +12,8 @@ from scipy.spatial.distance import cdist
 # Start of the Unicode private use area, where the activity codes are drawn from.
 _FIRST_CODE = 0xE000
 
-# What a bigram is padded with, so that a suffix of n activities yields n + 1 pairs. Both sit
-# below the private use area the activity codes are drawn from, so neither can be an activity.
+# Boundary tokens used by sequence metrics. Both sit below the private use area the activity codes
+# are drawn from, so neither can be an encoded activity.
 _START = '\x02'
 _END = '\x03'
 
@@ -30,11 +30,10 @@ class SuffixMetric(StrEnum):
     All three run over `[0, 1]`, so a score reading one of them reads them all on one scale. They
     do not all make `energy_score` proper, though, which needs a distance of negative type:
     `EXACT` is the discrete metric and `BIGRAM` the Jaccard distance, both of which are, and
-    neither violates it on any draw set measured. `DLS` is a normalized edit distance and is not:
-    it violates negative type on about 45% of real draw sets, where a distribution that drops part
-    of its support can beat the true one by around half a percent of the score. It is reported
-    because it is the scale the rest of the project reads on and because it is the sample-side
-    counterpart of `dls_sample_mean`, not because it settles the question the other two settle.
+    neither violates it on any draw set measured. `DLS` is a normalized edit distance and is not
+    of negative type. It is reported because it is the scale the rest of the project reads on and
+    because it is the sample-side counterpart of `dls_sample_mean`, not because it settles the
+    question the other two settle.
     """
 
     DLS = 'dls'  # 1 - normalized Damerau-Levenshtein similarity
@@ -85,7 +84,7 @@ class ActivityCodes:
             activities: The suffix's activity names, in order.
         Returns:
             One character per activity. The empty string for an empty suffix, which a model does
-            generate and which sits at distance 1.0 from every suffix holding an event.
+            generate.
         """
         return ''.join(
             self._codes.setdefault(activity, chr(_FIRST_CODE + len(self._codes)))
@@ -100,8 +99,8 @@ def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable])
         predicted: The generated sequence.
         true: The ground-truth sequence.
     Returns:
-        1.0 for identical sequences (two empty ones included), down to 0.0 for sequences
-        sharing nothing.
+        1.0 for identical sequences, including two empty ones. The shared terminal token is part
+        of the normalization used by suffix-prediction evaluation.
     """
     return DamerauLevenshtein.normalized_similarity(
         (*predicted, _END),
@@ -218,8 +217,7 @@ def distances(
             megabytes; a caller measuring a handful of sequences has no such matrix and may ask for
             `np.float64` instead.
     Returns:
-        `[len(queries), len(choices)]`, holding the distance of each pair: 0.0 for two identical
-        sequences, up to 1.0 for two sharing nothing.
+        `[len(queries), len(choices)]`, holding the distance of each pair in `[0, 1]`.
     """
     if metric is SuffixMetric.EXACT:
         return _exact_distances(queries, choices, dtype=dtype)
