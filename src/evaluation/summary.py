@@ -2,9 +2,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from typing import Self
 
-from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores, DistributionScores
+from src.evaluation.scores import FAMILIES, AccuracyScores, ConformanceScores
 from src.inference.generation import Generation
-from src.logs import ContinuationIndex
 from src.logs.declare import ConformanceChecker
 
 
@@ -16,7 +15,6 @@ class PrefixSummary:
     suffix_len: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
-    distribution: DistributionScores
 
     @classmethod
     def of(
@@ -24,14 +22,12 @@ class PrefixSummary:
         generation: Generation,
         *,
         checker: ConformanceChecker,
-        index: ContinuationIndex,
     ) -> Self:
-        """Score one generated suffix against truth, constraints, and observed continuations.
+        """Score one generated suffix against truth and constraints.
 
         Args:
             generation: Decoded model output for one prefix.
             checker: Process-constraint checker.
-            index: Observed continuations by prefix.
 
         Returns:
             Scores for the prefix.
@@ -41,23 +37,7 @@ class PrefixSummary:
             suffix_len=len(generation.truth),
             accuracy=AccuracyScores.of(generation),
             conformance=ConformanceScores.of(generation, checker=checker),
-            distribution=DistributionScores.of(generation, index=index),
         )
-
-
-def _distribution(prefixes: Sequence[PrefixSummary]) -> tuple[int, DistributionScores]:
-    """Average distributional scores over comparable prefixes only.
-
-    Args:
-        prefixes: Prefix summaries to aggregate.
-
-    Returns:
-        Comparable-prefix count and its mean scores.
-    """
-    comparable = [prefix.distribution for prefix in prefixes if prefix.distribution.comparable]
-    if not comparable:
-        return 0, DistributionScores.undefined()
-    return len(comparable), DistributionScores.mean(comparable)
 
 
 @dataclass(frozen=True)
@@ -66,11 +46,8 @@ class LengthSummary:
 
     length: int
     prefixes: int
-    # Comparable prefixes used for distributional metrics.
-    compared: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
-    distribution: DistributionScores
 
     @classmethod
     def of(cls, prefixes: Sequence[PrefixSummary], *, length: int) -> Self:
@@ -83,14 +60,11 @@ class LengthSummary:
         Returns:
             Aggregate scores for the length.
         """
-        compared, distribution = _distribution(prefixes)
         return cls(
             length=length,
             prefixes=len(prefixes),
-            compared=compared,
             accuracy=AccuracyScores.mean([prefix.accuracy for prefix in prefixes]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in prefixes]),
-            distribution=distribution,
         )
 
 
@@ -111,11 +85,8 @@ class EvaluationSummary:
     """Aggregate evaluation scores for one run."""
 
     prefixes: int
-    # Comparable prefixes used for distributional metrics.
-    compared: int
     accuracy: AccuracyScores
     conformance: ConformanceScores
-    distribution: DistributionScores
     # Sorted by prefix length.
     by_prefix_length: list[LengthSummary]
     # Sorted by ground-truth suffix length.
@@ -141,19 +112,16 @@ class EvaluationSummary:
 
         # Recover all prefixes for the overall aggregate.
         every_prefix = [prefix for bucket in prefix_buckets.values() for prefix in bucket]
-        compared, distribution = _distribution(every_prefix)
         return cls(
             prefixes=len(every_prefix),
-            compared=compared,
             accuracy=AccuracyScores.mean([prefix.accuracy for prefix in every_prefix]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
-            distribution=distribution,
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
         )
 
 
-# Types that expose all three score families.
+# Types that expose all score families.
 type Summarized = PrefixSummary | LengthSummary | EvaluationSummary
 
 # Cache each family's metric fields.
@@ -174,7 +142,6 @@ def flatten_scores(summary: Summarized) -> dict[str, float]:
         for family in (
             summary.accuracy,
             summary.conformance,
-            summary.distribution,
         )
         for name in _FIELD_NAMES[type(family)]
     }

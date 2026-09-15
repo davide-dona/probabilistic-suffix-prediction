@@ -7,7 +7,8 @@ import numpy as np
 
 from src.inference.generation import Draws, Generation
 from src.scalar_metrics import Direction, Owner, ScalarMetrics, Unit, mean, metric
-from src.suffixes import SuffixMetric, energy_score, sequence_similarity
+from src.suffixes import SuffixMetric, sequence_similarity
+from src.suffixes import energy_score as suffix_energy_score
 
 MINUTES_PER_DAY = 1440.0
 
@@ -125,7 +126,9 @@ class AccuracyScores(ScalarMetrics):
         cycle_gaps = _coverage_gaps(cycle_times, true_cycle_times)
 
         return cls(
-            energy_score=energy_score(samples, truth.activities),
+            energy_score=suffix_energy_score(
+                samples.suffixes, truth.activities, weights=samples.counts
+            ),
             dls_mean=(
                 float(samples.counts @ similarities) / draws if similarities and draws else 0.0
             ),
@@ -136,19 +139,19 @@ class AccuracyScores(ScalarMetrics):
             hit_rate_at_10=is_hit(samples=samples, truth=truth.activities, k=10),
             hit_rate_any=float(drawn_truth),
             hit_share=share_of_truth,
-            energy_score_dls=energy_score(
+            energy_score_dls=suffix_energy_score(
                 samples.suffixes,
                 truth.activities,
                 weights=samples.counts,
                 metric=SuffixMetric.DLS,
             ),
-            energy_score_exact=energy_score(
+            energy_score_exact=suffix_energy_score(
                 samples.suffixes,
                 truth.activities,
                 weights=samples.counts,
                 metric=SuffixMetric.EXACT,
             ),
-            energy_score_bigram=energy_score(
+            energy_score_bigram=suffix_energy_score(
                 samples.suffixes,
                 truth.activities,
                 weights=samples.counts,
@@ -301,19 +304,3 @@ def is_hit(samples: Draws, truth: str, *, k: int) -> float:
         1.0 if the truth occurs, otherwise 0.0.
     """
     return float(any(samples.suffixes[index] == truth for index in samples.taken[:k]))
-
-
-def energy_score(samples: Draws, truth: str) -> float:
-    """Unbiased sequence energy estimate using normalized OSA distance.
-
-    The spread term averages distinct draw indices, including repeated sequences
-    with their multiplicities. This estimate can be negative. Strict propriety
-    is not established for normalized OSA distance.
-    """
-    if len(samples) < 2:
-        raise ValueError('energy_score requires at least two draws')
-    distances_to_truth = distances(queries=samples.suffixes, choices=[truth], dtype=np.float64)[
-        :, 0
-    ]
-    accuracy = float(samples.counts @ distances_to_truth) / len(samples)
-    return accuracy - 0.5 * diversity(samples.suffixes, weights=samples.counts)

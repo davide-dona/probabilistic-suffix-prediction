@@ -22,7 +22,6 @@ from src.logs import (
     SECONDS_COS_KEY,
     SECONDS_SIN_KEY,
     TIMESTAMP_KEY,
-    ContinuationIndex,
     Split,
     read_original_log,
     write_log,
@@ -159,10 +158,7 @@ def run(data_config: DictConfig, declare_config: DictConfig) -> None:
     The vocabularies and normalization statistics the model is built against are fit here too,
     on the train split alone, and written beside it as `dataset.json`.
 
-    The continuations each held-out split takes after each of its prefixes are indexed next, one
-    index per split, beside the splits: training selects checkpoints against the validation
-    split's and evaluation scores against the test split's, so both are always built. The
-    declarative model discovered from the train split follows, and is what evaluation checks
+    The declarative model discovered from the train split follows, and is what evaluation checks
     conformance against.
 
     Args:
@@ -179,7 +175,6 @@ def run(data_config: DictConfig, declare_config: DictConfig) -> None:
             f'{data_config.test_split:.0%} test, out of time',
             'splits': paths.PROCESSED_SPLIT.directory(dataset),
             'codec': paths.CODEC.path(dataset),
-            'continuations': paths.CONTINUATIONS.directory(dataset),
             'declarative model': paths.DECLARE_MODEL.path(dataset),
         },
     )
@@ -235,23 +230,6 @@ def run(data_config: DictConfig, declare_config: DictConfig) -> None:
         codec = DatasetCodec.fit(train, data_config=data_config, max_trace_length=max_seq_len)
         codec.save()
 
-    # Both held-out splits, since training selects on the validation split's continuations and
-    # evaluation scores against the test split's.
-    indexed = {}
-    for split, data in ((Split.VAL, val), (Split.TEST, test)):
-        with step(f'Indexing the continuations of the {split} split'):
-            index = ContinuationIndex.of(
-                data,
-                vocabulary=codec.activity.vocab,
-                names=codec.activity.names,
-            )
-            index.write(dataset=dataset, split=split)
-            indexed[split] = index.prefixes
-            print(
-                f'  {index.occurrences:,} cut points over {index.prefixes:,} distinct prefixes',
-                flush=True,
-            )
-
     with step('Discovering the declarative model'):
         constraints = discover_declare_model(
             train,
@@ -266,7 +244,6 @@ def run(data_config: DictConfig, declare_config: DictConfig) -> None:
         f'{len(codec.resource.vocab)} resources, '
         f'{len(codec.categorical_features)} categorical and '
         f'{len(codec.numeric_features)} numeric feature channels, '
-        f'{indexed[Split.VAL]:,} val and {indexed[Split.TEST]:,} test indexed prefixes, '
         f'{declare_summary}',
         flush=True,
     )

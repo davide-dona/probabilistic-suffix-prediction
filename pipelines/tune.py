@@ -14,14 +14,14 @@ from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.evaluation.scores import AccuracyScores, ConformanceScores, DistributionScores
+from src.evaluation.scores import AccuracyScores, ConformanceScores
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.tuning import (
     SearchPass,
     TuningPoint,
     TuningReport,
 )
-from src.logs import ContinuationIndex, Split
+from src.logs import Split
 from src.logs.declare import ConformanceChecker
 from src.model import Transformer, load_checkpoint, model_from_checkpoint
 from src.runtime import output_path, save_config, start_stage
@@ -39,7 +39,6 @@ def _score(
     num_samples: int,
     codec: DatasetCodec,
     codes: ActivityCodes,
-    index: ContinuationIndex,
     checker: ConformanceChecker,
     device: torch.device,
 ) -> TuningPoint:
@@ -56,9 +55,6 @@ def _score(
         num_samples: Suffixes drawn per prefix.
         codec: The codec the split was encoded through, read in the decode direction.
         codes: The codebook the suffixes are spelled on, seeded from `codec.activity.names`.
-        index: The validation split's continuations. Never the test split's: choosing an
-            operating point against those would fold the held-out set into the choice, exactly as
-            selecting a checkpoint on them would.
         checker: The declarative model, discovered from the train split and so the same object
             whichever split is being scored.
         device: The device to generate on.
@@ -79,20 +75,13 @@ def _score(
     ]
     if not generations:
         raise ValueError('Tuning validation subset is empty')
-    # Distribution diagnostics use the final report's comparable-prefix population.
-    scored = [DistributionScores.of(one, index=index) for one in generations]
-    distribution = DistributionScores.mean([one for one in scored if one.comparable])
     conformance = ConformanceScores.mean(
         [ConformanceScores.of(one, checker=checker) for one in generations]
     )
     return TuningPoint(
         sampling=OmegaConf.to_container(sampling, resolve=True),
         score=AccuracyScores.mean([AccuracyScores.of(one) for one in generations]).energy_score,
-        continuation_precision=distribution.continuation_precision,
-        continuation_recall=distribution.continuation_recall,
-        emsc=distribution.emsc,
         conformance_mean=conformance.conformance_mean,
-        unique_sample_rate=distribution.unique_sample_rate,
     )
 
 
@@ -210,9 +199,8 @@ def run(
         num_workers=config.dataloader.num_workers,
     )
 
-    with step(f'Reading the {Split.VAL} continuations and the declarative model'):
+    with step('Reading the declarative model'):
         codes = ActivityCodes.of(codec.activity.names)
-        index = ContinuationIndex.read(dataset=config.data.name, split=Split.VAL)
         checker = ConformanceChecker(config.data.name, codes)
 
     points = []
@@ -226,15 +214,12 @@ def run(
             num_samples=samples,
             codec=codec,
             codes=codes,
-            index=index,
             checker=checker,
             device=torch_device,
         )
         points.append(point)
         print(
-            f'  energy {point.score:.4f}  precision {point.continuation_precision:.4f}  '
-            f'recall {point.continuation_recall:.4f}  emsc {point.emsc:.4f}  '
-            f'conformance {point.conformance_mean:.4f}  unique {point.unique_sample_rate:.4f}',
+            f'  energy {point.score:.4f}  conformance {point.conformance_mean:.4f}',
             flush=True,
         )
 

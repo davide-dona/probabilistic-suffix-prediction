@@ -124,8 +124,8 @@ mean_i d(sample_i, truth) - 0.5 * mean_{i != j} d(sample_i, sample_j)
 
 `d` is normalized optimal string alignment distance. The pairwise term uses `N(N-1)` and retains
 duplicate-draw multiplicities. Scores are averaged over every example in the fixed validation
-subset, without a minimum-reference-count filter. The same score is reported on test examples.
-EMSC, continuation precision/recall, conformance, and timing metrics remain diagnostics.
+subset. The same score is reported on test examples. Conformance and timing metrics remain
+diagnostics.
 
 Finite-sample energy estimates can be negative; they are not clipped. Strict propriety is not
 established for this sequence distance. Both sample-count defaults remain 100, with at least
@@ -138,10 +138,8 @@ Hydra does not change the learned weights or require retraining by itself. Legac
 use a different file schema and are not accepted by the new loader. Preserve them with the code
 revision that produced them; no legacy reader or automatic conversion is provided.
 
-Old best checkpoints were selected using EMSC. To obtain models selected and early-stopped with
-energy score, train fresh runs using the new configs. Rescoring an old best checkpoint cannot
-recover earlier training steps that were not saved. Existing preprocessed data need not be
-regenerated merely because configuration moved to Hydra.
+Rescoring an old best checkpoint cannot recover earlier training steps that were not saved.
+Existing preprocessed data need not be regenerated merely because configuration moved to Hydra.
 
 ## Utilities
 

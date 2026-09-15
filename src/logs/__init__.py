@@ -1,7 +1,7 @@
 # isort: off
-# `keys` has no dependencies of its own and must load first: `continuations` and `io` both pull in
-# `src.paths`, and `src.paths.dataset` reaches back into this package for `Split` while it is still
-# initializing. Keep this order; a formatter re-sorting it alphabetically reintroduces the cycle.
+# `keys` has no dependencies of its own and must load first: `io` pulls in `src.paths`, and
+# `src.paths.dataset` reaches back into this package for `Split` while it is still initializing.
+# Keep this order; a formatter re-sorting it alphabetically reintroduces the cycle.
 from src.logs.keys import (
     ACTIVITY_KEY,
     CASE_ELAPSED_KEY,
@@ -23,7 +23,6 @@ from src.logs.keys import (
     UNK_TOKEN,
     Split,
 )
-from src.logs.continuations import ContinuationIndex, Continuations
 from src.logs.io import read_log, read_original_log, write_log
 # isort: on
 
@@ -46,8 +45,6 @@ __all__ = [
     'SOS_TOKEN',
     'TIMESTAMP_KEY',
     'UNK_TOKEN',
-    'ContinuationIndex',
-    'Continuations',
     'Split',
     'read_log',
     'read_original_log',

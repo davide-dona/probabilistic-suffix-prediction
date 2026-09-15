@@ -25,8 +25,6 @@ def run(config: DictConfig) -> None:
         config: The validated experiment config.
     """
     paths.require_preprocessed(config.data.name)
-    # Distribution diagnostics read the validation continuation index.
-    paths.CONTINUATIONS.require(dataset=config.data.name, split=Split.VAL)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.
     torch.manual_seed(config.seed)
@@ -46,7 +44,6 @@ def run(config: DictConfig) -> None:
             'optimizer': f'Adam, lr {config.optimizer.lr} after '
             f'{config.optimizer.warmup_steps} warmup steps, '
             f'weight decay {config.optimizer.weight_decay}',
-            'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
             'checkpoints': output_path('best.pt'),
         },
     )

@@ -1,14 +1,10 @@
 from src.evaluation.scores.accuracy import AccuracyScores
 from src.evaluation.scores.conformance import ConformanceScores
-from src.evaluation.scores.distribution import MIN_REFERENCE_OCCURRENCES, DistributionScores
 from src.registry import Registry
 from src.scalar_metrics import Metric
 
 # Score families in report order.
-FAMILIES = (AccuracyScores, ConformanceScores, DistributionScores)
-
-# Distributional metrics aggregate only comparable prefixes.
-COMPARABLE_METRICS = frozenset(entry.key for entry in DistributionScores.metrics())
+FAMILIES = (AccuracyScores, ConformanceScores)
 
 
 def _declared() -> dict[str, Metric]:
@@ -40,11 +36,8 @@ METRICS = Registry[Metric](
 )
 
 __all__ = [
-    'COMPARABLE_METRICS',
     'FAMILIES',
     'METRICS',
-    'MIN_REFERENCE_OCCURRENCES',
     'AccuracyScores',
     'ConformanceScores',
-    'DistributionScores',
 ]
