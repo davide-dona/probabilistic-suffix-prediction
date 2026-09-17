@@ -118,7 +118,7 @@ class SamplePredictionScores(ScalarMetrics):
                 samples.suffixes,
                 truth.activities,
                 weights=samples.counts,
-                metric=SuffixMetric.DLS,
+                metric=SuffixMetric.DLD,
             ),
             energy_score_exact=suffix_energy_score(
                 samples.suffixes,

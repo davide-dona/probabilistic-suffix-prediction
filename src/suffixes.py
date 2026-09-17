@@ -21,7 +21,7 @@ _END = '\x03'
 class SuffixMetric(StrEnum):
     """How far apart two suffixes are held to be.
 
-    Three, because each charges for a different kind of wrongness. `DLS` is graded on positions, so
+    Three, because each charges for a different kind of wrongness. `DLD` is graded on positions, so
     a suffix one edit from another scores better than one sharing nothing with it. `EXACT` reads a
     suffix as an atom and charges the same for a near miss as for a wrong answer. `BIGRAM` charges
     for the ordered pairs a suffix holds and how many times it holds each, which is the ordering
@@ -30,13 +30,13 @@ class SuffixMetric(StrEnum):
     All three run over `[0, 1]`, so a score reading one of them reads them all on one scale. They
     do not all make `energy_score` proper, though, which needs a distance of negative type:
     `EXACT` is the discrete metric and `BIGRAM` the Jaccard distance, both of which are, and
-    neither violates it on any draw set measured. `DLS` is a normalized edit distance and is not
+    neither violates it on any draw set measured. `DLD` is a normalized edit distance and is not
     of negative type. It is reported because it is the scale the rest of the project reads on and
-    because it is the sample-side counterpart of `dls_sample_mean`, not because it settles the
+    because it is the distance complement of `dls_sample_mean`, not because it settles the
     question the other two settle.
     """
 
-    DLS = 'dls'  # 1 - normalized Damerau-Levenshtein similarity
+    DLD = 'dld'  # Normalized Damerau-Levenshtein distance
     EXACT = 'exact'  # 1 for any two suffixes that are not the same
     BIGRAM = 'bigram'  # Multiset Jaccard distance over padded activity pairs
 
@@ -197,7 +197,7 @@ def distances(
     queries: Sequence[Sequence[Hashable]],
     choices: Sequence[Sequence[Hashable]],
     *,
-    metric: SuffixMetric = SuffixMetric.DLS,
+    metric: SuffixMetric = SuffixMetric.DLD,
     dtype: type[np.floating] = np.float32,
 ) -> np.ndarray:
     """Measure every sequence of one set against every sequence of another.
@@ -209,7 +209,7 @@ def distances(
         queries: The sequences to measure, one row each. Either encoded suffixes, where a sequence
             is a string, or raw activity names, where it is a list of them.
         choices: The sequences to measure them against, one column each.
-        metric: How far apart two sequences are held to be. `DLS` is what a transport cost and the
+        metric: How far apart two sequences are held to be. `DLD` is what a transport cost and the
             per-prefix similarities read on; the other two are read by `energy_score` alone, and
             `BIGRAM` holds a dense row over the bigrams both sets hold, so it is intended for
             small sets of draws.
@@ -284,7 +284,7 @@ def energy_score(
     truth: Sequence[Hashable],
     *,
     weights: Sequence[float] | None = None,
-    metric: SuffixMetric = SuffixMetric.DLS,
+    metric: SuffixMetric = SuffixMetric.DLD,
 ) -> float:
     """`E[d(X, y)] - 0.5 * E[d(X, X')]` over a set of draws, in `[-0.5, 1]`.
 

@@ -66,24 +66,21 @@ TABLES = (
         axis=Axis.OVERALL,
         note="An energy score is E d(X, y) - 0.5 E d(X, X') over the samples, CRPS generalized "
         'off the real line, which charges the spread against the accuracy it buys where the '
-        'sampled DLS beside it is won by putting every sample on one suffix. Exact is 1 for any '
+        'sampled DL similarity beside it is won by putting every sample on one suffix. Exact is '
+        '1 for any '
         'two suffixes that are not the same and bigram is the multiset Jaccard distance over the '
         'ordered activity pairs a suffix holds; both are of negative type, so both are proper. '
-        'DLS is 1 minus the normalized Damerau-Levenshtein similarity, which is not of negative '
-        'type, so its column is the sample-side counterpart of the DLS beside it rather than a '
+        'Normalized Damerau-Levenshtein distance is 1 minus the similarity, and is not of negative '
+        'type, so its column is the distance counterpart of the similarity beside it rather than a '
         'proper score.',
         columns=(
             MetricEntry(METRICS['dls_sample_mean'], 'DLS (sample mean)'),
-            MetricEntry(METRICS['energy_score_dls'], 'ES (DLS)'),
+            MetricEntry(METRICS['energy_score_dls'], 'ES (DLD)'),
             MetricEntry(METRICS['energy_score_exact'], 'ES (exact)'),
             MetricEntry(METRICS['energy_score_bigram'], 'ES (bigram)'),
             MetricEntry(METRICS['suffix_length_crps'], 'Suffix length CRPS'),
             MetricEntry(METRICS['inter_event_time_crps_days'], 'Timestamp suffix CRPS'),
             MetricEntry(METRICS['remaining_time_crps_days'], 'Remaining time CRPS'),
-        ),
-        column_groups=(
-            ColumnGroup('Activity suffix', 4),
-            ColumnGroup('Scalar outputs', 3),
         ),
     ),
     # Calibration gaps at three central-interval levels.
