@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -16,6 +17,12 @@ CHECKPOINT_KEYS = (
     'selection_score',
     'selection_metric',
     'selection_direction',
+)
+
+NUMPY_SAFE_GLOBALS = (
+    np._core.multiarray.scalar,
+    np.dtype,
+    *(type(np.dtype(value)) for value in np.sctypeDict.values()),
 )
 
 
@@ -59,7 +66,8 @@ def save_checkpoint(
 
 def load_checkpoint(model_path: str | Path) -> dict:
     model_path = Path(model_path)
-    checkpoint = torch.load(f=model_path, map_location='cpu', weights_only=True)
+    with torch.serialization.safe_globals(NUMPY_SAFE_GLOBALS):
+        checkpoint = torch.load(f=model_path, map_location='cpu', weights_only=True)
     if 'run' not in checkpoint:
         raise ValueError(
             f'{model_path} predates stable run identity. Train a new checkpoint with the current '
