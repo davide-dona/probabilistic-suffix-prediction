@@ -1,0 +1,16 @@
+defaults:
+- backbone
+- _self_
+kind: masked_diffusion_transformer
+name: masked_diffusion_transformer
+diffusion:
+  train_steps: 1000
+  sample_steps: 50
+  cosine_offset: 0.008
+  ddim_eta: 1.0
+  continuous_clip: 20.0
+loss:
+  length_weight: 1.0
+  activity_weight: 1.0
+  inter_event_time_weight: 1.0
+  remaining_time_weight: 1.0

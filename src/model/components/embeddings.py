@@ -21,10 +21,17 @@ class EventEmbeddings(nn.Module):
     reading it; nothing here does, so that the encoder's norm and the decoder's stay their own.
     """
 
-    def __init__(self, config: DictConfig, codec: DatasetCodec, *, d_model: int):
+    def __init__(
+        self,
+        config: DictConfig,
+        codec: DatasetCodec,
+        *,
+        d_model: int,
+        extra_activity_rows: int = 0,
+    ):
         super().__init__()
         self.activity_embedding = nn.Embedding(
-            num_embeddings=codec.activity.num_rows,
+            num_embeddings=codec.activity.num_rows + extra_activity_rows,
             embedding_dim=config.activity_dim,
             padding_idx=codec.activity.pad_index,
         )

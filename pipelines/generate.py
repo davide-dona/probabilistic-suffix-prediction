@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 import hydra
@@ -100,8 +102,17 @@ def run(
     )
     # A checkpoint that has been trimmed for publishing still carries both of these.
     trained_step, score = checkpoint.get('step'), checkpoint.get('selection_score')
-    # None for an architecture that reads its heads at their mode, which is what the file records.
+    # Only the head-sampling Transformer exposes an inference-time sampler override.
     drawn_with = config.model.get('sampling')
+    if config.model.kind == 'head_sampling_transformer':
+        sampling_description = f'temperature {drawn_with.temperature}, top_p {drawn_with.top_p}'
+    elif config.model.kind == 'masked_diffusion_transformer':
+        sampling_description = (
+            f'{config.model.diffusion.sample_steps} diffusion steps, '
+            f'DDIM eta {config.model.diffusion.ddim_eta}'
+        )
+    else:
+        sampling_description = 'greedy heads; the draws vary in z alone'
 
     banner(
         'Generating suffixes',
@@ -114,9 +125,7 @@ def run(
             else config.model.name,
             'device': device,
             'samples': f'{config.inference.evaluation_samples} suffixes per prefix',
-            'sampling': f'temperature {drawn_with.temperature}, top_p {drawn_with.top_p}'
-            if drawn_with is not None
-            else 'greedy heads; the draws vary in z alone',
+            'sampling': sampling_description,
             'batch': f'{batch_size} prefixes, {config.dataloader.num_workers} loader workers',
             'generations': path,
         },
@@ -127,7 +136,7 @@ def run(
 
     with step(f'Building the model and moving it onto {device}'):
         model = model_from_checkpoint(checkpoint, codec, device=config.training.device)
-        if drawn_with is not None:
+        if config.model.kind == 'head_sampling_transformer':
             model.decoder.read_with(drawn_with)
         model.eval()
 
@@ -158,6 +167,7 @@ def run(
     codes = ActivityCodes.of(codec.activity.names)
 
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
+    started = time.perf_counter()
     with GenerationWriter(
         path, metadata, vocabulary=codes.vocabulary, sampling=drawn_with
     ) as writer:
@@ -172,7 +182,21 @@ def run(
             # Write the generations to the Parquet file in a single block, one row per prefix.
             writer.write(generations)
 
-    print(f'Wrote generated suffixes to {path}')
+    elapsed = time.perf_counter() - started
+    summary_path = output_path('generation.json')
+    summary_path.write_text(
+        json.dumps(
+            {
+                'seconds': elapsed,
+                'prefixes': len(test_dataset),
+                'samples_per_prefix': config.inference.evaluation_samples,
+                'batches': len(test_loader),
+                'device': str(device),
+            },
+            indent=2,
+        )
+    )
+    print(f'Wrote generated suffixes to {path} in {elapsed:.1f}s; summary at {summary_path}')
 
 
 @hydra.main(version_base='1.3', config_path='../config', config_name='generate')

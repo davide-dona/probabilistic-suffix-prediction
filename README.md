@@ -2,9 +2,9 @@
 
 Conditional suffix generation for predictive process monitoring.
 
-This repository provides two Transformer architectures, a conditional variational autoencoder
-and a Head-sampling Transformer, together with preprocessing, training, inference, evaluation,
-and visualization pipelines.
+This repository provides three Transformer architectures: a conditional variational autoencoder,
+a Head-sampling Transformer, and a length-first masked diffusion Transformer. It also provides
+preprocessing, training, inference, evaluation, and visualization pipelines.
 
 ## Install
 
@@ -43,7 +43,7 @@ uv run python -m pipelines.preprocess --multirun dataset=sepsis,bpic13,bpic17,bp
 
 uv run python -m pipelines.train --multirun \
   dataset=sepsis,bpic13,bpic17,bpic19 \
-  model=transformer_cvae,head_sampling_transformer
+  model=transformer_cvae,head_sampling_transformer,masked_diffusion_transformer
 ```
 
 Generation and evaluation can be queued in the same way by listing their input artifacts:
@@ -84,8 +84,10 @@ Choose the dataset and architecture independently:
 uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
 ```
 
-The available architectures are `transformer_cvae` and `head_sampling_transformer`. Training
-writes the best validation checkpoint to
+The available architectures are `transformer_cvae`, `head_sampling_transformer`, and
+`masked_diffusion_transformer`. The diffusion model predicts suffix length before jointly
+denoising activities, inter-event times, and remaining time. Training writes the best validation
+checkpoint to
 `outputs/train/<dataset>/<model>/<run-id>/best.pt`. Runs cannot be resumed, but an interrupted run
 retains its last successfully saved best checkpoint.
 

@@ -12,6 +12,7 @@ from src.datasets.dataset import SplitTrace
 from src.distributions import Gaussian, Laplace
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
+from src.model.components.diffusion import DenoisingOutput
 from src.training import LatentMetrics, Loss
 
 
@@ -24,15 +25,29 @@ class Latents:
 
 
 @dataclass(frozen=True)
+class DiffusionOutput:
+    """Predictions and sampled corruption targets for one diffusion training pass."""
+
+    denoising: DenoisingOutput
+    length_logits: torch.Tensor  # [batch_size, max_length]
+    activity_targets: torch.Tensor  # [batch_size, seq_len]
+    activity_mask: torch.Tensor  # [batch_size, seq_len]
+    valid_positions: torch.Tensor  # [batch_size, seq_len]
+    inter_event_noise: torch.Tensor  # [batch_size, seq_len]
+    remaining_time_noise: torch.Tensor  # [batch_size]
+
+
+@dataclass(frozen=True)
 class ModelOutput:
     """What one training pass produced, whichever architecture ran it.
 
-    `latents` is the whole of the difference the loss sees: with them the pass is scored by the
-    ELBO, without them by its reconstruction alone.
+    Autoregressive architectures populate `decoder`; the diffusion architecture populates
+    `diffusion`. `latents` is present only where the reconstruction is scored by an ELBO.
     """
 
-    decoder: DecoderOutput
-    latents: Latents | None  # None for a model with no latent
+    decoder: DecoderOutput | None
+    latents: Latents | None
+    diffusion: DiffusionOutput | None = None
 
 
 def _timed_positions(batch: SplitTrace) -> torch.Tensor:
@@ -156,6 +171,9 @@ from src.model.architectures.cvae import TransformerCVAE  # noqa: E402
 from src.model.architectures.head_sampling_transformer import (  # noqa: E402
     HeadSamplingTransformer,
 )
+from src.model.architectures.masked_diffusion_transformer import (  # noqa: E402
+    MaskedDiffusionTransformer,
+)
 
 
 def build_model(config: DictConfig, codec: DatasetCodec) -> SuffixModel:
@@ -171,6 +189,8 @@ def build_model(config: DictConfig, codec: DatasetCodec) -> SuffixModel:
         return TransformerCVAE(config=config, codec=codec)
     if config.kind == 'head_sampling_transformer':
         return HeadSamplingTransformer(config=config, codec=codec)
+    if config.kind == 'masked_diffusion_transformer':
+        return MaskedDiffusionTransformer(config=config, codec=codec)
     raise ValueError(f'Unknown model kind: {config.kind}')
 
 

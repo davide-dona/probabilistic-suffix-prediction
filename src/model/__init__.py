@@ -6,8 +6,10 @@ from src.model.checkpoint import (
     save_checkpoint,
 )
 from src.model.models import (
+    DiffusionOutput,
     HeadSamplingTransformer,
     Latents,
+    MaskedDiffusionTransformer,
     ModelOutput,
     SuffixModel,
     TransformerCVAE,
@@ -17,10 +19,12 @@ from src.model.models import (
 
 __all__ = [
     'CHECKPOINT_KEYS',
+    'DiffusionOutput',
     'Latents',
     'ModelOutput',
     'SuffixModel',
     'HeadSamplingTransformer',
+    'MaskedDiffusionTransformer',
     'TransformerCVAE',
     'build_model',
     'checkpoint_identity',

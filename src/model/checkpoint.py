@@ -74,10 +74,11 @@ def load_checkpoint(model_path: str | Path) -> dict:
     if checkpoint['selection_metric'] != 'energy_score_dls' or model.get('kind') not in (
         'transformer_cvae',
         'head_sampling_transformer',
+        'masked_diffusion_transformer',
     ):
         raise ValueError(
             'Checkpoint uses the legacy metric or model schema. Train a new checkpoint with '
-            'transformer_cvae or head_sampling_transformer.'
+            'transformer_cvae, head_sampling_transformer, or masked_diffusion_transformer.'
         )
     return checkpoint
 

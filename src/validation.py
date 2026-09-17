@@ -74,7 +74,11 @@ def validate_sampling(config: DictConfig) -> None:
 
 def validate_model(model: DictConfig) -> None:
     _model_identifier(model.name, 'model.name')
-    if model.kind not in ('transformer_cvae', 'head_sampling_transformer'):
+    if model.kind not in (
+        'transformer_cvae',
+        'head_sampling_transformer',
+        'masked_diffusion_transformer',
+    ):
         raise ValueError(f'Unknown model kind: {model.kind}')
     _number(model.d_model, 'model.d_model', integer=True)
     for key, value in model.embeddings.items():
@@ -92,12 +96,13 @@ def validate_model(model: DictConfig) -> None:
                     raise ValueError(f'model.{name}.{key} must be below 1')
     _number(model.decoder.head_hidden_dim, 'model.decoder.head_hidden_dim', integer=True)
     if model.kind == 'head_sampling_transformer':
-        if any(key in model for key in ('prior', 'latent', 'loss')):
+        if any(key in model for key in ('prior', 'latent', 'loss', 'diffusion')):
             raise ValueError(
-                'head_sampling_transformer does not accept prior, latent, or loss settings'
+                'head_sampling_transformer does not accept prior, latent, loss, or diffusion '
+                'settings'
             )
         validate_sampling(model.sampling)
-    else:
+    elif model.kind == 'transformer_cvae':
         if 'sampling' in model:
             raise ValueError('transformer_cvae does not accept sampling settings')
         _number(model.latent.latent_dim, 'model.latent.latent_dim', integer=True)
@@ -109,6 +114,45 @@ def validate_model(model: DictConfig) -> None:
         _number(model.loss.kl_annealing_ramp_steps, 'kl_annealing_ramp_steps', integer=True)
         for key in ('kl_annealing_start_weight', 'kl_annealing_full_weight', 'free_bits'):
             _number(model.loss[key], f'model.loss.{key}', inclusive=True)
+    else:
+        if any(key in model for key in ('sampling', 'prior', 'latent')):
+            raise ValueError(
+                'masked_diffusion_transformer does not accept sampling, prior, or latent settings'
+            )
+        diffusion = model.diffusion
+        if set(diffusion) != {
+            'train_steps',
+            'sample_steps',
+            'cosine_offset',
+            'ddim_eta',
+            'continuous_clip',
+        }:
+            raise ValueError(
+                'model.diffusion must contain exactly train_steps, sample_steps, cosine_offset, '
+                'ddim_eta, and continuous_clip'
+            )
+        _number(diffusion.train_steps, 'model.diffusion.train_steps', integer=True)
+        _number(diffusion.sample_steps, 'model.diffusion.sample_steps', integer=True)
+        if diffusion.sample_steps > diffusion.train_steps:
+            raise ValueError('model.diffusion.sample_steps must not exceed train_steps')
+        _number(diffusion.cosine_offset, 'model.diffusion.cosine_offset', inclusive=True)
+        if diffusion.cosine_offset >= 1:
+            raise ValueError('model.diffusion.cosine_offset must be below 1')
+        _number(diffusion.ddim_eta, 'model.diffusion.ddim_eta', inclusive=True)
+        _number(diffusion.continuous_clip, 'model.diffusion.continuous_clip')
+        expected_loss = {
+            'length_weight',
+            'activity_weight',
+            'inter_event_time_weight',
+            'remaining_time_weight',
+        }
+        if set(model.loss) != expected_loss:
+            raise ValueError(
+                'masked diffusion loss must contain exactly length_weight, activity_weight, '
+                'inter_event_time_weight, and remaining_time_weight'
+            )
+        for key in expected_loss:
+            _number(model.loss[key], f'model.loss.{key}')
 
 
 def validate_training(config: DictConfig) -> None:

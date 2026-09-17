@@ -84,11 +84,12 @@ class DecoderOutput:
 
 @dataclass(frozen=True)
 class GeneratedSuffix:
-    """A batch of freely generated suffixes, kept as the raw predictions: EOT and everything
-    after it included, with `lengths` saying where each suffix actually ended.
+    """A batch of freely generated suffixes, kept as raw predictions and explicit lengths.
 
     The leading axes are whatever the caller generated over: `[batch_size, ...]` from
-    `Decoder.generate`, `[batch_size, num_samples, ...]` from `TransformerCVAE.generate`.
+    `Decoder.generate`, `[batch_size, num_samples, ...]` from a model's `generate`. An
+    autoregressive decoder may include EOT and positions after it; a fixed-length generator may
+    contain only content and padding.
     """
 
     activities: torch.Tensor  # [..., steps]
