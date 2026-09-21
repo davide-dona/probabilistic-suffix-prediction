@@ -1,18 +1,15 @@
-from src.evaluation.scores.conformance import ConformanceScores
-from src.evaluation.scores.prediction import (
-    CalibrationScores,
-    PointPredictionScores,
-    SamplePredictionScores,
-    ScoringContext,
-)
+from src.evaluation.scores.activity import ActivityDiagnostics, ActivityScores
+from src.evaluation.scores.conformance import ConformanceDiagnostics, ConformanceScores
+from src.evaluation.scores.context import ScoringContext
+from src.evaluation.scores.suffix_length import SuffixLengthDiagnostics, SuffixLengthScores
+from src.evaluation.scores.time import TimeDiagnostics
 from src.registry import Registry
 from src.scalar_metrics import Metric
 
 # Score families in report order.
 FAMILIES = (
-    PointPredictionScores,
-    SamplePredictionScores,
-    CalibrationScores,
+    ActivityScores,
+    SuffixLengthScores,
     ConformanceScores,
 )
 
@@ -48,9 +45,12 @@ METRICS = Registry[Metric](
 __all__ = [
     'FAMILIES',
     'METRICS',
-    'CalibrationScores',
+    'ActivityDiagnostics',
+    'ActivityScores',
+    'ConformanceDiagnostics',
     'ConformanceScores',
-    'PointPredictionScores',
-    'SamplePredictionScores',
     'ScoringContext',
+    'SuffixLengthDiagnostics',
+    'SuffixLengthScores',
+    'TimeDiagnostics',
 ]

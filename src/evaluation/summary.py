@@ -4,11 +4,14 @@ from typing import Self
 
 from src.evaluation.scores import (
     FAMILIES,
-    CalibrationScores,
+    ActivityDiagnostics,
+    ActivityScores,
+    ConformanceDiagnostics,
     ConformanceScores,
-    PointPredictionScores,
-    SamplePredictionScores,
     ScoringContext,
+    SuffixLengthDiagnostics,
+    SuffixLengthScores,
+    TimeDiagnostics,
 )
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
@@ -20,10 +23,13 @@ class PrefixSummary:
 
     prefix_len: int
     suffix_len: int
-    point: PointPredictionScores
-    sample: SamplePredictionScores
-    calibration: CalibrationScores
+    activity: ActivityScores
+    suffix_length: SuffixLengthScores
     conformance: ConformanceScores
+    activity_diagnostics: ActivityDiagnostics
+    suffix_length_diagnostics: SuffixLengthDiagnostics
+    time_diagnostics: TimeDiagnostics
+    conformance_diagnostics: ConformanceDiagnostics
 
     @classmethod
     def of(
@@ -45,10 +51,13 @@ class PrefixSummary:
         return cls(
             prefix_len=generation.prefix_len,
             suffix_len=len(generation.truth),
-            point=PointPredictionScores.of(context),
-            sample=SamplePredictionScores.of(context),
-            calibration=CalibrationScores.of(context),
+            activity=ActivityScores.of(context),
+            suffix_length=SuffixLengthScores.of(context),
             conformance=ConformanceScores.of(generation, checker=checker),
+            activity_diagnostics=ActivityDiagnostics.of(context),
+            suffix_length_diagnostics=SuffixLengthDiagnostics.of(context),
+            time_diagnostics=TimeDiagnostics.of(context),
+            conformance_diagnostics=ConformanceDiagnostics.of(generation, checker=checker),
         )
 
 
@@ -58,9 +67,8 @@ class LengthSummary:
 
     length: int
     prefixes: int
-    point: PointPredictionScores
-    sample: SamplePredictionScores
-    calibration: CalibrationScores
+    activity: ActivityScores
+    suffix_length: SuffixLengthScores
     conformance: ConformanceScores
 
     @classmethod
@@ -77,9 +85,8 @@ class LengthSummary:
         return cls(
             length=length,
             prefixes=len(prefixes),
-            point=PointPredictionScores.mean([prefix.point for prefix in prefixes]),
-            sample=SamplePredictionScores.mean([prefix.sample for prefix in prefixes]),
-            calibration=CalibrationScores.mean([prefix.calibration for prefix in prefixes]),
+            activity=ActivityScores.mean([prefix.activity for prefix in prefixes]),
+            suffix_length=SuffixLengthScores.mean([prefix.suffix_length for prefix in prefixes]),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in prefixes]),
         )
 
@@ -101,9 +108,8 @@ class EvaluationSummary:
     """Aggregate evaluation scores for one run."""
 
     prefixes: int
-    point: PointPredictionScores
-    sample: SamplePredictionScores
-    calibration: CalibrationScores
+    activity: ActivityScores
+    suffix_length: SuffixLengthScores
     conformance: ConformanceScores
     # Sorted by prefix length.
     by_prefix_length: list[LengthSummary]
@@ -132,10 +138,9 @@ class EvaluationSummary:
         every_prefix = [prefix for bucket in prefix_buckets.values() for prefix in bucket]
         return cls(
             prefixes=len(every_prefix),
-            point=PointPredictionScores.mean([prefix.point for prefix in every_prefix]),
-            sample=SamplePredictionScores.mean([prefix.sample for prefix in every_prefix]),
-            calibration=CalibrationScores.mean(
-                [prefix.calibration for prefix in every_prefix]
+            activity=ActivityScores.mean([prefix.activity for prefix in every_prefix]),
+            suffix_length=SuffixLengthScores.mean(
+                [prefix.suffix_length for prefix in every_prefix]
             ),
             conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
             by_prefix_length=_by_length(prefix_buckets),
@@ -162,9 +167,8 @@ def flatten_scores(summary: Summarized) -> dict[str, float]:
     return {
         name: getattr(family, name)
         for family in (
-            summary.point,
-            summary.sample,
-            summary.calibration,
+            summary.activity,
+            summary.suffix_length,
             summary.conformance,
         )
         for name in _FIELD_NAMES[type(family)]

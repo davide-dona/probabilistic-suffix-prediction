@@ -14,7 +14,7 @@ from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.evaluation.scores import ConformanceScores, SamplePredictionScores
+from src.evaluation.scores import ActivityScores, ConformanceScores
 from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.tuning import (
@@ -84,9 +84,7 @@ def _score(
     summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
     return TuningPoint(
         sampling=OmegaConf.to_container(sampling, resolve=True),
-        score=SamplePredictionScores.mean(
-            [summary.sample for summary in summaries]
-        ).energy_score_dls,
+        score=ActivityScores.mean([summary.activity for summary in summaries]).energy_score_dls,
         conformance_sample_mean=ConformanceScores.mean(
             [summary.conformance for summary in summaries]
         ).conformance_sample_mean,

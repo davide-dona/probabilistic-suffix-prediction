@@ -181,12 +181,12 @@ def train(
                         f'Step {step:>{len(str(training.max_steps))}}/{training.max_steps}  '
                         f'{kl_info}train {train_metrics.loss:.4f}  '
                         f'val {val_metrics.loss:.4f}  '
-                        f'gen_dls {gen_metrics.sample.dls_sample_mean:.4f} mean / '
-                        f'{gen_metrics.point.dls_point:.4f} point  '
-                        f'energy {gen_metrics.sample.energy_score_dls:.4f}',
+                        f'gen_dls {gen_metrics.activity.dls_sample_mean:.4f} mean / '
+                        f'{gen_metrics.activity_diagnostics.dls_point:.4f} point  '
+                        f'energy {gen_metrics.activity.energy_score_dls:.4f}',
                         flush=True,
                     )
-                    selection_score = gen_metrics.sample.energy_score_dls
+                    selection_score = gen_metrics.activity.energy_score_dls
 
                     # Read before `update` folds this score into it, since afterwards it can
                     # no longer tell an improvement from a step that just matched the best.

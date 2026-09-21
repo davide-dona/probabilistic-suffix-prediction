@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
 import torch
@@ -9,15 +9,17 @@ from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import (
-    CalibrationScores,
+    ActivityDiagnostics,
+    ActivityScores,
+    ConformanceDiagnostics,
     ConformanceScores,
-    PointPredictionScores,
-    SamplePredictionScores,
+    SuffixLengthDiagnostics,
+    SuffixLengthScores,
+    TimeDiagnostics,
 )
 from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
-from src.scalar_metrics import Owner
 from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
@@ -26,9 +28,6 @@ from src.visualization.catalogue import TABLES
 if TYPE_CHECKING:
     from src.model import SuffixModel
 
-# Which report table, if any, answers with each metric, read off the same catalogue a figure or a
-# table is composed from: the wandb chart a run is watched on and the paper's own tables read the
-# same grouping by construction. A metric no table holds falls into a namespace of its own.
 _TABLE_OF_METRIC = {entry.key: table.name for table in TABLES for entry in table.columns}
 _DIAGNOSTICS = 'diagnostics'
 
@@ -37,39 +36,42 @@ _DIAGNOSTICS = 'diagnostics'
 class GenerationMetrics:
     """Validation metrics, with energy score averaged over every generated example."""
 
-    point: PointPredictionScores
-    sample: SamplePredictionScores
-    calibration: CalibrationScores
+    activity: ActivityScores
+    suffix_length: SuffixLengthScores
     conformance: ConformanceScores
+    activity_diagnostics: ActivityDiagnostics
+    suffix_length_diagnostics: SuffixLengthDiagnostics
+    time_diagnostics: TimeDiagnostics
+    conformance_diagnostics: ConformanceDiagnostics
 
     def log(self, step: int) -> None:
-        """Log every model-owned score to the active W&B run, namespaced by the report table it
-        answers (`point-prediction`, `sample-prediction`, `calibration`) or `diagnostics` for the
-        ones no table holds.
-
-        A log-owned field is a property of the fixed slice this run generates for, so it is
-        dropped here rather than logged as a flat line.
+        """Log scores by table and diagnostics by source field.
 
         Args:
             step: The training step this pass scores.
         """
-        # Conformance has no report table of its own (`visualization.md`: a whole-split mean says
-        # nothing a reader can act on there, so it is drawn by length instead), but it is still one
-        # of the two goals a run is judged on, so it keeps a namespace of its own rather than
-        # falling into `diagnostics` beside unrelated per-run diagnostics.
         families = (
-            (self.point, None),
-            (self.sample, None),
-            (self.calibration, None),
+            (self.activity, None),
+            (self.suffix_length, None),
             (self.conformance, 'conformance'),
         )
         payload = {}
         for family, table_namespace in families:
             for declaration in type(family).metrics():
-                if declaration.owner is Owner.LOG:
-                    continue
                 namespace = table_namespace or _TABLE_OF_METRIC.get(declaration.key, _DIAGNOSTICS)
                 payload[f'{namespace}/{declaration.key}'] = getattr(family, declaration.key)
+        for field, diagnostics in (
+            ('activity', self.activity_diagnostics),
+            ('suffix-length', self.suffix_length_diagnostics),
+            ('time', self.time_diagnostics),
+            ('conformance', self.conformance_diagnostics),
+        ):
+            payload.update(
+                {
+                    f'{_DIAGNOSTICS}/{field}/{name}': value
+                    for name, value in asdict(diagnostics).items()
+                }
+            )
         wandb.log(payload, step=step)
 
 
@@ -158,8 +160,17 @@ def validate_generation(
         raise ValueError('Validation generation subset is empty')
     summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
     return GenerationMetrics(
-        point=PointPredictionScores.mean([summary.point for summary in summaries]),
-        sample=SamplePredictionScores.mean([summary.sample for summary in summaries]),
-        calibration=CalibrationScores.mean([summary.calibration for summary in summaries]),
+        activity=ActivityScores.mean([summary.activity for summary in summaries]),
+        suffix_length=SuffixLengthScores.mean([summary.suffix_length for summary in summaries]),
         conformance=ConformanceScores.mean([summary.conformance for summary in summaries]),
+        activity_diagnostics=ActivityDiagnostics.mean(
+            [summary.activity_diagnostics for summary in summaries]
+        ),
+        suffix_length_diagnostics=SuffixLengthDiagnostics.mean(
+            [summary.suffix_length_diagnostics for summary in summaries]
+        ),
+        time_diagnostics=TimeDiagnostics.mean([summary.time_diagnostics for summary in summaries]),
+        conformance_diagnostics=ConformanceDiagnostics.mean(
+            [summary.conformance_diagnostics for summary in summaries]
+        ),
     )
