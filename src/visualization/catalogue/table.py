@@ -47,19 +47,6 @@ class Table:
 
 # Each table answers one evaluation question with directional metrics.
 TABLES = (
-    # Point prediction against the observed suffix.
-    Table(
-        name='point-prediction',
-        axis=Axis.OVERALL,
-        note='Means weight every prefix equally. Timestamp suffix MAE is computed over the '
-        'inter-event durations of the observed suffix; length is in events and times are in days.',
-        columns=(
-            MetricEntry(METRICS['dls_point'], 'DLS'),
-            MetricEntry(METRICS['suffix_length_ae_point'], 'Suffix length MAE'),
-            MetricEntry(METRICS['inter_event_time_ae_point_days'], 'Timestamp suffix MAE'),
-            MetricEntry(METRICS['remaining_time_ae_point_days'], 'Remaining time MAE'),
-        ),
-    ),
     # The samples themselves against the one continuation the log took.
     Table(
         name='sample-prediction',
@@ -79,6 +66,7 @@ TABLES = (
             MetricEntry(METRICS['energy_score_exact'], 'ES (exact)'),
             MetricEntry(METRICS['energy_score_bigram'], 'ES (bigram)'),
             MetricEntry(METRICS['suffix_length_crps'], 'Suffix length CRPS'),
+            MetricEntry(METRICS['suffix_length_mae'], 'Suffix length MAE'),
             MetricEntry(METRICS['inter_event_time_crps_days'], 'Timestamp suffix CRPS'),
             MetricEntry(METRICS['remaining_time_crps_days'], 'Remaining time CRPS'),
         ),

@@ -23,9 +23,9 @@ MODELS = Registry[ModelStyle](
     kind='model',
     where='MODELS in src/visualization/labels/models.py',
     entries={
-        'transformer_cvae': ModelStyle(label='CVAE', color='#3B7EA1', marker='*', linestyle='-'),
+        'transformer_cvae': ModelStyle(label='SuTraN-VAE', color='#3B7EA1', marker='*', linestyle='-'),
         'head_sampling_transformer': ModelStyle(
-            label='Transformer', color='#A05A4B', marker='D', linestyle=':'
+            label='SuTraN-PH', color='#A05A4B', marker='D', linestyle=':'
         ),
         'u_ed_lstm': ModelStyle(label='U-ED-LSTM', color='#7A4E97', marker='s', linestyle='--'),
     },

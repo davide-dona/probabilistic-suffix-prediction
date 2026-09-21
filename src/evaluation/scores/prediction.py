@@ -101,6 +101,7 @@ class SamplePredictionScores(ScalarMetrics):
     energy_score_exact: float = metric(unit=Unit.SCORE, direction=Direction.LOWER)
     energy_score_bigram: float = metric(unit=Unit.SCORE, direction=Direction.LOWER)
     suffix_length_crps: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
+    suffix_length_mae: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
     remaining_time_crps_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
     inter_event_time_crps_days: float = metric(unit=Unit.DAYS, direction=Direction.LOWER)
 
@@ -133,6 +134,7 @@ class SamplePredictionScores(ScalarMetrics):
                 metric=SuffixMetric.BIGRAM,
             ),
             suffix_length_crps=crps(context.suffix_lengths, context.true_suffix_length),
+            suffix_length_mae=mae(context.suffix_lengths, context.true_suffix_length),
             remaining_time_crps_days=crps(
                 context.remaining_times, context.true_remaining_time
             )
@@ -209,6 +211,14 @@ def crps(draws: np.ndarray, truth: np.ndarray) -> float:
     ranks = np.arange(count, dtype=np.float64)[:, None]
     spread = ((2.0 * ranks - count + 1.0) * ordered).sum(axis=0)
     return float((accuracy - spread / (count * (count - 1.0))).mean())
+
+
+def mae(draws: np.ndarray, truth: np.ndarray) -> float:
+    """Return mean absolute error over draws and predicted quantities."""
+    count, columns = draws.shape
+    if count == 0 or columns == 0:
+        return 0.0
+    return float(np.abs(draws - truth).mean())
 
 
 def coverage_gap(draws: np.ndarray, truth: np.ndarray, *, level: float) -> float:
