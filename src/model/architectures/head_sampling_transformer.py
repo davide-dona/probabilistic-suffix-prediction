@@ -131,7 +131,8 @@ class HeadSamplingTransformer(SuffixModel):
         emitted, reported beside it so the two arms' curves are read against each other on the
         error alone.
         """
-        batch_size = batch.suffix.activities.size(0)
+        valid_mask = batch.suffix.activities != self.pad_activity_index
+        num_valid = valid_mask.sum().clamp(min=1)  # avoid div-by-zero on empty batches
 
         activity_loss = F.cross_entropy(
             input=output.decoder.activity_logits.transpose(1, 2),
@@ -154,12 +155,12 @@ class HeadSamplingTransformer(SuffixModel):
         reconstruction_loss = activity_loss + inter_event_time_loss + remaining_time_loss
 
         metrics = Loss(
-            loss=reconstruction_loss.item(),
-            reconstruction_loss=reconstruction_loss.item(),
-            activity_loss=activity_loss.item(),
-            inter_event_time_loss=inter_event_time_loss.item(),
-            remaining_time_loss=remaining_time_loss.item(),
+            loss=(reconstruction_loss / num_valid).item(),
+            reconstruction_loss=(reconstruction_loss / num_valid).item(),
+            activity_loss=(activity_loss / num_valid).item(),
+            inter_event_time_loss=(inter_event_time_loss / num_valid).item(),
+            remaining_time_loss=(remaining_time_loss / num_valid).item(),
             inter_event_time_scale_loss=inter_event_time_scale.item(),
             remaining_time_scale_loss=remaining_time_scale.item(),
         )
-        return reconstruction_loss / batch_size, metrics, None
+        return reconstruction_loss / num_valid, metrics, None
