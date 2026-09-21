@@ -1,5 +1,3 @@
-"""Portable artifact provenance and Arrow metadata."""
-
 import hashlib
 import json
 from collections.abc import Iterable, Sequence

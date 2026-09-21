@@ -1,5 +1,3 @@
-"""Self-contained inference checkpoints, atomically replaced on improvement."""
-
 from collections.abc import Iterable
 from pathlib import Path
 

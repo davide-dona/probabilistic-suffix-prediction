@@ -1,5 +1,3 @@
-"""Semantic checks at dataset, model, and training boundaries."""
-
 import math
 import re
 

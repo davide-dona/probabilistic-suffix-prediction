@@ -22,7 +22,6 @@ FIGURES = (
         panels=(
             (
                 MetricEntry(METRICS['conformance_sample_mean'], 'Conformance (sample mean)'),
-                MetricEntry(METRICS['conformance_observed'], 'Conformance (observed)'),
             ),
         ),
     ),

@@ -58,7 +58,7 @@ class MetricEntry:
 
     @property
     def table_header(self) -> str:
-        """Return a unitless LaTex table header with an optimization marker.
+        """Return a table header with the optimization marker.
 
         Returns:
             Formatted LaTex header.
@@ -94,8 +94,8 @@ _AXIS_ARROWS = {
     Direction.NONE: '',
 }
 _TABLE_ARROWS = {
-    Direction.HIGHER: r'~$\uparrow$',
-    Direction.LOWER: r'~$\downarrow$',
-    Direction.ZERO: r'~$\rightarrow 0$',
+    Direction.HIGHER: r' ($\uparrow$)',
+    Direction.LOWER: r' ($\downarrow$)',
+    Direction.ZERO: r' ($\rightarrow 0$)',
     Direction.NONE: '',
 }

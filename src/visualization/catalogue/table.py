@@ -20,7 +20,7 @@ class Table:
 
     name: str
     axis: Axis
-    note: str
+    note: str | None
     columns: tuple[MetricEntry, ...]
     column_groups: tuple[ColumnGroup, ...] = ()
 
@@ -47,53 +47,30 @@ class Table:
 
 # Each table answers one evaluation question with directional metrics.
 TABLES = (
-    # The samples themselves against the one continuation the log took.
     Table(
         name='sample-prediction',
         axis=Axis.OVERALL,
-        note="An energy score is E d(X, y) - 0.5 E d(X, X') over the samples, CRPS generalized "
-        'off the real line, which charges the spread against the accuracy it buys where the '
-        'sampled DL similarity beside it is won by putting every sample on one suffix. Exact is '
-        '1 for any '
-        'two suffixes that are not the same and bigram is the multiset Jaccard distance over the '
-        'ordered activity pairs a suffix holds; both are of negative type, so both are proper. '
-        'Normalized Damerau-Levenshtein distance is 1 minus the similarity, and is not of negative '
-        'type, so its column is the distance counterpart of the similarity beside it rather than a '
-        'proper score.',
+        note=None,
         columns=(
-            MetricEntry(METRICS['dls_sample_mean'], 'DLS (sample mean)'),
-            MetricEntry(METRICS['energy_score_dls'], 'ES (DLD)'),
-            MetricEntry(METRICS['energy_score_exact'], 'ES (exact)'),
-            MetricEntry(METRICS['energy_score_bigram'], 'ES (bigram)'),
+            MetricEntry(METRICS['dls_sample_mean'], 'DLS mean'),
+            MetricEntry(METRICS['energy_score_dls'], r'$ES_{\mathrm{DL}}$'),
+            MetricEntry(METRICS['energy_score_exact'], r'$ES_{\mathrm{exact}}$'),
+            MetricEntry(METRICS['energy_score_bigram'], r'$ES_{\mathrm{2-\text{gram}}}$'),
+            MetricEntry(METRICS['suffix_length_mae'], 'Suffix length mean'),
             MetricEntry(METRICS['suffix_length_crps'], 'Suffix length CRPS'),
-            MetricEntry(METRICS['suffix_length_mae'], 'Suffix length MAE'),
-            MetricEntry(METRICS['inter_event_time_crps_days'], 'Timestamp suffix CRPS'),
-            MetricEntry(METRICS['remaining_time_crps_days'], 'Remaining time CRPS'),
         ),
     ),
-    # Calibration gaps at three central-interval levels.
     Table(
         name='calibration',
         axis=Axis.OVERALL,
-        note="Each cell is the empirical coverage of the samples' central interval less the level "
-        'it covers, so 0 is calibrated, negative over-confident and positive over-dispersed. An '
-        'interval read off a finite sample is narrow, which costs a calibrated model a point or '
-        'two on every column.',
+        note=None,
         columns=(
             MetricEntry(METRICS['suffix_length_coverage_gap_50'], r'50\%'),
             MetricEntry(METRICS['suffix_length_coverage_gap_75'], r'75\%'),
             MetricEntry(METRICS['suffix_length_coverage_gap_95'], r'95\%'),
-            MetricEntry(METRICS['inter_event_time_coverage_gap_50'], r'50\%'),
-            MetricEntry(METRICS['inter_event_time_coverage_gap_75'], r'75\%'),
-            MetricEntry(METRICS['inter_event_time_coverage_gap_95'], r'95\%'),
-            MetricEntry(METRICS['remaining_time_coverage_gap_50'], r'50\%'),
-            MetricEntry(METRICS['remaining_time_coverage_gap_75'], r'75\%'),
-            MetricEntry(METRICS['remaining_time_coverage_gap_95'], r'95\%'),
         ),
         column_groups=(
             ColumnGroup('Suffix length', 3),
-            ColumnGroup('Timestamp suffix', 3),
-            ColumnGroup('Remaining time', 3),
         ),
     ),
 )

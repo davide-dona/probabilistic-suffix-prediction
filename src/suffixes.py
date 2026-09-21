@@ -19,21 +19,12 @@ _END = '\x03'
 
 
 class SuffixMetric(StrEnum):
-    """How far apart two suffixes are held to be.
-
-    Three, because each charges for a different kind of wrongness. `DLD` is graded on positions, so
-    a suffix one edit from another scores better than one sharing nothing with it. `EXACT` reads a
-    suffix as an atom and charges the same for a near miss as for a wrong answer. `BIGRAM` charges
-    for the ordered pairs a suffix holds and how many times it holds each, which is the ordering
-    and the loop counts a process constrains rather than the positions they fell at.
-
-    All three run over `[0, 1]`, so a score reading one of them reads them all on one scale. They
-    do not all make `energy_score` proper, though, which needs a distance of negative type:
-    `EXACT` is the discrete metric and `BIGRAM` the Jaccard distance, both of which are, and
-    neither violates it on any draw set measured. `DLD` is a normalized edit distance and is not
-    of negative type. It is reported because it is the scale the rest of the project reads on and
-    because it is the distance complement of `dls_sample_mean`, not because it settles the
-    question the other two settle.
+    """How far apart two suffixes are held to be. Each charges for a different kind of wrongness: 
+    - `DLD` is graded on positions, so a suffix one edit from another scores better than one 
+    sharing nothing with it. 
+    - `EXACT` reads a suffix as an atom and charges the same for a near miss as for a wrong answer. 
+    - `BIGRAM` charges for the ordered pairs a suffix holds and how many times it holds each, which 
+    is the ordering and the loop counts a process constrains rather than the positions they fell at.
     """
 
     DLD = 'dld'  # Normalized Damerau-Levenshtein distance
@@ -43,9 +34,8 @@ class SuffixMetric(StrEnum):
 
 @dataclass(slots=True)
 class ActivityCodes:
-    """Map each activity name to a character. A suffix becomes a string, rather than a sequence of
-    objects, making it cheaper to hold and cheaper to measure against another.
-    """
+    """Map each activity name to a single character. Transforms a suffix of activity names into
+    a string of characters, reducing the cost of edit-distance calculations"""
 
     _codes: dict[str, str] = field(default_factory=dict)
 
@@ -68,13 +58,7 @@ class ActivityCodes:
 
     @property
     def codes(self) -> Mapping[str, str]:
-        """Each activity name to the character it is spelled with, read-only.
-
-        For a caller that has to look a name up without handing out a code to one it has never
-        seen, which `encode` would: a constraint naming an activity the log never ran must stay
-        unmatchable rather than quietly joining the codebook and desyncing it from the file it was
-        seeded from.
-        """
+        """Each activity name to the character it is spelled with, read-only."""
         return MappingProxyType(self._codes)
 
     def encode(self, activities: Sequence[str]) -> str:
@@ -111,16 +95,11 @@ def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable])
 def bigrams(sequence: Sequence[Hashable]) -> Counter[tuple[Hashable, Hashable]]:
     """The ordered pairs a sequence holds, and how many times it holds each.
 
-    Padded at both ends, so a sequence of `n` elements yields `n + 1` pairs rather than `n - 1`.
-    Without the padding a sequence of one element would hold no pair at all and so would sit at
-    distance 0 from every other sequence of one, and the empty sequence would sit at distance 0
-    from itself and from nothing else measurably.
+    Padded at both ends, so a sequence of `n` elements yields `n + 1` pairs.
+    Without the padding sequences of zero or one element would break the distance calculation.
 
     Args:
-        sequence: An encoded suffix, where an element is a character, or a list of raw activity
-            names, where it is a name. Neither sentinel can collide with an activity: both sit
-            below the private use area `ActivityCodes` draws from, and a raw name is a string of
-            more than one character.
+        sequence: An encoded suffix, where an element is a character.
     Returns:
         Each pair to the number of times it occurs. Never empty: the empty sequence yields the one
         pair the two sentinels make.
@@ -161,14 +140,8 @@ def _bigram_distances(
 ) -> np.ndarray:
     """Measure every pair on the multiset Jaccard distance over their bigrams.
 
-    `1 - |A n B| / |A u B|` on multisets, so a pair occurring twice in one sequence and once in the
-    other is shared once and unioned twice: the loop counts a process constrains are charged for
-    where a set of bigrams would flatten them.
-
-    Read off the L1 distance between the two count vectors rather than by walking the pairs.
-    `sum(min(a, b))` is `(|A| + |B| - L1) / 2` for counts, which puts the union at
-    `(|A| + |B| + L1) / 2` and the whole distance at `2 * L1 / (|A| + |B| + L1)`: one call into
-    C rather than a Python row at a time.
+    `1 - |A n B| / |A u B|` on multisets, which is 0.0 for two sequences holding the 
+    same pairs as often as each other, up to 1.0 for two sharing none.
 
     Args:
         queries: The sequences to measure, one row each.
@@ -201,10 +174,6 @@ def distances(
     dtype: type[np.floating] = np.float32,
 ) -> np.ndarray:
     """Measure every sequence of one set against every sequence of another.
-
-    Every caller is already inside the evaluation's process pool, so the pairs are walked on the
-    calling thread: a thread per core per process would oversubscribe the machine.
-
     Args:
         queries: The sequences to measure, one row each. Either encoded suffixes, where a sequence
             is a string, or raw activity names, where it is a list of them.
@@ -286,15 +255,11 @@ def energy_score(
     weights: Sequence[float] | None = None,
     metric: SuffixMetric = SuffixMetric.DLD,
 ) -> float:
-    """`E[d(X, y)] - 0.5 * E[d(X, X')]` over a set of draws, in `[-0.5, 1]`.
+    """ The energy score of a set of draws, which is defined as:
+    `E[d(X, y)] - 0.5 * E[d(X, X')]` where `X` and `X'` are two draws from the set and `y` is the truth.
 
-    CRPS generalized off the real line. Averaged over the observations, a forecast `p` sits
-    `-0.5 * (p - q)' D (p - q)` from the score the truth `q` gets, so the truth wins exactly when
-    the distance is of negative type, which `SuffixMetric` records for each of the three. Where it
-    holds, the score is not won by putting every draw on one sequence the way a mean distance to a
-    single observation is: collapsing takes the second term to 0 and leaves the first, which a
-    spread that covers the truth beats. It is exactly `d(X, y)` where the draws are one value,
-    which is the same relation `crps` has with an absolute error.
+    The first term is the mean distance of a draw to the truth, and the second term is the mean
+    distance between two draws.
 
     Args:
         sequences: The distinct sequences drawn, either encoded suffixes or raw activity names.
