@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, Subset
 
 from src.datasets.codec import DatasetCodec
-from src.logs import CASE_KEY, MIN_PREFIX_KEY, Split, read_log
+from src.logs import CASE_KEY, MIN_PREFIX_KEY, Split
 
 
 class Events(NamedTuple):
@@ -141,7 +141,7 @@ class TraceDataset(Dataset):
 
         # Read the split and encode it whole: the same work done per event in `__getitem__`
         # would be repeated for every cut point of every case.
-        split_dataset = _read_split(codec, split=split)
+        split_dataset = codec.read_split(split)
 
         events = _encode_events(codec, split_dataset)
         remaining_times = torch.from_numpy(codec.remaining_time.encode(split_dataset))
@@ -250,21 +250,6 @@ def fixed_subset(dataset: Dataset, *, size: int, generator: torch.Generator) -> 
     return Subset(dataset=dataset, indices=indices.tolist())
 
 
-def _read_split(codec: DatasetCodec, *, split: Split) -> pd.DataFrame:
-    """Read one preprocessed split, returning it as a DataFrame.
-
-    Args:
-        codec: The dataset codec, naming where the split is and every categorical channel's
-            column.
-        split: Which of the three to read.
-    Returns:
-        The split, one row per event.
-    """
-    categorical = (codec.activity, codec.resource, *codec.categorical_features)
-    text_columns = {CASE_KEY: str} | {column.column: str for column in categorical}
-    return read_log(codec.split_path(split), dtype=text_columns)
-
-
 def _encode_events(codec: DatasetCodec, log: pd.DataFrame) -> Events:
     """Map a run of raw events to the indices and normalized floats the model consumes.
 
@@ -279,65 +264,17 @@ def _encode_events(codec: DatasetCodec, log: pd.DataFrame) -> Events:
         The same events as vocabulary indices and normalized channels, unpadded, so every one of
         them counts towards `length`.
     """
-    numeric_attributes, numeric_attributes_present = _encode_numeric_attributes(codec, log)
+    numeric_attributes, numeric_attributes_present = codec.encode_numeric_features(log)
     return Events(
         # `torch.tensor` rather than `from_numpy`: pandas hands back a read-only view of its
         # own block for some dtypes, which torch would wrap rather than copy.
         activities=torch.tensor(data=codec.activity.encode(log), dtype=torch.long),
         resources=torch.tensor(data=codec.resource.encode(log), dtype=torch.long),
         inter_event_times=torch.from_numpy(codec.inter_event_time.encode(log)),
-        categorical_attributes=_encode_categorical_attributes(codec, log),
+        categorical_attributes=codec.encode_categorical_features(log),
         numeric_attributes=numeric_attributes,
         numeric_attributes_present=numeric_attributes_present,
         length=torch.tensor(data=len(log), dtype=torch.long),
-    )
-
-
-def _encode_categorical_attributes(codec: DatasetCodec, log: pd.DataFrame) -> torch.Tensor:
-    """Every categorical attribute channel of a run of events, packed into one index array.
-
-    Args:
-        codec: The dataset's codec, holding the feature channels and their blocks of the shared
-            table.
-        log: The events as a preprocessed split holds them, so a gap in a channel already carries
-            the missing token preprocessing gave it.
-    Returns:
-        `[len(log), num_categorical]` of rows of the shared embedding table.
-    """
-    if not codec.categorical_features:
-        return torch.zeros(size=(len(log), 0), dtype=torch.long)
-    return torch.stack(
-        tensors=[
-            torch.tensor(data=feature.encode(log), dtype=torch.long)
-            for feature in codec.categorical_features
-        ],
-        dim=1,
-    )
-
-
-def _encode_numeric_attributes(
-    codec: DatasetCodec, log: pd.DataFrame
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Every numeric attribute channel's normalized value, and the flag saying it was there.
-
-    Args:
-        codec: The dataset's codec, holding the feature channels and their ranges.
-        log: The events as rows of the log.
-    Returns:
-        The values and the flags, `[len(log), num_numeric]` each.
-    """
-    if not codec.numeric_features:
-        empty = torch.zeros(size=(len(log), 0), dtype=torch.float32)
-        return empty, empty.clone()
-    return (
-        torch.stack(
-            tensors=[torch.from_numpy(feature.encode(log)) for feature in codec.numeric_features],
-            dim=1,
-        ),
-        torch.stack(
-            tensors=[torch.from_numpy(feature.present(log)) for feature in codec.numeric_features],
-            dim=1,
-        ),
     )
 
 

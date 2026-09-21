@@ -76,10 +76,10 @@ def validate_training(config: DictConfig) -> None:
         raise ValueError('wandb.mode must be online, offline, or disabled')
 
 
-def validate_generation(
+def validate_generation_request(
     config: DictConfig, *, tuning: Path | None, sampling: DictConfig | None
 ) -> None:
-    """Validate effective generation configuration and optional sampler overrides.
+    """Validate optional generation sampler overrides before reading a tuning report.
 
     A tuning report and direct sampler are mutually exclusive. Direct sampler overrides are
     available only to the head-sampling Transformer.
@@ -94,6 +94,9 @@ def validate_generation(
     if has_sampling_override and config.model.kind != 'head_sampling_transformer':
         raise ValueError('Only head_sampling_transformer supports sampling overrides')
 
+
+def validate_generation(config: DictConfig) -> None:
+    """Validate the effective generation configuration after applying all overrides."""
     validate_training(config)
 
 

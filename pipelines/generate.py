@@ -20,7 +20,7 @@ from src.inference.tuning import TuningReport
 from src.logs import Split
 from src.model import checkpoint_identity, load_checkpoint, model_from_checkpoint
 from src.runtime import output_path, save_config, start_stage
-from src.validation import validate_generation
+from src.validation import validate_generation, validate_generation_request
 
 
 def run(
@@ -59,7 +59,7 @@ def run(
         **run.as_dict(),
         'checkpoint_sha256': sha256(checkpoint_path),
     }
-    requested_sampling = sampling
+    # Start with the config stored in the checkpoint and apply runtime overrides.
     config = OmegaConf.create(checkpoint['config'])
     if device is not None:
         config.training.device = device
@@ -67,12 +67,16 @@ def run(
         config.inference.evaluation_samples = num_samples
     if num_workers is not None:
         config.dataloader.num_workers = num_workers
-    validate_generation(config, tuning=tuning, sampling=requested_sampling)
+    # Check the requested sampler before loading a tuning report.
+    validate_generation_request(config, tuning=tuning, sampling=sampling)
+    # Use the sampler selected for this checkpoint when a tuning report is given.
     if tuning is not None:
         sampling = TuningReport.read(tuning).sampling_for(run, metadata['checkpoint_sha256'])
     if sampling is not None:
         config.model.sampling = sampling
-    validate_generation(config, tuning=None, sampling=None)
+    # Check the final config after the selected sampler has been applied.
+    validate_generation(config)
+    # Record the exact settings used for this generation run.
     save_config(
         OmegaConf.create(
             {
