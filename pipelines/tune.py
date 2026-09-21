@@ -32,7 +32,7 @@ from src.model import (
 )
 from src.runtime import output_path, save_config, start_stage
 from src.suffixes import ActivityCodes
-from src.validation import validate_sampling, validate_training
+from src.validation import validate_tuning
 
 
 @torch.no_grad()
@@ -132,7 +132,7 @@ def run(
         config.training.generation_pairs = pairs
     if samples is not None:
         config.inference.validation_samples = samples
-    validate_training(config)
+    validate_tuning(config, temperatures=temperatures, top_ps=top_ps)
     save_config(
         OmegaConf.create(
             {
@@ -156,11 +156,6 @@ def run(
         OmegaConf.create({'temperature': temperature, 'top_p': top_p})
         for temperature, top_p in itertools.product(temperatures, top_ps)
     ]
-
-    if not grid:
-        raise ValueError('Sampler grid cannot be empty')
-    for sampling in grid:
-        validate_sampling(sampling)
 
     banner(
         'Tuning the sampler',

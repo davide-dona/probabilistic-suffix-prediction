@@ -20,7 +20,7 @@ from src.logs import Split
 from src.model import checkpoint_identity, load_checkpoint, model_from_checkpoint
 from src.runtime import output_path, save_config, start_stage
 from src.suffixes import ActivityCodes
-from src.validation import validate_sampling, validate_training
+from src.validation import validate_generation
 
 
 def run(
@@ -59,10 +59,7 @@ def run(
         **run.as_dict(),
         'checkpoint_sha256': sha256(checkpoint_path),
     }
-    if tuning is not None and sampling is not None:
-        raise ValueError('Choose either tuning or sampling overrides')
-    if tuning is not None:
-        sampling = TuningReport.read(tuning).sampling_for(run, metadata['checkpoint_sha256'])
+    requested_sampling = sampling
     config = OmegaConf.create(checkpoint['config'])
     if device is not None:
         config.training.device = device
@@ -70,12 +67,12 @@ def run(
         config.inference.evaluation_samples = num_samples
     if num_workers is not None:
         config.dataloader.num_workers = num_workers
+    validate_generation(config, tuning=tuning, sampling=requested_sampling)
+    if tuning is not None:
+        sampling = TuningReport.read(tuning).sampling_for(run, metadata['checkpoint_sha256'])
     if sampling is not None:
-        if config.model.kind != 'head_sampling_transformer':
-            raise ValueError('Only head_sampling_transformer supports sampling overrides')
-        validate_sampling(sampling)
         config.model.sampling = sampling
-    validate_training(config)
+    validate_generation(config, tuning=None, sampling=None)
     save_config(
         OmegaConf.create(
             {

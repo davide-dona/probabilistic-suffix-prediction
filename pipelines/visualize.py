@@ -11,6 +11,7 @@ from src.cli import banner, step
 from src.evaluation import read_reports
 from src.runtime import output_path, start_stage
 from src.uncertainty import test_significance
+from src.validation import validate_visualization
 from src.visualization import (
     FIGURES,
     TABLES,
@@ -110,8 +111,7 @@ def run(evaluation_files: Sequence[Path]) -> None:
 @hydra.main(version_base='1.3', config_path='../config', config_name='visualize')
 def main(cfg: DictConfig) -> None:
     start_stage(cfg)
-    if bool(cfg.evaluations) == bool(cfg.evaluations_dir):
-        raise ValueError('Provide evaluations or evaluations_dir, exclusively')
+    validate_visualization(evaluations=cfg.evaluations, evaluations_dir=cfg.evaluations_dir)
     files = [Path(path) for path in cfg.evaluations]
     if cfg.evaluations_dir:
         files = sorted(

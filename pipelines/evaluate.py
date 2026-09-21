@@ -17,6 +17,7 @@ from src.inference.generation_store import Generations
 from src.logs.declare import ConformanceChecker, discovery_settings
 from src.runtime import output_path, start_stage
 from src.suffixes import ActivityCodes
+from src.validation import validate_evaluation
 
 
 @dataclass(frozen=True)
@@ -123,8 +124,6 @@ def run(generations_file: Path, workers: int | None) -> None:
         keys = generations.prefix_keys()
 
     metadata = metadata | {'source_sha256': sha256(generations_file)}
-    if workers is not None and (not isinstance(workers, int) or workers < 1):
-        raise ValueError('workers must be a positive integer')
     if prefixes == 0:
         raise ValueError('Cannot evaluate an empty generations file')
 
@@ -197,6 +196,7 @@ def run(generations_file: Path, workers: int | None) -> None:
 @hydra.main(version_base='1.3', config_path='../config', config_name='evaluate')
 def main(cfg: DictConfig) -> None:
     start_stage(cfg)
+    validate_evaluation(workers=cfg.workers)
     run(Path(cfg.generations), cfg.workers)
 
 

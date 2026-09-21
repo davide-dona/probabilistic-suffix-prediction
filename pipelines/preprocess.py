@@ -39,7 +39,7 @@ from src.logs.preprocessing import (
     sort_log,
 )
 from src.runtime import start_stage
-from src.validation import validate_data, validate_declare
+from src.validation import validate_preprocess
 
 
 def case_length_cutoff(log: pd.DataFrame, *, data_config: DictConfig) -> int:
@@ -252,8 +252,7 @@ def run(data_config: DictConfig, declare_config: DictConfig) -> None:
 @hydra.main(version_base='1.3', config_path='../config', config_name='preprocess')
 def main(cfg: DictConfig) -> None:
     start_stage(cfg)
-    validate_data(cfg.data)
-    validate_declare(cfg.declare)
+    validate_preprocess(cfg)
     run(data_config=cfg.data, declare_config=cfg.declare)
 
 
