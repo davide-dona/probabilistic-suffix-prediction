@@ -12,7 +12,7 @@ class DecodedEvents:
     # One character per activity, on the dataset's own scale: the codebook seeded from
     # `codec.activity.names`, whose vocabulary the generations file carries in its metadata. Held
     # as a string rather than a list of names so a suffix is one object to compare, to hash and to
-    # store, which is what `src/suffixes.py` measures edit distances over.
+    # store, which is what the evaluation metrics measure edit distances over.
     activities: str
     # The minutes of inter-event time before each activity, in the same order, so a run's
     # timestamps are these accumulated from the last prefix event on.

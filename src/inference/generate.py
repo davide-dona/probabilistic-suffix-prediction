@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from omegaconf import DictConfig
 
+from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import SplitTrace
 from src.inference.generation import DecodedEvents, Draws, Generation
-from src.suffixes import ActivityCodes
 
 if TYPE_CHECKING:
     from src.model import SuffixModel

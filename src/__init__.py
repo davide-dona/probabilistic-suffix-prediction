@@ -1,3 +1,4 @@
+from src.activity_codes import ActivityCodes
 from src.registry import Registry
 from src.scalar_metrics import (
     Direction,
@@ -10,7 +11,6 @@ from src.scalar_metrics import (
     metrics_of,
     oriented,
 )
-from src.suffixes import ActivityCodes, distances, diversity, sequence_similarity
 
 __all__ = [
     'ActivityCodes',
@@ -20,11 +20,8 @@ __all__ = [
     'Registry',
     'ScalarMetrics',
     'Unit',
-    'distances',
     'mean',
     'metric',
     'metrics_of',
     'oriented',
-    'sequence_similarity',
-    'diversity',
 ]

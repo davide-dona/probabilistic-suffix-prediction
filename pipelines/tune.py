@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
+from src.activity_codes import ActivityCodes
 from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
@@ -31,7 +32,6 @@ from src.model import (
     model_from_checkpoint,
 )
 from src.runtime import output_path, save_config, start_stage
-from src.suffixes import ActivityCodes
 from src.validation import validate_tuning
 
 

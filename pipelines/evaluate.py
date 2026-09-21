@@ -10,13 +10,13 @@ from omegaconf import DictConfig
 from tqdm import tqdm
 
 from src import paths
+from src.activity_codes import ActivityCodes
 from src.artifacts import sha256
 from src.cli import banner, duration, step
 from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
 from src.inference.generation_store import Generations
 from src.logs.declare import ConformanceChecker, discovery_settings
 from src.runtime import output_path, start_stage
-from src.suffixes import ActivityCodes
 from src.validation import validate_evaluation
 
 

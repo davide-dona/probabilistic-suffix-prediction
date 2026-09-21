@@ -7,6 +7,7 @@ import torch
 import wandb
 from torch.utils.data import DataLoader
 
+from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.evaluation.scores import (
     ActivityDiagnostics,
@@ -20,7 +21,6 @@ from src.evaluation.scores import (
 from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
-from src.suffixes import ActivityCodes
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
 from src.visualization.catalogue import TABLES

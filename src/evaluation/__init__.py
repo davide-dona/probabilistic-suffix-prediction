@@ -1,3 +1,4 @@
+from src.evaluation.activity_distances import distances, diversity, sequence_similarity
 from src.evaluation.prefix_scores import (
     BLOCK,
     PREFIX_SCORE_KEYS,
@@ -25,10 +26,13 @@ __all__ = [
     'LengthSummary',
     'PrefixSummary',
     'Summarized',
+    'distances',
+    'diversity',
     'flatten_scores',
     'read_prefix_scores',
     'read_reports',
     'require_columns',
     'score_files',
+    'sequence_similarity',
     'stream_prefix_scores',
 ]

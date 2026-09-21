@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Self
 
+from src.evaluation.activity_distances import SuffixMetric, sequence_similarity
+from src.evaluation.activity_distances import energy_score as suffix_energy_score
 from src.evaluation.scores.context import ScoringContext
 from src.scalar_metrics import Direction, ScalarMetrics, Unit, metric
-from src.suffixes import SuffixMetric, sequence_similarity
-from src.suffixes import energy_score as suffix_energy_score
 
 
 @dataclass(frozen=True, slots=True)

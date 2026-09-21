@@ -8,11 +8,11 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
+from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
 from src.runtime import output_path
-from src.suffixes import ActivityCodes
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
 from src.training.validation import validate, validate_generation

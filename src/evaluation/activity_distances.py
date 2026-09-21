@@ -1,79 +1,27 @@
 from collections import Counter
-from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Hashable, Sequence
 from enum import StrEnum
-from types import MappingProxyType
 
 import numpy as np
 from rapidfuzz import process
 from rapidfuzz.distance import DamerauLevenshtein
 from scipy.spatial.distance import cdist
 
-# Start of the Unicode private use area, where the activity codes are drawn from.
-_FIRST_CODE = 0xE000
-
-# Boundary tokens used by sequence metrics. Both sit below the private use area the activity codes
-# are drawn from, so neither can be an encoded activity.
-_START = '\x02'
-_END = '\x03'
+from src.activity_codes import END_CODE, START_CODE
 
 
 class SuffixMetric(StrEnum):
-    """How far apart two suffixes are held to be. Each charges for a different kind of wrongness: 
-    - `DLD` is graded on positions, so a suffix one edit from another scores better than one 
-    sharing nothing with it. 
-    - `EXACT` reads a suffix as an atom and charges the same for a near miss as for a wrong answer. 
-    - `BIGRAM` charges for the ordered pairs a suffix holds and how many times it holds each, which 
+    """How far apart two suffixes are held to be. Each charges for a different kind of wrongness:
+    - `DLD` is graded on positions, so a suffix one edit from another scores better than one
+    sharing nothing with it.
+    - `EXACT` reads a suffix as an atom and charges the same for a near miss as for a wrong answer.
+    - `BIGRAM` charges for the ordered pairs a suffix holds and how many times it holds each, which
     is the ordering and the loop counts a process constrains rather than the positions they fell at.
     """
 
     DLD = 'dld'  # Normalized Damerau-Levenshtein distance
     EXACT = 'exact'  # 1 for any two suffixes that are not the same
     BIGRAM = 'bigram'  # Multiset Jaccard distance over padded activity pairs
-
-
-@dataclass(slots=True)
-class ActivityCodes:
-    """Map each activity name to a single character. Transforms a suffix of activity names into
-    a string of characters, reducing the cost of edit-distance calculations"""
-
-    _codes: dict[str, str] = field(default_factory=dict)
-
-    @classmethod
-    def of(cls, activities: Sequence[str]) -> 'ActivityCodes':
-        """Seed a codebook from activity names already in code order.
-
-        Args:
-            activities: The names, in the order their codes were handed out, as `vocabulary`
-                returns them.
-        Returns:
-            A codebook giving each of them the code it had, and the next code to anything else.
-        """
-        return cls({activity: chr(_FIRST_CODE + code) for code, activity in enumerate(activities)})
-
-    @property
-    def vocabulary(self) -> tuple[str, ...]:
-        """The activity names in code order, which is what seeds `of` back into this codebook."""
-        return tuple(self._codes)
-
-    @property
-    def codes(self) -> Mapping[str, str]:
-        """Each activity name to the character it is spelled with, read-only."""
-        return MappingProxyType(self._codes)
-
-    def encode(self, activities: Sequence[str]) -> str:
-        """Encode one suffix, giving each activity not seen before the next code point.
-
-        Args:
-            activities: The suffix's activity names, in order.
-        Returns:
-            One character per activity. The empty string for an empty suffix, which a model does
-            generate.
-        """
-        return ''.join(
-            self._codes.setdefault(activity, chr(_FIRST_CODE + len(self._codes)))
-            for activity in activities
-        )
 
 
 def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable]) -> float:
@@ -87,8 +35,8 @@ def sequence_similarity(predicted: Sequence[Hashable], true: Sequence[Hashable])
         of the normalization used by suffix-prediction evaluation.
     """
     return DamerauLevenshtein.normalized_similarity(
-        (*predicted, _END),
-        (*true, _END),
+        (*predicted, END_CODE),
+        (*true, END_CODE),
     )
 
 
@@ -104,7 +52,7 @@ def bigrams(sequence: Sequence[Hashable]) -> Counter[tuple[Hashable, Hashable]]:
         Each pair to the number of times it occurs. Never empty: the empty sequence yields the one
         pair the two sentinels make.
     """
-    padded = (_START, *sequence, _END)
+    padded = (START_CODE, *sequence, END_CODE)
     return Counter(zip(padded[:-1], padded[1:], strict=True))
 
 
@@ -140,7 +88,7 @@ def _bigram_distances(
 ) -> np.ndarray:
     """Measure every pair on the multiset Jaccard distance over their bigrams.
 
-    `1 - |A n B| / |A u B|` on multisets, which is 0.0 for two sequences holding the 
+    `1 - |A n B| / |A u B|` on multisets, which is 0.0 for two sequences holding the
     same pairs as often as each other, up to 1.0 for two sharing none.
 
     Args:
@@ -194,8 +142,8 @@ def distances(
         return _bigram_distances(queries, choices, dtype=dtype)
 
     similarities = process.cdist(
-        queries=[(*sequence, _END) for sequence in queries],
-        choices=[(*sequence, _END) for sequence in choices],
+        queries=[(*sequence, END_CODE) for sequence in queries],
+        choices=[(*sequence, END_CODE) for sequence in choices],
         scorer=DamerauLevenshtein.normalized_similarity,
         dtype=dtype,
     )
@@ -255,8 +203,9 @@ def energy_score(
     weights: Sequence[float] | None = None,
     metric: SuffixMetric = SuffixMetric.DLD,
 ) -> float:
-    """ The energy score of a set of draws, which is defined as:
-    `E[d(X, y)] - 0.5 * E[d(X, X')]` where `X` and `X'` are two draws from the set and `y` is the truth.
+    """The energy score of a set of draws, which is defined as:
+    `E[d(X, y)] - 0.5 * E[d(X, X')]` where `X` and `X'` are draws from the set and `y`
+    is the truth.
 
     The first term is the mean distance of a draw to the truth, and the second term is the mean
     distance between two draws.

@@ -2,9 +2,9 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from src import paths
+from src.activity_codes import ActivityCodes
 from src.logs.declare.constraints import read_constraints
 from src.logs.declare.templates import Positions
-from src.suffixes import ActivityCodes
 
 # Stands in for an activity the dataset's codebook does not know, so its constraint can never be
 # activated by a trace the codebook spelled.

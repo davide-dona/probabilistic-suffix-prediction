@@ -5,8 +5,8 @@ from typing import Self
 
 import numpy as np
 
+from src.evaluation.activity_distances import sequence_similarity
 from src.inference.generation import Generation
-from src.suffixes import sequence_similarity
 
 
 @dataclass(frozen=True, slots=True)
