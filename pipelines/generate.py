@@ -1,23 +1,26 @@
-import argparse
+from __future__ import annotations
+
 from pathlib import Path
 
+import hydra
 import torch
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, step
-from src.configs import load_generation_config
-from src.configs.schema import SamplingConfig, sampling_of
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
-from src.identity import RunIdentity
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.generation_store import GenerationWriter
 from src.inference.tuning import TuningReport
 from src.logs import Split
-from src.model import load_checkpoint, model_from_checkpoint
-from src.suffixes import ActivityCodes
+from src.model import checkpoint_identity, load_checkpoint, model_from_checkpoint
+from src.runs.artifacts import sha256
+from src.runs.hydra import output_path, save_config, start_stage
+from src.runs.provenance import ArtifactProvenance
+from src.validation import validate_generation, validate_generation_request
 
 
 def run(
@@ -26,7 +29,8 @@ def run(
     device: str | None,
     num_samples: int | None,
     tuning: Path | None,
-    sampling: SamplingConfig | None,
+    sampling: DictConfig | None,
+    num_workers: int | None = None,
 ) -> None:
     """Generate suffixes for every prefix of the test split and write them out.
 
@@ -41,31 +45,52 @@ def run(
             `inference.evaluation_samples`.
         tuning: A tuning report to read the sampler out of, or `None`. Named rather than looked
             up beside the checkpoint: which operating point a set of weights is read at is a
-            decision the caller makes, and the report is checked against this run's identity
+            decision the caller makes, and the report is checked against the checkpoint hash
             before it is used.
         sampling: The sampler to draw with, or `None` for the one the run trained under.
-            Mutually exclusive with `tuning`, which is enforced by the CLI.
+            Mutually exclusive with `tuning`.
     """
     # The run's own config. Read before the codec, since it is what says which dataset's codec
     # to read.
     with step(f'Reading the checkpoint at {checkpoint_path}'):
         checkpoint = load_checkpoint(checkpoint_path)
-    run = RunIdentity.from_dict(checkpoint['run'])
+    run = checkpoint_identity(checkpoint)
+    provenance = ArtifactProvenance(run=run, checkpoint_sha256=sha256(checkpoint_path))
+    metadata = provenance.as_metadata()
+    # Start with the config stored in the checkpoint and apply runtime overrides.
+    config = OmegaConf.create(checkpoint['config'])
+    if device is not None:
+        config.training.device = device
+    if num_samples is not None:
+        config.inference.evaluation_samples = num_samples
+    if num_workers is not None:
+        config.dataloader.num_workers = num_workers
+    # Check the requested sampler before loading a tuning report.
+    validate_generation_request(config, tuning=tuning, sampling=sampling)
+    # Use the sampler selected for this checkpoint when a tuning report is given.
     if tuning is not None:
-        sampling = TuningReport.read(tuning).sampling_for(run)
-    config = load_generation_config(
-        checkpoint['experiment_config'],
-        device=device,
-        num_samples=num_samples,
-        sampling=sampling,
+        sampling = TuningReport.read(tuning).sampling_for(run, metadata['checkpoint_sha256'])
+    if sampling is not None:
+        config.model.sampling = sampling
+    # Check the final config after the selected sampler has been applied.
+    validate_generation(config)
+    # Record the exact settings used for this generation run.
+    save_config(
+        OmegaConf.create(
+            {
+                'checkpoint': str(checkpoint_path.resolve()),
+                'checkpoint_sha256': metadata['checkpoint_sha256'],
+                'run': run.as_dict(),
+                'effective': OmegaConf.to_container(config, resolve=True),
+                'tuning': str(tuning) if tuning is not None else None,
+            }
+        )
     )
 
     paths.require_preprocessed(config.data.name)
     torch.manual_seed(config.seed)
 
-    # The output file is named after the run the checkpoint carries, not after the file it was
-    # read from, so the generations land under the run that produced them whatever it is called.
-    path = paths.GENERATIONS.prepare(run)
+    path = output_path('generations.parquet')
     device = torch.device(config.training.device)
     batch_size = generation_batch_size(
         inference=config.inference,
@@ -75,11 +100,12 @@ def run(
     # A checkpoint that has been trimmed for publishing still carries both of these.
     trained_step, score = checkpoint.get('step'), checkpoint.get('selection_score')
     # None for an architecture that reads its heads at their mode, which is what the file records.
-    drawn_with = sampling_of(config.model)
+    drawn_with = config.model.get('sampling')
 
     banner(
         'Generating suffixes',
         {
+            'checkpoint_sha256': metadata['checkpoint_sha256'],
             'run': run,
             'dataset': config.data.name,
             'model': f'{config.model.name} (step {trained_step}, selection score {score:.4f})'
@@ -100,6 +126,8 @@ def run(
 
     with step(f'Building the model and moving it onto {device}'):
         model = model_from_checkpoint(checkpoint, codec, device=config.training.device)
+        if drawn_with is not None:
+            model.decoder.read_with(drawn_with)
         model.eval()
 
     # Build the DataLoader for the test split
@@ -123,20 +151,16 @@ def run(
         flush=True,
     )
 
-    # The one codebook this run spells its suffixes on, seeded from every name the activity channel
-    # can decode to so no name is ever coded on the fly. The continuation index is seeded from the
-    # same list, which is what lets evaluation compare the two without translating either.
-    codes = ActivityCodes.of(codec.activity.names)
-
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
-    with GenerationWriter(path, run, vocabulary=codes.vocabulary, sampling=drawn_with) as writer:
+    with GenerationWriter(
+        path, provenance, vocabulary=codec.activity_codes.vocabulary, sampling=drawn_with
+    ) as writer:
         for batch in tqdm(iterable=test_loader, desc='Generating', unit='batch'):
             generations = generate_batch(
                 model=model,
                 batch=batch.to(device),
                 num_samples=config.inference.evaluation_samples,
                 codec=codec,
-                codes=codes,
             )
             # Write the generations to the Parquet file in a single block, one row per prefix.
             writer.write(generations)
@@ -144,85 +168,16 @@ def run(
     print(f'Wrote generated suffixes to {path}')
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description='Generate test-split suffixes from a trained model.'
-    )
-    parser.add_argument(
-        '-m',
-        '--checkpoint',
-        type=paths.existing_file,
-        metavar='CHECKPOINT',
-        required=True,
-        help='Path to the checkpoint to generate with, from `pretrained/`, '
-        '`outputs/checkpoints/best/` or `outputs/checkpoints/last/`. Its own config is what '
-        'the model and the dataset are read from.',
-    )
-    parser.add_argument(
-        '-d',
-        '--device',
-        type=str,
-        default=None,
-        metavar='DEVICE',
-        help='Overrides the device to generate on, e.g. cpu or cuda:1. Defaults to the device '
-        'the run was trained with.',
-    )
-    parser.add_argument(
-        '-n',
-        '--num-samples',
-        type=int,
-        default=None,
-        metavar='N',
-        help='How many suffixes to draw per prefix, overriding the config the checkpoint '
-        "carries. Defaults to the run's own `inference.evaluation_samples`.",
-    )
-    parser.add_argument(
-        '-t',
-        '--tuning',
-        type=paths.existing_file,
-        default=None,
-        metavar='REPORT',
-        help='Path to the tuning report whose chosen sampler to draw with, from '
-        '`outputs/tuning/`. Refused if it was written for a different run. This is the usual '
-        'way a sampler reaches a generation: the report is what `pipelines.tune` picked on the '
-        'validation split.',
-    )
-    parser.add_argument(
-        '--temperature',
-        type=float,
-        default=None,
-        metavar='T',
-        help='Divides the activity logits before the draw, overriding the config the checkpoint '
-        'carries. For a one-off; `--tuning` is how a searched value is handed over. Must be '
-        'given together with `--top-p`.',
-    )
-    parser.add_argument(
-        '--top-p',
-        type=float,
-        default=None,
-        metavar='P',
-        help='Keeps the smallest set of activities summing to this, overriding the config the '
-        'checkpoint carries. Must be given together with `--temperature`.',
-    )
-    args = parser.parse_args()
-
-    explicit = (args.temperature, args.top_p)
-    if args.tuning is not None and any(value is not None for value in explicit):
-        parser.error('name either --tuning or --temperature/--top-p, not both')
-    if any(value is not None for value in explicit) and None in explicit:
-        parser.error('--temperature and --top-p are given together: a sampler is the pair')
-    sampling = (
-        SamplingConfig(temperature=args.temperature, top_p=args.top_p)
-        if args.temperature is not None
-        else None
-    )
-
+@hydra.main(version_base='1.3', config_path='../config', config_name='generate')
+def main(cfg: DictConfig) -> None:
+    start_stage(cfg)
     run(
-        args.checkpoint,
-        device=args.device,
-        num_samples=args.num_samples,
-        tuning=args.tuning,
-        sampling=sampling,
+        Path(cfg.checkpoint),
+        device=cfg.device,
+        num_samples=cfg.num_samples,
+        tuning=Path(cfg.tuning) if cfg.tuning is not None else None,
+        sampling=cfg.sampling,
+        num_workers=cfg.num_workers,
     )
 
 

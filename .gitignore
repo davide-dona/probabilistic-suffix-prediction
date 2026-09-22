@@ -1,21 +1,17 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-outputs/
 *DS_Store
 
 # W&B's local run cache; a run's data lives in the cloud project once synced
 wandb/
 
-# The local doc set: CLAUDE.md and the topic docs it points at
-CLAUDE.md
-.claude/docs/
 
 # Published models, fetched from the Hugging Face repo rather than committed
 pretrained/
 
-# Runs pinned by hand, moved out of outputs/ so a wipe of it cannot touch them. Mirrors
-# outputs/ own layout, and scripts/evaluate_queue.sh walks it alongside outputs/generations/.
+# Runs outputs
+outputs/
 pinned/
 
 
@@ -32,11 +28,6 @@ data/*
 data/*/*
 !data/*/original.csv
 
-
-# Jobs staged for a batch run, kept out of the repo like the runs they produce;
-# queue/README.md is what makes the directory exist on a fresh clone
-queue/*
-!queue/README.md
 
 # Temporary scripts
 tmp/

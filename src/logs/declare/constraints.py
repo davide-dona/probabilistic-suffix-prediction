@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+from omegaconf import DictConfig, OmegaConf
 
 from src.logs.declare.templates import TEMPLATES, Constraint
-
-if TYPE_CHECKING:
-    from src.configs import DeclareConfig
 
 # Parse the declarative model written by `discover_declare_model` back into the constraints.
 _CONSTRAINT_LINE = re.compile(r'^(.*)\[(.*)\]\s*(.*)$')
@@ -16,23 +15,21 @@ COMMENT = '#'
 SETTINGS_LINE = '# settings: '
 
 
-def discovery_settings(path: Path) -> DeclareConfig | None:
+def discovery_settings(path: Path) -> DictConfig:
     """Read the header of a declarative model and return the settings it records about how it
     was mined.
     Args:
         path: The model file, from `paths.DECLARE_MODEL`.
     Returns:
-        The settings its header records, or `None` for a model written before the header existed,
-        which says nothing about how it was mined.
+        The settings its header records.
     Raises:
-        pydantic.ValidationError: If the header is there but does not describe a discovery.
+        ValueError: If the model has no discovery settings header.
     """
-    from src.configs import DeclareConfig
 
     for line in path.read_text().splitlines():
         if line.startswith(SETTINGS_LINE):
-            return DeclareConfig.model_validate_json(line.removeprefix(SETTINGS_LINE))
-    return None
+            return OmegaConf.create(json.loads(line.removeprefix(SETTINGS_LINE)))
+    raise ValueError(f'{path} has no discovery settings.')
 
 
 def read_constraints(path: Path) -> list[Constraint]:

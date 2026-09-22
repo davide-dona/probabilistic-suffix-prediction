@@ -2,13 +2,8 @@ from collections.abc import Container, Sequence
 
 import pandas as pd
 
-from src.scalar_metrics import Direction
-from src.uncertainty import ALPHA
 from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Table
-
-# Placeholder for metrics absent from an older run.
-MISSING = '-'
 
 
 def _escape_latex(text: str) -> str:
@@ -25,18 +20,20 @@ def _escape_latex(text: str) -> str:
     return text
 
 
-def _value(frame: pd.DataFrame, key: str) -> float | None:
-    """Read a metric value or return `None` when absent.
+def _value(frame: pd.DataFrame, key: str) -> float:
+    """Read a metric value.
 
     Args:
         frame: Report rows for one model and dataset.
         key: Metric key.
 
     Returns:
-        Metric value, if reported.
+        Metric value.
     """
     rows = frame.loc[frame['metric'] == key, 'value']
-    return float(rows.iloc[0]) if len(rows) else None
+    if len(rows) != 1:
+        raise ValueError(f'Expected one value for {key}, found {len(rows)}.')
+    return float(rows.iloc[0])
 
 
 def _row(
@@ -60,9 +57,6 @@ def _row(
     cells = []
     for entry in columns:
         value = _value(frame, entry.key)
-        if value is None:
-            cells.append(MISSING)
-            continue
         written = entry.format(value)
         cells.append(f'\\textbf{{{written}}}' if entry.key in best else written)
     return '   & ' + ' & '.join([_escape_latex(label), *cells]) + ' \\\\'
@@ -172,21 +166,4 @@ def latex_table(frame: pd.DataFrame, table: Table, significance: pd.DataFrame) -
         value_columns = f'*{{{len(table.columns)}}}{{>{{\\centering\\arraybackslash}}X}}'
         preamble = f'\\begin{{tabularx}}{{\\linewidth}}{{ll|{value_columns}}}'
         environment = 'tabularx'
-    notes = [table.note]
-    directions = {entry.metric.direction for entry in table.columns}
-    if directions & {Direction.HIGHER, Direction.LOWER}:
-        notes.append(
-            'For higher/lower metrics, bold marks observed best means and models with no '
-            'detected difference from the observed best '
-            f'(paired case bootstrap, all-pairs Holm correction per dataset and metric, '
-            f'alpha={ALPHA}). This does not establish equivalence. '
-            'Unavailable comparisons add no emphasis beyond observed best values.'
-        )
-    if Direction.ZERO in directions:
-        notes.append(
-            'For calibration gaps, bold marks the smallest absolute mean gap only; '
-            'this is descriptive, with no significance test.'
-        )
-    notes.append('Single-model datasets have no emphasis.')
-    comments = [f'% {note}' for note in notes]
-    return '\n'.join((*comments, preamble, *lines, f'\\end{{{environment}}}')) + '\n'
+    return '\n'.join((preamble, *lines, f'\\end{{{environment}}}')) + '\n'

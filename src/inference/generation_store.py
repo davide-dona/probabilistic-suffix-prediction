@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from types import TracebackType
@@ -5,32 +8,34 @@ from typing import Self
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from omegaconf import DictConfig, OmegaConf
 
-from src.configs.schema import SamplingConfig
-from src.identity import RunIdentity, read_run_identity, read_vocabulary, stamped, with_vocabulary
 from src.inference.generation import DecodedEvents, Draws, Generation
+from src.runs.artifacts import read_metadata, read_vocabulary, with_metadata, with_vocabulary
+from src.runs.identity import RunIdentity
+from src.runs.provenance import ArtifactProvenance
 
 # Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
 # a case and a length, and the pair is unique within a file.
 type PrefixKey = tuple[str, int]
 
 # How the activity head was read, for a file whose model drew from it, and absent for one whose
-# model read it at its mode. A run's identity does not settle this: the sampler is chosen after
-# training and can be changed without the weights moving, so two files of one run are told apart
-# by nothing else.
+# model read it at its mode. The checkpoint hash does not settle this: the sampler is chosen after
+# training and can be changed without the weights moving, so two files of one checkpoint are
+# distinguished by the recorded sampler.
 _SAMPLING = b'sampling'
 
-# One run of activities, one character each. A suffix is a string rather than a list of names: the
-# names live once in the file's vocabulary metadata, and an edit distance reads a string directly.
+# One sequence of activities, one character each. A suffix is a string rather than a list of
+# names. Activity names live once in the vocabulary metadata; edit distance reads the string.
 _SUFFIX = pa.string()
 
-# One run's cycle time before each of its activities. Timestamps are these accumulated, so they are
-# not written a second time. float32 because that is what the model emits: `denormalize` widens to
+# One model's inter-event time before each of its activities. Timestamps are these accumulated, so
+# they are not written a second time. The model emits float32; `denormalize` widens to
 # float64 on the way out, and storing that width would double the largest column of the file to
 # carry digits the decoder never produced.
-_CYCLE_TIMES = pa.list_(pa.field(name='element', type=pa.float32()))
+_INTER_EVENT_TIMES = pa.list_(pa.field(name='element', type=pa.float32()))
 
-# The schema of the Parquet file that holds a run's generations. One row per prefix: the samples
+# The schema of the Parquet file that holds a model's generations. One row per prefix: the samples
 # nest inside it, so nothing describing the prefix is written once per sample.
 _SCHEMA = pa.schema(
     [
@@ -40,16 +45,15 @@ _SCHEMA = pa.schema(
         ('prefix_activities', _SUFFIX),
         # The distinct suffixes drawn for this prefix, each written once however many draws landed
         # on it, and which of them each draw took, in the order they were drawn. The decoder is
-        # deterministic given `z`, so a repeated suffix is one answer the model gave twice;
-        # `hit_rate_at_k` reads the first k of `generated_draws`, and a mean over the draws is the
-        # weighted mean over the distinct suffixes.
+        # deterministic given `z`, so a repeated suffix is one answer the model gave twice. A mean
+        # over the draws is the weighted mean over the distinct suffixes.
         ('generated_suffixes', pa.list_(pa.field(name='element', type=_SUFFIX))),
         ('generated_draws', pa.list_(pa.field(name='element', type=pa.int16()))),
         # Still one entry per draw, in draw order. Two draws of one suffix came from different `z`
         # and the decoder wrote each its own times, so these do not fold the way the activities do.
         (
-            'generated_cycle_time_minutes',
-            pa.list_(pa.field(name='element', type=_CYCLE_TIMES)),
+            'generated_inter_event_time_minutes',
+            pa.list_(pa.field(name='element', type=_INTER_EVENT_TIMES)),
         ),
         (
             'generated_remaining_time_minutes',
@@ -58,10 +62,10 @@ _SCHEMA = pa.schema(
         # The suffix written from the mean of `p(z | prefix)`: the model's single answer, drawn once
         # per prefix and the only column comparable against a model that does not sample.
         ('point_activities', _SUFFIX),
-        ('point_cycle_time_minutes', _CYCLE_TIMES),
+        ('point_inter_event_time_minutes', _INTER_EVENT_TIMES),
         ('point_remaining_time_minutes', pa.float32()),
         ('true_activities', _SUFFIX),
-        ('true_cycle_time_minutes', _CYCLE_TIMES),
+        ('true_inter_event_time_minutes', _INTER_EVENT_TIMES),
         ('true_remaining_time_minutes', pa.float32()),
     ]
 )
@@ -77,14 +81,14 @@ _COMPRESSION_LEVEL = 9
 
 # The float columns, named as Parquet names their leaves. Byte-stream-split splits a float into its
 # four byte planes before compressing, so the exponents of a column line up and zstd has something
-# repetitive to find; on the cycle times, which are continuous and share nothing as whole values, it
-# is the difference between compressing and not.
+# repetitive to find; on the inter-event times, which are continuous and share nothing as whole
+# values, it is the difference between compressing and not.
 _FLOAT_LEAVES = [
-    'generated_cycle_time_minutes.list.element.list.element',
+    'generated_inter_event_time_minutes.list.element.list.element',
     'generated_remaining_time_minutes.list.element',
-    'point_cycle_time_minutes.list.element',
+    'point_inter_event_time_minutes.list.element',
     'point_remaining_time_minutes',
-    'true_cycle_time_minutes.list.element',
+    'true_inter_event_time_minutes.list.element',
     'true_remaining_time_minutes',
 ]
 
@@ -92,46 +96,47 @@ _FLOAT_LEAVES = [
 class GenerationWriter:
     """A generations file, open for writing, one block per batch.
 
-    Used as a context manager: the file's footer is written when it closes, so a run that dies
+    Used as a context manager: the file's footer is written when it closes, so a model that dies
     mid-generation leaves nothing readable rather than a file that lies about its length.
     """
 
     def __init__(
         self,
         path: Path,
-        run: RunIdentity,
+        provenance: ArtifactProvenance,
         *,
         vocabulary: Sequence[str],
-        sampling: SamplingConfig | None,
+        sampling: DictConfig | None,
     ) -> None:
         """
         Args:
-            path: The file to write, its directory already made, from `paths.GENERATIONS.prepare`.
-                Overwritten if it already exists.
-            run: The run these generations come from, stamped into the file so evaluation can read
-                it back instead of guessing at it.
+            path: Destination file inside the active Hydra output directory.
+            provenance: Training run and source checkpoint that produced the artifact.
             vocabulary: The activity names the suffixes are spelled on, in code order, from
-                `ActivityCodes.vocabulary`. Written into the file so it says what its own
+                `ActivityCodec.vocabulary`. Written into the file so it says what its own
                 characters mean.
             sampling: How the activity head was read, for a model that draws from it, or None for
                 one that reads it at its mode. Written in for the same reason the vocabulary is:
-                the sampler is chosen after training, so the run's identity alone does not say
+                the sampler is chosen after training, so the checkpoint hash alone does not say
                 which one produced this file.
         """
         schema = with_vocabulary(_SCHEMA, vocabulary)
         if sampling is not None:
             schema = schema.with_metadata(
-                (schema.metadata or {}) | {_SAMPLING: sampling.model_dump_json()}
+                (schema.metadata or {})
+                | {_SAMPLING: json.dumps(OmegaConf.to_container(sampling, resolve=True))}
             )
-        schema = stamped(schema, run)
+        schema = with_metadata(schema, provenance.as_metadata())
+        self._path = path
+        self._temporary = path.with_suffix('.parquet.tmp')
         self._writer = pq.ParquetWriter(
-            where=path,
+            where=self._temporary,
             schema=schema,
             compression=_COMPRESSION,
             compression_level=_COMPRESSION_LEVEL,
             # Dictionary encoding takes precedence over byte-stream-split wherever it is left on,
-            # and a column of continuous cycle times has no dictionary worth building, so the two
-            # are set together.
+            # and a column of continuous inter-event times has no dictionary worth building, so
+            # the two are set together.
             use_dictionary=False,
             use_byte_stream_split=_FLOAT_LEAVES,
         )
@@ -146,6 +151,10 @@ class GenerationWriter:
         traceback: TracebackType | None,
     ) -> None:
         self._writer.close()
+        if exception_type is None:
+            self._temporary.replace(self._path)
+        else:
+            self._temporary.unlink(missing_ok=True)
 
     def write(self, generations: list[Generation]) -> None:
         """Write one batch's generations as one block of the file, one row per prefix.
@@ -162,17 +171,17 @@ class GenerationWriter:
                 'prefix_activities': generation.prefix_activities,
                 'generated_suffixes': list(generation.samples.suffixes),
                 'generated_draws': list(generation.samples.taken),
-                'generated_cycle_time_minutes': [
-                    events.cycle_time_minutes for events in generation.samples.events
+                'generated_inter_event_time_minutes': [
+                    events.inter_event_time_minutes for events in generation.samples.events
                 ],
                 'generated_remaining_time_minutes': [
                     events.remaining_time_minutes for events in generation.samples.events
                 ],
                 'point_activities': generation.point.activities,
-                'point_cycle_time_minutes': generation.point.cycle_time_minutes,
+                'point_inter_event_time_minutes': generation.point.inter_event_time_minutes,
                 'point_remaining_time_minutes': generation.point.remaining_time_minutes,
                 'true_activities': generation.truth.activities,
-                'true_cycle_time_minutes': generation.truth.cycle_time_minutes,
+                'true_inter_event_time_minutes': generation.truth.inter_event_time_minutes,
                 'true_remaining_time_minutes': generation.truth.remaining_time_minutes,
             }
             for generation in generations
@@ -194,6 +203,13 @@ class Generations:
             path: The generations file to read, from `python -m pipelines.generate`.
         """
         self._parquet = pq.ParquetFile(path)
+        actual = self._parquet.schema_arrow.remove_metadata()
+        if not actual.equals(_SCHEMA):
+            self._parquet.close()
+            raise ValueError(
+                f'{path} uses an incompatible generations schema. Regenerate it with '
+                '`python -m pipelines.generate`.'
+            )
 
     def __enter__(self) -> Self:
         return self
@@ -207,25 +223,34 @@ class Generations:
         self._parquet.close()
 
     @property
-    def run(self) -> RunIdentity:
-        """Which run wrote this file, which is what its report is named after.
+    def metadata(self) -> dict[str, str]:
+        """Stable run identity and the source checkpoint hash.
 
         Raises:
-            ValueError: If the file carries no identity, and so predates the one it should name
-                itself by.
+            ValueError: If the file has no run identity.
         """
-        return read_run_identity(self._parquet)
+        return self.provenance.as_metadata()
+
+    @property
+    def provenance(self) -> ArtifactProvenance:
+        """Validated training run and checkpoint that produced this file."""
+        return ArtifactProvenance.from_metadata(read_metadata(self._parquet))
+
+    @property
+    def run(self) -> RunIdentity:
+        """The training run that produced this file."""
+        return self.provenance.run
 
     @property
     def vocabulary(self) -> tuple[str, ...]:
         """The activity names this file spells its suffixes on, in code order.
 
-        What `ActivityCodes.of` seeds back into a codebook, and what a reader compares against the
+        What `ActivityCodec.from_vocabulary` uses to recreate a codebook, and what a reader
+        compares against the
         continuation index's own before it scores a single prefix.
 
         Raises:
-            ValueError: If the file carries none, and so predates the vocabulary it should name
-                itself by.
+            ValueError: If the file has no activity vocabulary.
         """
         return read_vocabulary(self._parquet.schema_arrow)
 
@@ -235,7 +260,8 @@ class Generations:
 
         A block is what one call to `GenerationWriter.write` wrote, held as a Parquet row group. A
         prefix cannot cross one, since a row holds one, which is what makes a block an independent
-        unit: what it costs to read and to score is set by the batch a run wrote rather than by the
+        unit: what it costs to read and to score is set by the batch a model wrote rather than
+        by the
         size of the split.
         """
         return self._parquet.num_row_groups
@@ -291,12 +317,12 @@ class Generations:
                         events=[
                             DecodedEvents(
                                 activities=suffixes[index],
-                                cycle_time_minutes=cycle_time_minutes,
+                                inter_event_time_minutes=inter_event_time_minutes,
                                 remaining_time_minutes=remaining_time_minutes,
                             )
-                            for index, cycle_time_minutes, remaining_time_minutes in zip(
+                            for index, inter_event_time_minutes, remaining_time_minutes in zip(
                                 taken,
-                                columns['generated_cycle_time_minutes'][position],
+                                columns['generated_inter_event_time_minutes'][position],
                                 columns['generated_remaining_time_minutes'][position],
                                 strict=True,
                             )
@@ -304,12 +330,14 @@ class Generations:
                     ),
                     point=DecodedEvents(
                         activities=columns['point_activities'][position],
-                        cycle_time_minutes=columns['point_cycle_time_minutes'][position],
+                        inter_event_time_minutes=columns['point_inter_event_time_minutes'][
+                            position
+                        ],
                         remaining_time_minutes=columns['point_remaining_time_minutes'][position],
                     ),
                     truth=DecodedEvents(
                         activities=columns['true_activities'][position],
-                        cycle_time_minutes=columns['true_cycle_time_minutes'][position],
+                        inter_event_time_minutes=columns['true_inter_event_time_minutes'][position],
                         remaining_time_minutes=columns['true_remaining_time_minutes'][position],
                     ),
                 )

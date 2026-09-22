@@ -1,46 +1,41 @@
-import argparse
-from datetime import datetime
+from __future__ import annotations
 
+import hydra
 import torch
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from src import paths
 from src.cli import banner, step
-from src.configs import ExperimentConfig, load_config
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs import Split
 from src.model import build_model
+from src.runs.hydra import output_path, start_stage
+from src.runs.identity import RunIdentity
 from src.training import train
+from src.validation import validate_training
 
 
-def run(config: ExperimentConfig) -> None:
+def run(config: DictConfig, run: RunIdentity) -> None:
     """
     Train the model an experiment config describes, on the dataset it names.
     The dataset must have been preprocessed already.
     Args:
         config: The validated experiment config.
+        run: The stable identity assigned to this training invocation.
     """
     paths.require_preprocessed(config.data.name)
-    # Checkpoints are selected on EMSC against the validation split's continuations, so the index
-    # is as much a precondition of training as the splits are.
-    paths.CONTINUATIONS.require(dataset=config.data.name, split=Split.VAL)
 
     # Seeded before anything is built, so weight initialization and shuffling are both reproducible.
     torch.manual_seed(config.seed)
     generator = torch.Generator().manual_seed(config.seed)
 
-    run = RunIdentity(
-        dataset=config.data.name,
-        model=config.model.name,
-        tag=f'{datetime.now():%Y%m%d-%H%M%S}',
-    )
-
     banner(
         'Training a suffix-prediction model',
         {
+            'output': output_path('best.pt').parent,
             'run': run,
             'dataset': config.data.name,
             'model': config.model.name,
@@ -52,8 +47,7 @@ def run(config: ExperimentConfig) -> None:
             'optimizer': f'Adam, lr {config.optimizer.lr} after '
             f'{config.optimizer.warmup_steps} warmup steps, '
             f'weight decay {config.optimizer.weight_decay}',
-            'continuations': paths.CONTINUATIONS.path(dataset=config.data.name, split=Split.VAL),
-            'checkpoints': paths.BEST_CHECKPOINT.path(run),
+            'checkpoints': output_path('best.pt'),
         },
     )
 
@@ -117,45 +111,33 @@ def run(config: ExperimentConfig) -> None:
         f'generating for {len(generation_loader.dataset):,}'
     )
 
+    experiment_config = OmegaConf.to_container(config, resolve=True)
+    assert isinstance(experiment_config, dict)
+    experiment_config.pop('run_id')
+
     train(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         generation_loader=generation_loader,
-        run=run,
-        experiment_config=config.model_dump(),
+        experiment_config=experiment_config,
         generation_samples=config.inference.validation_samples,
         codec=codec,
-        dataset=config.data.name,
+        run=run,
         optimizer_config=config.optimizer,
         training=config.training,
         early_stopping_config=config.early_stopping,
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description='Train a suffix-prediction model.')
-    parser.add_argument(
-        '-c',
-        '--config',
-        type=paths.existing_file,
-        metavar='CONFIG',
-        required=True,
-        help="Path to this experiment's dataset config, e.g. config/datasets/bpic17.yaml.",
+@hydra.main(version_base='1.3', config_path='../config', config_name='train')
+def main(cfg: DictConfig) -> None:
+    start_stage(cfg)
+    validate_training(cfg)
+    run(
+        cfg,
+        RunIdentity(dataset=cfg.data.name, model=cfg.model.name, run_id=cfg.run_id),
     )
-    parser.add_argument(
-        '-m',
-        '--model',
-        type=paths.existing_file,
-        metavar='MODEL',
-        required=True,
-        help='Path to the architecture to train, e.g. config/models/cvae.yaml. Its `model.kind` '
-        'is what selects the class that gets built, and it also carries every setting that does '
-        "not vary with the dataset: the training loop, the optimizer, and the model's own loss.",
-    )
-    args = parser.parse_args()
-
-    run(load_config(args.model, args.config))
 
 
 if __name__ == '__main__':

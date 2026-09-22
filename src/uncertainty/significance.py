@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation import score_files
-from src.evaluation.scores import METRICS
-from src.scalar_metrics import Direction, oriented
+from src.evaluation.metrics import METRICS
+from src.evaluation.metrics.definitions import Direction
 from src.uncertainty.resampling import resample_means
 from src.uncertainty.units import by_case
 
@@ -17,6 +17,18 @@ SIGNIFICANCE_COLUMNS = ('dataset', 'model', 'metric', 'p_value', 'best')
 RANKED = tuple(
     key for key, metric in METRICS.entries.items() if metric.direction is not Direction.NONE
 )
+
+
+def oriented(values: np.ndarray, directions: Sequence[Direction]) -> np.ndarray:
+    """Turn aggregate values so larger numbers rank better for each metric."""
+    sign = np.array(
+        [
+            -1.0 if direction in (Direction.LOWER, Direction.ZERO) else 1.0
+            for direction in directions
+        ]
+    )
+    absolute = np.array([direction is Direction.ZERO for direction in directions])
+    return sign * np.where(absolute, np.abs(values), values)
 
 
 def two_sided_p(

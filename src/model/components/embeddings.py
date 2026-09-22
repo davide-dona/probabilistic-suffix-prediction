@@ -1,24 +1,27 @@
+from __future__ import annotations
+
 import math
 
 import torch
+from omegaconf import DictConfig
 from torch import nn
 
-from src.configs.schema import EmbeddingConfig
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import Events
 
 
 class EventEmbeddings(nn.Module):
     """Turns a sequence of events into the vectors the transformer stacks read.
-    An event is its activity encoding, its resource encoding, the minutes of cycle time it took and
-    whatever channels `data.event_features` offers, concatenated and projected to `d_model`.
+    An event is its activity encoding, its resource encoding, the minutes of inter-event time it
+    took and whatever channels `data.event_features` offers, concatenated and projected to
+    `d_model`.
 
     A sinusoidal encoding of its position is added to the projected vector, so the stacks
     can read the order of events out of the vectors. The stacks normalize what comes back before
     reading it; nothing here does, so that the encoder's norm and the decoder's stay their own.
     """
 
-    def __init__(self, config: EmbeddingConfig, codec: DatasetCodec, *, d_model: int):
+    def __init__(self, config: DictConfig, codec: DatasetCodec, *, d_model: int):
         super().__init__()
         self.activity_embedding = nn.Embedding(
             num_embeddings=codec.activity.num_rows,
@@ -42,8 +45,8 @@ class EventEmbeddings(nn.Module):
             if self.num_categorical > 0
             else None
         )
-        # Two scalars per numeric attribute (value + presence); the cycle time before an event is
-        # never missing, so it gets one.
+        # Two scalars per numeric attribute (value + presence); the inter-event time before an
+        # event is never missing, so it gets one.
         self.projection = nn.Linear(
             in_features=(
                 config.activity_dim
@@ -76,7 +79,7 @@ class EventEmbeddings(nn.Module):
         channels = [
             self.activity_embedding(events.activities),  # [batch_size, seq_len, activity_dim]
             self.resource_embedding(events.resources),  # [batch_size, seq_len, resource_dim]
-            events.cycle_times.unsqueeze(dim=-1),  # [batch_size, seq_len, 1]
+            events.inter_event_times.unsqueeze(dim=-1),  # [batch_size, seq_len, 1]
         ]
         if self.feature_embedding is not None:
             channels.append(

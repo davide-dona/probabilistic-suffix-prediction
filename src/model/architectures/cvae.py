@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import torch
 import torch.nn.functional as F
+from omegaconf import DictConfig
 
-from src.configs.schema import CVAEConfig
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.distributions import Gaussian
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
@@ -29,11 +31,11 @@ class TransformerCVAE(SuffixModel):
         prefix summary      -> p(z | prefix)               (scored by the KL term only)
         + suffix summary    -> q(z | prefix, suffix)
         z ~ q(z | prefix, suffix)
-        z, prefix events, suffix -> an activity, the cycle time before it and a remaining time,
-                                   at every suffix position
+        z, prefix events, suffix -> an activity, the inter-event time before it and a remaining
+                                    time, at every suffix position
     """
 
-    def __init__(self, config: CVAEConfig, codec: DatasetCodec):
+    def __init__(self, config: DictConfig, codec: DatasetCodec):
         super().__init__(codec=codec)
         self.loss_config = config.loss
         # Shared between the encoder and the decoder: a single embedding space for events,
@@ -67,7 +69,7 @@ class TransformerCVAE(SuffixModel):
             sampling=None,
         )
 
-    def forward(self, item: SplitTrace) -> ModelOutput:
+    def forward(self, item: TraceCut) -> ModelOutput:
         """
         Args:
             item: A batch from `TraceDataset`, read for both its prefix and its suffix.
@@ -98,7 +100,7 @@ class TransformerCVAE(SuffixModel):
 
     @torch.no_grad()
     def generate(
-        self, item: SplitTrace, *, num_samples: int, sample: bool = True
+        self, item: TraceCut, *, num_samples: int, sample: bool = True
     ) -> GeneratedSuffix:
         """Generate `num_samples` suffixes for every prefix in `item`.
 
@@ -149,39 +151,45 @@ class TransformerCVAE(SuffixModel):
         return self._per_sample(generated, batch_size=item.prefix.length.size(dim=0))
 
     def compute_loss(
-        self, output: ModelOutput, batch: SplitTrace, *, step: int
+        self, output: ModelOutput, batch: TraceCut, *, step: int
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 
         The two time heads emit a median alone, so `time_loss` charges each of them the plain
         absolute error, which is the simple regressor this architecture's decoder already is.
-        Everything the prefix leaves open is z's to carry, the spread of a cycle time included, so
-        nothing here is handed a scale of its own to widen instead.
+        Everything the prefix leaves open is z's to carry, including the spread of an inter-event
+        time, so nothing here is handed a scale of its own to widen instead.
         """
         batch_size = batch.suffix.activities.size(0)
 
         activity_loss = F.cross_entropy(
-            output.decoder.activity_logits.transpose(1, 2),
-            batch.suffix.activities,
+            input=output.decoder.activity_logits.transpose(1, 2),
+            target=batch.suffix.activities,
             ignore_index=self.pad_activity_index,
             reduction='sum',
         )
 
         # The scale halves are exactly 0.0 here and are not read: this decoder's heads emit no
         # scale, so `time_loss` charges each the plain absolute error.
-        cycle_time_loss, _ = time_loss(output.decoder.cycle_times, batch.cycle_times, batch)
+        inter_event_time_loss, _ = time_loss(
+            prediction=output.decoder.inter_event_times,
+            target=batch.inter_event_times,
+            batch=batch,
+        )
         remaining_time_loss, _ = time_loss(
-            output.decoder.remaining_times, batch.remaining_times, batch
+            prediction=output.decoder.remaining_times,
+            target=batch.remaining_times,
+            batch=batch,
         )
 
-        reconstruction_loss = activity_loss + cycle_time_loss + remaining_time_loss
+        reconstruction_loss = activity_loss + inter_event_time_loss + remaining_time_loss
 
         kl_per_dim = gaussian_kl(
             posterior=output.latents.posterior, prior=output.latents.prior
         )  # [batch_size, latent_dim]
-        floored_kl_loss = free_bits_kl(kl_per_dim, free_bits=self.loss_config.free_bits)
+        floored_kl_loss = free_bits_kl(kl_per_dim=kl_per_dim, free_bits=self.loss_config.free_bits)
         kl_weight = linear_warmup_weight(
-            step,
+            step=step,
             ramp_steps=self.loss_config.kl_annealing_ramp_steps,
             start=self.loss_config.kl_annealing_start_weight,
             stop=self.loss_config.kl_annealing_full_weight,
@@ -193,10 +201,12 @@ class TransformerCVAE(SuffixModel):
             reconstruction_loss=reconstruction_loss.item(),
             floored_kl_loss=floored_kl_loss.item(),
             activity_loss=activity_loss.item(),
-            cycle_time_loss=cycle_time_loss.item(),
+            inter_event_time_loss=inter_event_time_loss.item(),
             remaining_time_loss=remaining_time_loss.item(),
         )
         latent = LatentMetrics.of(
-            kl_per_dim, free_bits=self.loss_config.free_bits, kl_weight=kl_weight
+            kl_per_dim=kl_per_dim,
+            free_bits=self.loss_config.free_bits,
+            kl_weight=kl_weight,
         )
         return total_loss / batch_size, metrics, latent

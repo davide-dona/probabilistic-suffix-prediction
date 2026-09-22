@@ -1,4 +1,3 @@
-import argparse
 import os
 import time
 from collections.abc import Iterator
@@ -6,16 +5,19 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+import hydra
+from omegaconf import DictConfig
 from tqdm import tqdm
 
 from src import paths
 from src.cli import banner, duration, step
+from src.datasets.codec import ActivityCodec
 from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
-from src.evaluation.scores import MIN_REFERENCE_OCCURRENCES
 from src.inference.generation_store import Generations
-from src.logs import ContinuationIndex, Split
 from src.logs.declare import ConformanceChecker, discovery_settings
-from src.suffixes import ActivityCodes
+from src.runs.artifacts import sha256
+from src.runs.hydra import output_path, start_stage
+from src.validation import validate_evaluation
 
 
 @dataclass(frozen=True)
@@ -24,7 +26,6 @@ class _Worker:
 
     generations: Generations
     checker: ConformanceChecker
-    index: ContinuationIndex
 
 
 # Set by `_init_worker` in each pool process, and read by `_score_block` there. Left
@@ -33,31 +34,18 @@ _worker: _Worker
 
 
 def _init_worker(generations_file: Path, dataset: str) -> None:
-    """Open the file, prepare the declarative model and read the continuation index once for this
-    process.
+    """Open the file and prepare the declarative model once for this process.
 
     Args:
         generations_file: The generations every task of this process reads from.
-        dataset: The dataset whose declarative model conformance is checked against, and whose
-            observed continuations the generated ones are compared with.
+        dataset: The dataset whose declarative model conformance is checked against.
     """
     global _worker
     generations = Generations(generations_file)
-    index = ContinuationIndex.read(dataset=dataset, split=Split.TEST)
     vocabulary = generations.vocabulary
-    # Check that the the vocabulary the generations were written under is the same
-    # as the one of the dataset's continuation
-    if vocabulary != index.vocabulary:
-        raise ValueError(
-            f'{generations_file} spells its activities on a different scale than the continuation '
-            f'index of {dataset}: the two were built from different preprocessings. Rerun '
-            'pipelines.preprocess, then pipelines.generate.'
-        )
-
     _worker = _Worker(
         generations=generations,
-        checker=ConformanceChecker(dataset, ActivityCodes.of(vocabulary)),
-        index=index,
+        checker=ConformanceChecker(dataset, ActivityCodec.from_vocabulary(vocabulary)),
     )
 
 
@@ -70,7 +58,7 @@ def _score_block(block: int) -> list[PrefixSummary]:
         One entry per prefix of the block, in the order it was written.
     """
     return [
-        PrefixSummary.of(generation, checker=_worker.checker, index=_worker.index)
+        PrefixSummary.of(generation, checker=_worker.checker)
         for generation in _worker.generations.block(block)
     ]
 
@@ -119,7 +107,7 @@ def _score_in_parallel(
 
 
 def run(generations_file: Path, workers: int | None) -> None:
-    """Score a run's generated suffixes and write the result under `outputs/eval/`.
+    """Score a run's generated suffixes and write the result in the active Hydra output directory.
 
     Args:
         generations_file: The generations to score, from `python -m pipelines.generate`. It says
@@ -128,16 +116,20 @@ def run(generations_file: Path, workers: int | None) -> None:
         workers: How many processes to score with, or `None` for one per available CPU.
     """
     with Generations(generations_file) as generations:
+        metadata = generations.metadata
         run = generations.run
         blocks, prefixes = generations.blocks, generations.prefixes
         # Which prefix each row answers, in the order the file holds them, which is the order the
         # pool scores them in. Two columns, so this is cheap even on a quarter of a million rows.
         keys = generations.prefix_keys()
 
-    # Check that the dataset was preprocessed and that the test-split continuations were written
-    dataset = run.dataset
+    metadata = metadata | {'source_sha256': sha256(generations_file)}
+    if prefixes == 0:
+        raise ValueError('Cannot evaluate an empty generations file')
+
+    # Check that the dataset was preprocessed.
+    dataset = metadata['dataset']
     paths.require_preprocessed(dataset)
-    paths.CONTINUATIONS.require(dataset=dataset, split=Split.TEST)
 
     # What the pool will actually start, which is what the wait before the first block is spent on.
     processes = workers if workers is not None else os.cpu_count()
@@ -146,37 +138,33 @@ def run(generations_file: Path, workers: int | None) -> None:
     # knowing which constraints it holds.
     model_path = paths.DECLARE_MODEL.require(dataset)
     mined = discovery_settings(model_path)
-    mined_under = (
-        f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
-        if mined is not None
-        else 'settings not recorded, so this model predates the header'
-    )
+    mined_under = f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
 
     banner(
         'Scoring generated suffixes',
         {
+            'source': metadata,
             'run': run,
             'dataset': dataset,
             'generations': f'{generations_file} ({prefixes:,} prefixes)',
             'declarative model': f'{model_path} (mined at {mined_under})',
-            'continuations': paths.CONTINUATIONS.path(dataset=dataset, split=Split.TEST),
             'workers': f'{processes} processes, one block of ~{prefixes // max(blocks, 1):,} '
             'prefixes each',
-            'report': paths.EVALUATION.path(run),
-            'prefix scores': paths.PREFIX_SCORES.path(run),
+            'report': output_path('evaluation.json'),
+            'prefix scores': output_path('prefix_scores.parquet'),
         },
     )
 
     started = time.perf_counter()
 
-    scores_path = paths.PREFIX_SCORES.prepare(run)
+    scores_path = output_path('prefix_scores.parquet')
 
     # Summarize the generation, folding each prefix's scores in as the pool hands them back and
     # writing them out on the way past. One stream, so the per-prefix file costs a write rather
     # than a second scoring pass.
     with step(
         f'Scoring {prefixes:,} prefixes across {processes} process(es), each loading the '
-        'declarative model and the continuation index first'
+        'declarative model first'
     ):
         summary = EvaluationSummary.of(
             stream_prefix_scores(
@@ -189,48 +177,23 @@ def run(generations_file: Path, workers: int | None) -> None:
                 ),
                 keys,
                 path=scores_path,
-                run=run,
+                metadata=metadata,
             )
         )
 
-    # The report is named after the run the generations carry, so it sits under `outputs/eval/`
-    # exactly where they sit under `outputs/generations/`.
-    report = EvaluationReport(run=run, summary=summary)
-    path = report.write(paths.EVALUATION.prepare(run))
-    # The distributional scores are read over the prefixes the log ran often enough, so how many
-    # of them there were is part of what the report says rather than something to go looking for.
-    share = summary.compared / summary.prefixes if summary.prefixes else 0.0
+    report = EvaluationReport(metadata=metadata, summary=summary)
+    path = report.write(output_path('evaluation.json'))
     print(
         f'Scored {summary.prefixes:,} prefixes in {duration(time.perf_counter() - started)}, '
-        f'{summary.compared:,} of them ({share:.0%}) run at least {MIN_REFERENCE_OCCURRENCES} '
-        f'times by the log, which is what the distributional scores are read over. '
         f'Wrote evaluation report to {path} and its per-prefix scores to {scores_path}'
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Score a run's generated test-split suffixes against the ground truth."
-    )
-    parser.add_argument(
-        '-g',
-        '--generations',
-        type=paths.existing_file,
-        metavar='GENERATIONS',
-        required=True,
-        help='Path to the generations file to score, from `pipelines.generate`.',
-    )
-    parser.add_argument(
-        '-j',
-        '--workers',
-        type=int,
-        default=None,
-        metavar='N',
-        help='How many processes to score with. Defaults to one per available CPU.',
-    )
-    args = parser.parse_args()
-
-    run(args.generations, args.workers)
+@hydra.main(version_base='1.3', config_path='../config', config_name='evaluate')
+def main(cfg: DictConfig) -> None:
+    start_stage(cfg)
+    validate_evaluation(workers=cfg.workers)
+    run(Path(cfg.generations), cfg.workers)
 
 
 if __name__ == '__main__':

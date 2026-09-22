@@ -12,11 +12,11 @@ class DecodedEvents:
     # One character per activity, on the dataset's own scale: the codebook seeded from
     # `codec.activity.names`, whose vocabulary the generations file carries in its metadata. Held
     # as a string rather than a list of names so a suffix is one object to compare, to hash and to
-    # store, which is what `src/suffixes.py` measures edit distances over.
+    # store, which is what the evaluation metrics measure edit distances over.
     activities: str
-    # The minutes of cycle time before each activity, in the same order, so a run's timestamps are
-    # these accumulated from the last prefix event on.
-    cycle_time_minutes: list[float]
+    # The minutes of inter-event time before each activity, in the same order, so a run's
+    # timestamps are these accumulated from the last prefix event on.
+    inter_event_time_minutes: list[float]
     # Minutes until the case ends. Predicted on its own rather than summed from the times above.
     remaining_time_minutes: float
 
@@ -29,8 +29,9 @@ class Draws:
     """One prefix's drawn suffixes, held as the distinct ones and which draw took each.
 
     The decoder is deterministic given `z`, so two draws that landed on the same activities are one
-    sequence the model produced twice: it is written once and `taken` says how often. The cycle
-    times do not collapse with it, since those two draws came from different `z` and the decoder
+    sequence the model produced twice: it is written once and `taken` says how often. The
+    inter-event times do not collapse with it, since those two draws came from different `z` and
+    the decoder
     wrote each its own times, so `events` stays one entry per draw and pairs with
     `suffixes[taken[draw]]`.
 
@@ -40,10 +41,9 @@ class Draws:
 
     # The distinct suffixes, in the order they were first drawn
     suffixes: tuple[str, ...]
-    # Which of them each draw took, one entry per draw in the order they were drawn:
-    # `hit_rate_at_k` reads the first k.
+    # Which of them each draw took, one entry per draw in draw order.
     taken: tuple[int, ...]
-    # The cycle times and the remaining time of each draw, in the same order as `taken`. The
+    # The inter-event times and the remaining time of each draw, in the same order as `taken`. The
     # activities of draw `i` are `suffixes[taken[i]]`.
     events: list[DecodedEvents]
 

@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import torch
+from omegaconf import DictConfig
 from torch import nn
 
-from src.configs.schema import DecoderConfig, LatentConfig, SamplingConfig
 from src.datasets.dataset import Events
 from src.distributions import Laplace
 from src.model.components.attention import MultiHeadAttention, ProjectedKeysValues
@@ -32,7 +34,7 @@ class SuffixCache:
     values: torch.Tensor  # [batch_size, num_heads, max_steps, head_dim]
     length: int = 0
 
-    def write(self, step: ProjectedKeysValues) -> 'SuffixCache':
+    def write(self, step: ProjectedKeysValues) -> SuffixCache:
         """Write one step's projection into the next free position, in place.
 
         Args:
@@ -71,12 +73,12 @@ class DecoderOutput:
     variability lives in `z` reads its heads at their median and `Laplace.point` pins their scale
     to 1, leaving the loss the plain absolute error; one whose variability lives in its heads emits
     a log-scale beside each median, because a model that draws from a head has to say how wide it
-    is. The two times overlap - a remaining time is the sum of the cycle times from that position
-    on - and are read as two independent estimates rather than tied together.
+    is. The two times overlap - a remaining time is the sum of the inter-event times from that
+    position on - and are read as two independent estimates rather than tied together.
     """
 
     activity_logits: torch.Tensor  # [batch_size, seq_len, num_activities]
-    cycle_times: Laplace  # [batch_size, seq_len] per field, standardized
+    inter_event_times: Laplace  # [batch_size, seq_len] per field, standardized
     remaining_times: Laplace  # [batch_size, seq_len] per field, standardized
 
 
@@ -91,7 +93,7 @@ class GeneratedSuffix:
 
     activities: torch.Tensor  # [..., steps]
     lengths: torch.Tensor  # [...], events emitted before EOT, or `steps` if EOT never came
-    cycle_times: torch.Tensor  # [..., steps], standardized like the targets
+    inter_event_times: torch.Tensor  # [..., steps], standardized like the targets
     # Read at position 0 alone, so it measures from the last prefix event, which is how the
     # reported remaining time is defined.
     remaining_time: torch.Tensor  # [...], standardized like the targets
@@ -101,7 +103,7 @@ class DecoderLayer(nn.Module):
     """One layer of the decoder stack, with self-attention over the suffix and cross-attention
     over the prefix."""
 
-    def __init__(self, config: DecoderConfig, *, d_model: int):
+    def __init__(self, config: DictConfig, *, d_model: int):
         super().__init__()
         self.self_attention = MultiHeadAttention(
             d_model=d_model, num_heads=config.num_heads, dropout=config.dropout
@@ -258,9 +260,9 @@ class Decoder(nn.Module):
     from its logits at every step.
 
     `sampling` decides the time heads with it, and for the same reason. Where the variability is
-    the latent's, a cycle time's spread is the latent's too, so the heads emit a median alone and
-    `Laplace.point` scores it by the plain absolute error. Where the variability is the heads', a
-    time is drawn like an activity is, so each head emits a log-scale beside its median: a
+    the latent's, an inter-event time's spread is the latent's too, so the heads emit a median
+    alone and `Laplace.point` scores it by the plain absolute error. Where the variability is the
+    heads', a time is drawn like an activity is, so each head emits a log-scale beside its median: a
     remaining time read at position 0, before any activity has been written, has no drawn activity
     path to inherit a spread from, and without a scale of its own it would be the same number in
     every draw of a prefix - a quantity the arm could say nothing about rather than a result about
@@ -272,8 +274,8 @@ class Decoder(nn.Module):
 
     def __init__(
         self,
-        config: DecoderConfig,
-        latent_config: LatentConfig | None,
+        config: DictConfig,
+        latent_config: DictConfig | None,
         embeddings: EventEmbeddings,
         *,
         d_model: int,
@@ -282,7 +284,7 @@ class Decoder(nn.Module):
         pad_activity_index: int,
         pad_resource_index: int,
         eot_activity_index: int,
-        sampling: SamplingConfig | None,
+        sampling: DictConfig | None,
     ):
         """
         Args:
@@ -357,7 +359,7 @@ class Decoder(nn.Module):
         # where there is no scale is what leaves an unconditioned decoder's parameters, and so its
         # checkpoints, exactly as they were before either head could carry one.
         time_outputs = 2 if sampling is not None else 1
-        self.cycle_time_head = nn.Linear(
+        self.inter_event_time_head = nn.Linear(
             in_features=config.head_hidden_dim, out_features=time_outputs
         )
         self.remaining_time_head = nn.Linear(
@@ -398,7 +400,7 @@ class Decoder(nn.Module):
         features = self.shared_layer(hidden)  # [batch_size, seq_len, head_hidden_dim]
         return DecoderOutput(
             activity_logits=self.activity_head(features),
-            cycle_times=self._time(self.cycle_time_head, features),
+            inter_event_times=self._time(self.inter_event_time_head, features),
             remaining_times=self._time(self.remaining_time_head, features),
         )
 
@@ -437,7 +439,7 @@ class Decoder(nn.Module):
             return (UNCONDITIONED,) * len(self.layers)
         return self.conditioning.layers(z)
 
-    def read_with(self, sampling: SamplingConfig) -> None:
+    def read_with(self, sampling: DictConfig) -> None:
         """Replace the sampler the activity head is drawn through.
 
         Inference-time only: nothing here is a parameter or reaches the state dict, so swapping it
@@ -490,7 +492,7 @@ class Decoder(nn.Module):
     def _next_time(distribution: Laplace, *, drawing: bool) -> torch.Tensor:
         """Read one time head for one decode step.
 
-        No temperature and no nucleus shape this the way `SamplingConfig` shapes an activity's
+        No temperature and no nucleus shape this the way `DictConfig` shapes an activity's
         draw: the head's own scale already says how wide this position is, where a softmax says
         only how the mass is spread over a vocabulary. A head with no scale is the unit-scale
         `Laplace.point`, and `drawing` is False on every decoder that holds one, so this reads its
@@ -611,7 +613,7 @@ class Decoder(nn.Module):
                 dtype=torch.long,
                 device=device,
             ),
-            cycle_times=torch.zeros(size=(batch_size, seq_len), device=device),
+            inter_event_times=torch.zeros(size=(batch_size, seq_len), device=device),
             categorical_attributes=torch.zeros(
                 size=(batch_size, seq_len, self.embeddings.num_categorical),
                 dtype=torch.long,
@@ -686,7 +688,7 @@ class Decoder(nn.Module):
         generated_activities = torch.zeros(
             size=(batch_size, max_steps), dtype=torch.long, device=device
         )
-        generated_cycle_times = torch.zeros(
+        generated_inter_event_times = torch.zeros(
             size=(batch_size, max_steps), dtype=prefix_encoded.dtype, device=device
         )
         # A row that never emits EOT ran to the cap, so that is the length it keeps.
@@ -725,8 +727,8 @@ class Decoder(nn.Module):
                 )  # [batch_size]
 
             generated_activities[:, position] = activities
-            generated_cycle_times[:, position] = self._next_time(
-                self._time(self.cycle_time_head, features), drawing=drawing
+            generated_inter_event_times[:, position] = self._next_time(
+                self._time(self.inter_event_time_head, features), drawing=drawing
             )
             next_input = activities.unsqueeze(dim=1)  # [batch_size, 1]
 
@@ -743,6 +745,6 @@ class Decoder(nn.Module):
         return GeneratedSuffix(
             activities=generated_activities[:, :steps_taken],  # [batch_size, steps]
             lengths=lengths,
-            cycle_times=generated_cycle_times[:, :steps_taken],  # [batch_size, steps]
+            inter_event_times=generated_inter_event_times[:, :steps_taken],  # [batch_size, steps]
             remaining_time=remaining_time,
         )

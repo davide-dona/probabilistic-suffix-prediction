@@ -10,13 +10,12 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 from src.evaluation import Axis
-from src.scalar_metrics import Owner
+from src.evaluation.metrics.definitions import Owner
 from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Plot
 from src.visualization.style import (
-    ASPECT,
-    COLUMN_WIDTH,
-    LEGEND_HEIGHT,
+    DATASET_HEIGHT,
+    FIGURE_OVERHEAD,
     MAX_MARKERS,
     PAGE_WIDTH,
     PANEL_X_BINS,
@@ -90,6 +89,8 @@ def _draw_panel(
         # Keep values at the bound from appearing clipped.
         top += Y_HEADROOM * (top - (bottom if bottom is not None else 0.0))
     axes.set_ylim(bottom=bottom, top=top)
+    if panel[0].shares_scale:
+        axes.set_yticks([0.0, 0.5, 1.0])
     return longest
 
 
@@ -97,20 +98,17 @@ def _link_x_axes(grid: np.ndarray, breakdowns: list[Axis], longest: list[list[in
     """Share x-axis limits within each dataset and breakdown.
 
     Args:
-        grid: Figure axes indexed by row and dataset.
-        breakdowns: Breakdown represented by each row.
+        grid: Figure axes indexed by dataset and metric column.
+        breakdowns: Breakdown represented by each column.
         longest: Longest reported length for each panel.
     """
-    for column in range(grid.shape[1]):
+    for row in range(grid.shape[0]):
         for breakdown in dict.fromkeys(breakdowns):
-            rows = [row for row, drawn in enumerate(breakdowns) if drawn == breakdown]
+            columns = [column for column, drawn in enumerate(breakdowns) if drawn == breakdown]
             # Align panel limits to the longest observed series.
-            right = max(longest[row][column] for row in rows)
-            for row in rows:
-                grid[row][column].set_xlim(left=1, right=right)
-            # Show x tick labels only on the lowest linked panel.
-            for row in rows[:-1]:
-                grid[row][column].tick_params(labelbottom=False)
+            right = max(longest[row][column] for column in columns)
+            for column in columns:
+                grid[row][column].set_xlim(left=1, right=max(2, right))
 
 
 def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
@@ -124,49 +122,51 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
         Composed Matplotlib figure.
     """
     datasets = labels.DATASETS.ordered(frame['dataset'])
-    # Group panels by breakdown to share their x-axis.
-    rows = [(breakdown, panel) for breakdown in plot.breakdowns for panel in plot.panels]
-    # Preserve column width until the figure reaches page width.
-    width = min(PAGE_WIDTH, len(datasets) * COLUMN_WIDTH)
+    # Each breakdown occupies a block of metric columns.
+    columns = [(breakdown, panel) for breakdown in plot.breakdowns for panel in plot.panels]
     figure, grid = plt.subplots(
-        nrows=len(rows),
-        ncols=len(datasets),
-        figsize=(width, len(rows) * width / len(datasets) * ASPECT + LEGEND_HEIGHT),
+        nrows=len(datasets),
+        ncols=len(columns),
+        figsize=(PAGE_WIDTH, len(datasets) * DATASET_HEIGHT + FIGURE_OVERHEAD),
         squeeze=False,
         constrained_layout=True,
     )
     # Track panel extents for linked x-axes.
     longest = []
-    for (breakdown, panel), row in zip(rows, grid, strict=True):
-        drawn = frame[frame['axis'] == breakdown]
+    for dataset, row in zip(datasets, grid, strict=True):
+        drawn = frame[frame['dataset'] == dataset]
         longest.append(
             [
-                _draw_panel(axes, drawn[drawn['dataset'] == dataset], panel, x_bins=PANEL_X_BINS)
-                for axes, dataset in zip(row, datasets, strict=True)
+                _draw_panel(axes, drawn[drawn['axis'] == breakdown], panel, x_bins=PANEL_X_BINS)
+                for axes, (breakdown, panel) in zip(row, columns, strict=True)
             ]
         )
-        # The primary metric labels the row.
-        entry = panel[0]
-        row[0].set_ylabel(textwrap.fill(entry.axis_label, width=TITLE_WIDTH))
-        if entry.shares_scale:
-            # Fixed-scale rows need y tick labels once.
-            for axes in row[1:]:
+        row[0].set_ylabel(
+            labels.DATASETS[dataset], rotation=0, ha='right', va='center', labelpad=12
+        )
+
+    figure.align_ylabels(grid[:, 0])
+    _link_x_axes(grid, [breakdown for breakdown, _ in columns], longest)
+
+    for column, (_, panel) in enumerate(columns):
+        heading = panel[0].axis_label.replace(' (', '\n(')
+        grid[0, column].set_title(
+            '\n'.join(textwrap.fill(line, width=TITLE_WIDTH) for line in heading.splitlines())
+        )
+        # A metric has the same scale across datasets, including unbounded metrics.
+        limits = [axes.get_ylim() for axes in grid[:, column]]
+        bottom = min(limit[0] for limit in limits)
+        top = max(limit[1] for limit in limits)
+        for axes in grid[:, column]:
+            axes.set_ylim(bottom, top)
+            if column > 0 and panel[0].shares_scale and columns[0][1][0].shares_scale:
                 axes.tick_params(labelleft=False)
-
-    _link_x_axes(grid, [breakdown for breakdown, _ in rows], longest)
-
-    # Each column represents one dataset.
-    for axes, dataset in zip(grid[0], datasets, strict=True):
-        axes.set_title(labels.DATASETS[dataset])
 
     if len(plot.breakdowns) == 1:
         figure.supxlabel(AXIS_LABELS[plot.breakdowns[0]])
     else:
-        # Label each breakdown below its final panel row.
-        for breakdown in plot.breakdowns:
-            foot = max(row for row, (drawn, _) in enumerate(rows) if drawn == breakdown)
-            for axes in grid[foot]:
-                axes.set_xlabel(AXIS_LABELS[breakdown])
+        for axes, (breakdown, _) in zip(grid[-1], columns, strict=True):
+            axes.set_xlabel(AXIS_LABELS[breakdown])
 
     # Deduplicate legend entries across panels.
     keys: dict[str, Artist] = {}

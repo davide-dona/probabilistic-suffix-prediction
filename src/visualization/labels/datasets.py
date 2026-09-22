@@ -1,4 +1,4 @@
-from src.registry import Registry
+from src.visualization.registry import Registry
 
 # Display labels and ordering for datasets.
 DATASETS = Registry[str](
@@ -8,8 +8,6 @@ DATASETS = Registry[str](
         'sepsis': 'Sepsis',
         'bpic19': 'BPIC19',
         'bpic17': 'BPIC17',
-        'bpic12': 'BPIC12',
         'bpic13': 'BPIC13',
-        'sp2020': 'SP2020',
     },
 )

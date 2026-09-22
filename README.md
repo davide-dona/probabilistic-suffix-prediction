@@ -1,190 +1,190 @@
-# C-VAE for Suffix Generation
+# Suffix Generation
 
-A Conditional Variational Autoencoder (C-VAE) for generating suffixes based on given prefixes.
+Conditional suffix generation for predictive process monitoring.
 
-This repository provides a comprehensive implementation of the C-VAE architecture, along with training scripts, evaluation metrics, configuration files, and pre-trained models.
-
-The whole project is built to support research and experimentation in **predictive process monitoring**.
-
----
+This repository provides two Transformer architectures, a conditional variational autoencoder
+and a Head-sampling Transformer, together with preprocessing, training, inference, evaluation,
+and visualization pipelines.
 
 ## Install
 
-**Requirements:** Python 3.13+, [uv](https://docs.astral.sh/uv/) and [Git LFS](https://git-lfs.com)
+**Requirements:** Python 3.13+, [uv](https://docs.astral.sh/uv/), and
+[Git LFS](https://git-lfs.com/).
 
-The datasets under `data/` are tracked with Git LFS. A plain clone
-would only checks out pointer files. Install Git LFS once per machine and pull them before preprocessing:
+The datasets under `data/` are tracked with Git LFS. Pull them before preprocessing:
 
 ```bash
 git lfs install
 git lfs pull
+uv sync --locked
 ```
 
-```bash
-uv venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-uv sync                     # installs the locked dependencies into .venv
-```
-
-Training logs metrics and checkpoints to [W&B](https://wandb.ai). Sign in once per machine:
+Training logs to [W&B](https://wandb.ai/). Sign in once per machine:
 
 ```bash
 uv run wandb login
 ```
 
----
+## Run the pipeline
 
-## Reproducibility
+The pipeline stages below run in sequence, each reading an explicit artifact written by the
+previous stage. Hydra composes the YAML files under `config/` and accepts overrides directly on
+the command line.
 
-The four pipelines below run in sequence, each reading what the previous one wrote. 
+Every invocation records its resolved configuration beside the stage artifacts described below.
 
-Preprocessing and training take `-c`/`--config`, the dataset's experiment config YAML (e.g. `config/datasets/bpic17.yaml`). 
+### Run multiple jobs
 
-Training takes `-m`/`--model`, the architecture to build (e.g. `config/models/cvae.yaml`), which also carries every non-dataset setting a run needs: the optimizer, the training loop, and, for the CVAE, the loss. Generation spells `-m` differently: there it is the trained checkpoint, a run's weights rather than an architecture, and takes an optional `-d`/`--device` to generate on a different machine than the one the run trained on.
+Hydra multirun executes the Cartesian product of comma-separated values, one job at a time.
+Use it to process a batch at any pipeline stage:
+
+```bash
+uv run python -m pipelines.preprocess --multirun dataset=sepsis,bpic13,bpic17,bpic19
+
+uv run python -m pipelines.train --multirun \
+  dataset=sepsis,bpic13,bpic17,bpic19 \
+  model=transformer_cvae,head_sampling_transformer
+```
+
+Generation and evaluation can be queued in the same way by listing their input artifacts:
+
+```bash
+uv run python -m pipelines.generate --multirun \
+  checkpoint=/path/to/first.pt,/path/to/second.pt device=cpu num_samples=100
+
+uv run python -m pipelines.evaluate --multirun \
+  generations=/path/to/first/generations.parquet,/path/to/second/generations.parquet workers=4
+```
+
+Each multirun job receives its own dataset, model, and run ID directory. Batch runs do not
+transfer artifacts between stages automatically, so supply each stage's input artifact
+explicitly.
 
 ### 1. Preprocessing
 
-Run once per dataset, before anything else:
+Run once per dataset:
 
 ```bash
-python -m pipelines.preprocess -c config/datasets/<dataset>.yaml
+uv run python -m pipelines.preprocess dataset=sepsis
 ```
 
-The out-of-time splits as well as the fitted codec and the declarative model are written to `data/<dataset>/`.
+The original log is read from `data/sepsis/original.csv`. The out-of-time splits, fitted codec,
+and declarative model are written under `data/sepsis/` and reused by later stages. Invocation
+records are written under `outputs/preprocess/sepsis/<timestamp>/`.
 
 > [!WARNING]
-> Training and generation read these outputs and will stop with an error naming what's missing if the dataset hasn't been preprocessed yet.
-
-Every artifact is computed on each run: the continuation index of both held-out splits, read by training (to select checkpoints) and by evaluation, and the declarative model, read by evaluation to score conformance. Discovering the declarative model is the slowest step by a wide margin.
+> Training, generation, and evaluation stop if their required preprocessing artifacts are
+> missing.
 
 ### 2. Training
 
-Once the dataset is preprocessed, start a run:
+Choose the dataset and architecture independently:
 
 ```bash
-python -m pipelines.train -m config/models/<architecture>.yaml -c config/datasets/<dataset>.yaml
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae
 ```
 
-`-m`/`--model` and `-c`/`--config` are both required. Two architectures are shipped: `config/models/cvae.yaml`, the conditional VAE, and `config/models/transformer.yaml`, the same backbone with the latent taken out. Which class gets built is read off `model.kind` inside the file. A run cannot be carried on from where it left off: one that finishes, is interrupted or dies is over, and the way to get more training is a fresh run.
+The available architectures are `transformer_cvae` and `head_sampling_transformer`. Training
+writes the best validation checkpoint to
+`outputs/train/<dataset>/<model>/<run-id>/best.pt`. Runs cannot be resumed, but an interrupted run
+retains its last successfully saved best checkpoint.
 
-#### Running a batch on every GPU at once
+Training curves are logged to the `suffix-generation` W&B project. On normal completion, the
+selected checkpoint is also uploaded to W&B.
 
-Testing an experiment usually means training it on every dataset, then generating from every run
-it produced. Both are batched the same way: copy the jobs into `queue/` and hand the whole folder
-to the machine's GPUs.
+### 3. Sampler tuning
+
+Tune a Head-sampling Transformer on the validation split before test generation:
 
 ```bash
-cp config/datasets/bpic17.yaml config/datasets/bpic19.yaml queue/train/
-scripts/train_queue.sh -m config/models/cvae.yaml   # -g 0,1 by default
-
-cp outputs/checkpoints/best/bpic17/cvae/*.pt queue/generate/
-scripts/generate_queue.sh   # -n 100 for every job in the batch
+uv run python -m pipelines.tune checkpoint=/path/to/best.pt device=cpu
 ```
 
-A training job is a dataset config, run under the one architecture the script was given; a generation job is a copy of a best checkpoint, which carries
-the config and the run identity of what wrote it. Both scripts are thin callers of
-`scripts/lib/queue.sh`, which is the queue itself. Comparing both architectures over every dataset
-is running `train_queue.sh` once per model, `-m config/models/cvae.yaml` and then
-`-m config/models/transformer.yaml`, against the same queued datasets.
+The selected sampler is written to
+`outputs/tune/<dataset>/<model>/<run-id>/tuning.json`. This stage does not apply to the
+Transformer CVAE.
 
-One job per GPU at a time, and a GPU that finishes picks up the next rather than waiting on the job
-beside it. Each is launched with `CUDA_VISIBLE_DEVICES` masking in its own card, so the one profile
-is used for both rather than a second one naming `cuda:1`.
+### 4. Inference
 
-Each job's output goes to `outputs/queue/<pipeline>/<job>-<timestamp>.log`, since two of them share
-a terminal; the console gets a line per job and a summary at the end. A job that succeeded is
-deleted from the queue, and one that failed is renamed `<job>.failed` and kept, to be re-queued by
-dropping the suffix once the log has been read. See [`queue/README.md`](queue/README.md).
-
-> [!NOTE]
-> **Skip training:** pre-trained models are available on the Hugging Face model hub. Fetch every published model into `pretrained/` with:
-> ```bash
-> python -m scripts.fetch
-> ```
-> There is one file per model per log, at `pretrained/<name>/<model>.pt`.
-
-Training curves are logged live to the `suffix-generation` W&B project; the run prints its URL as
-soon as logging starts, so watching a VM's training needs no tunnel or synced files.
-
-Runs are grouped in W&B by the experiment they belong to, `<name>/<model>`, and tagged with each half of it, so one model on one log reads as one group of runs and either axis can be filtered on alone.
-
-A run's checkpoint is written to `outputs/checkpoints/best/<name>/<model>/<timestamp>.pt`, overwritten each time the selection score improves, so the file always holds the run's best step rather than its last. When the run finishes it is uploaded once, as a new version of the `<name>-<model>` Artifact aliased with the run's own timestamp:
+Generate suffixes for every prefix of the test split:
 
 ```bash
-wandb artifact get <name>-<model>:<timestamp>   # a particular run
-wandb artifact get <name>-<model>:latest        # the most recent run of that experiment
+uv run python -m pipelines.generate checkpoint=/path/to/best.pt device=cpu num_samples=100
 ```
 
-One run leaves one version, so an experiment's Artifact lineage reads as its run history. A run that dies before finishing uploads nothing, and its checkpoint stays on the machine that trained it.
-
-### 3. Inference
-
-After training, generate suffixes for the test set:
+For a tuned Head-sampling Transformer, pass the tuning report explicitly:
 
 ```bash
-python -m pipelines.generate -m <path-to-checkpoint>
+uv run python -m pipelines.generate checkpoint=/path/to/best.pt \
+  tuning=/path/to/tuning.json device=cpu num_samples=100
 ```
 
-- `-m`/`--checkpoint` points to the checkpoint to generate with, from `pretrained/` or `outputs/checkpoints/best/`.
-- `-d`/`--device` overrides the device to generate on, e.g. to run on a different machine than the one the run trained on. Defaults to the run's own `training.device`.
-- `-n`/`--num-samples` overrides how many suffixes are drawn per prefix for this generation alone. Defaults to the run's own `inference.evaluation_samples`.
+The generations are written to
+`outputs/generate/<dataset>/<model>/<run-id>/generations.parquet`.
 
-The generated suffixes for every prefix of the test split are written to `outputs/generations/<name>/<model>/<timestamp>.parquet`, named after the run the checkpoint carries.
+### 5. Evaluation
 
-### 4. Evaluation
-
-Reads the generated suffixes and writes an evaluation report:
+Evaluate a generations file:
 
 ```bash
-python -m pipelines.evaluate -g <path-to-generations> -j <number-of-jobs>
+uv run python -m pipelines.evaluate generations=/path/to/generations.parquet workers=4
 ```
 
-- `-g`/`--generations` points to the generations file to score, produced by `pipelines.generate`.
-- `-j`/`--workers` sets how many processes to score with, defaulting to one per available CPU. 
+The report and its per-prefix scores are written under
+`outputs/evaluate/<dataset>/<model>/<run-id>/` as `evaluation.json` and
+`prefix_scores.parquet`.
 
-The resulting report is written to `outputs/eval/<name>/<model>/<timestamp>.json`, and the scores of each prefix behind it to the same path with a `.parquet` suffix.
+### 6. Visualization
 
-### 5. Publishing
-
-Once a run has been evaluated and is worth being the one others reach for, propose its best checkpoint as that model's published version:
+Plot and tabulate one or more evaluation reports:
 
 ```bash
-python -m scripts.publish -m <path-to-best-checkpoint>
+uv run python -m pipelines.visualize \
+  'evaluations=[/path/to/first/evaluation.json,/path/to/second/evaluation.json]'
 ```
 
-`-m`/`--checkpoint` points to the checkpoint to publish, from `outputs/checkpoints/best/`. Which run deserves the name is exactly the decision this step exists to record, so it is named rather than searched for.
+Keep every `evaluation.json` beside its `prefix_scores.parquet`. Figures are written as PDF under
+`outputs/visualize/<date>/<time>/figures/`, and comparison tables as LaTeX under
+`outputs/visualize/<date>/<time>/tables/`.
 
-The checkpoint file is uploaded as it sits, to `<name>/<model>.pt` in the Hugging Face model repo: it holds only what rebuilding the model reads, so there is nothing to trim off one first.
-
----
-
-## Notebooks
-
----
-
-## Visualization
-
-Once a dataset has been evaluated, the scores of one or more runs can be plotted and tabulated with:
+To visualize every report below one or more directories instead:
 
 ```bash
-python -m pipelines.visualize -e <path-to-report> [<path-to-report> ...]
-python -m pipelines.visualize -E outputs/eval
+uv run python -m pipelines.visualize 'evaluations_dir=[outputs/evaluate,pinned]'
 ```
 
-- `-e`/`--evaluations` takes the paths to the evaluation reports to compare, from `pipelines.evaluate`; passing several overlays them on the same axes, which is also how models or datasets are compared.
-- `-E`/`--evaluations-dir` instead compares every report under a directory, at any depth: `outputs/eval` for a whole set of results, `outputs/eval/bpic17` for one dataset.
+## Published checkpoints
 
-The figures are written to `outputs/visual/figures/` as PDF, which is what the paper takes, and the comparison tables to `outputs/visual/tables/` as `tex`. Each figure covers every dataset and model at once, so it is named after what it holds rather than after a run.
+Download all published checkpoints to `pretrained/<dataset>/<model>.pt`:
 
----
+```bash
+uv run python -m scripts.fetch
+```
 
-## Configs
+## Configuration
 
-A dataset config declares everything a run needs: where to find the raw log and how to read it, the model architecture, and every training and inference hyperparameter. All configs are validated against the models in `src/configs/schema/`, one module per section.
+Datasets, models, training defaults, and runtime profiles live in the corresponding groups under
+`config/`. Override individual settings with dotted keys:
 
-### Config inheritance
+```bash
+uv run python -m pipelines.train dataset=bpic17 model=head_sampling_transformer \
+  optimizer.lr=0.0005 training.device=cuda:0
+```
 
-Fields can be overridden between files. Two layers are deep-merged in order, each taking precedence over the last:
+Inspect the fully resolved configuration without starting a run:
 
-1. `config/models/<architecture>.yaml` — the `-m`/`--model` architecture, e.g. `config/models/cvae.yaml`. Owns the whole `model` section, including the `kind` that says which class to build, and every other setting that does not vary with the dataset: the seed, the `dataloader`, the `optimizer`, the `training` loop, `early_stopping`, `inference`, and, for the CVAE, `model.loss`. An architecture is chosen independently of the log it runs on, which is why it is a layer rather than a block inside a dataset config; a different machine (a different device, batch size, learning rate) means a new model config variant rather than a third layer.
-2. `config/datasets/<dataset>.yaml` — the `-c`/`--config` dataset config, e.g. `config/datasets/sepsis.yaml`. Owns the raw log and `declare`, the declarative-model discovery settings.
+```bash
+uv run python -m pipelines.train dataset=sepsis model=transformer_cvae --cfg job --resolve
+```
+
+## Maintainer operations
+
+### Publish a checkpoint
+
+Once a run has been evaluated, propose its checkpoint as a published model:
+
+```bash
+uv run python -m scripts.publish -m /path/to/best.pt
+```
+
+This opens a pull request against the Hugging Face model repository.

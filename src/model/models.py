@@ -1,21 +1,18 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import torch
-from pydantic import TypeAdapter
+from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
-from src.configs.schema import CVAEConfig, ModelConfig
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.distributions import Gaussian, Laplace
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
 from src.training import LatentMetrics, Loss
-
-# `ModelConfig` is a tagged union rather than a class, so a checkpoint's stored config is
-# validated through an adapter rather than by calling `model_validate` on it.
-_MODEL_CONFIG = TypeAdapter(ModelConfig)
 
 
 @dataclass(frozen=True)
@@ -38,7 +35,7 @@ class ModelOutput:
     latents: Latents | None  # None for a model with no latent
 
 
-def _timed_positions(batch: SplitTrace) -> torch.Tensor:
+def _timed_positions(batch: TraceCut) -> torch.Tensor:
     """Mark the suffix positions the time targets are defined at.
 
     Args:
@@ -53,7 +50,7 @@ def _timed_positions(batch: SplitTrace) -> torch.Tensor:
 
 
 def time_loss(
-    prediction: Laplace, target: torch.Tensor, batch: SplitTrace
+    prediction: Laplace, target: torch.Tensor, batch: TraceCut
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Score one time head over the positions its target is defined at.
 
@@ -98,12 +95,12 @@ class SuffixModel(nn.Module, ABC):
         self.eot_activity_index = codec.activity.eot_index
 
     @abstractmethod
-    def forward(self, item: SplitTrace) -> ModelOutput:
+    def forward(self, item: TraceCut) -> ModelOutput:
         """Score one batch teacher-forced, for the loss to charge."""
 
     @abstractmethod
     def generate(
-        self, item: SplitTrace, *, num_samples: int, sample: bool = True
+        self, item: TraceCut, *, num_samples: int, sample: bool = True
     ) -> GeneratedSuffix:
         """Write `num_samples` suffixes for every prefix of a batch.
 
@@ -118,7 +115,7 @@ class SuffixModel(nn.Module, ABC):
 
     @abstractmethod
     def compute_loss(
-        self, output: ModelOutput, batch: SplitTrace, *, step: int
+        self, output: ModelOutput, batch: TraceCut, *, step: int
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass against the batch it was run on, ready to backpropagate.
 
@@ -146,8 +143,8 @@ class SuffixModel(nn.Module, ABC):
         return GeneratedSuffix(
             activities=generated.activities.view(batch_size, -1, generated.activities.size(dim=1)),
             lengths=generated.lengths.view(batch_size, -1),
-            cycle_times=generated.cycle_times.view(
-                batch_size, -1, generated.cycle_times.size(dim=1)
+            inter_event_times=generated.inter_event_times.view(
+                batch_size, -1, generated.inter_event_times.size(dim=1)
             ),
             remaining_time=generated.remaining_time.view(batch_size, -1),
         )
@@ -156,10 +153,12 @@ class SuffixModel(nn.Module, ABC):
 # Imported after `SuffixModel` is defined: both modules import it back, so the base class has to
 # already be bound in this module's namespace by the time they run.
 from src.model.architectures.cvae import TransformerCVAE  # noqa: E402
-from src.model.architectures.transformer import Transformer  # noqa: E402
+from src.model.architectures.head_sampling_transformer import (  # noqa: E402
+    HeadSamplingTransformer,
+)
 
 
-def build_model(config: ModelConfig, codec: DatasetCodec) -> SuffixModel:
+def build_model(config: DictConfig, codec: DatasetCodec) -> SuffixModel:
     """Build the architecture a config declares.
 
     Args:
@@ -168,9 +167,11 @@ def build_model(config: ModelConfig, codec: DatasetCodec) -> SuffixModel:
     Returns:
         The model, on the CPU and in training mode.
     """
-    if isinstance(config, CVAEConfig):
+    if config.kind == 'transformer_cvae':
         return TransformerCVAE(config=config, codec=codec)
-    return Transformer(config=config, codec=codec)
+    if config.kind == 'head_sampling_transformer':
+        return HeadSamplingTransformer(config=config, codec=codec)
+    raise ValueError(f'Unknown model kind: {config.kind}')
 
 
 def model_from_checkpoint(
@@ -190,11 +191,10 @@ def model_from_checkpoint(
         The model, in evaluation mode.
     Raises:
         ValueError: If the checkpoint does not carry a config and weights.
-        pydantic.ValidationError: If the config it carries names no architecture, which is what
-            a checkpoint written before `model.kind` existed looks like from here.
+        pydantic.ValidationError: If the config names no supported architecture.
     """
     require_keys(checkpoint, MODEL_KEYS, purpose='rebuilt', remedy='Train the model again.')
-    config = _MODEL_CONFIG.validate_python(checkpoint['model_config'])
+    config = OmegaConf.create(checkpoint['config']['model'])
 
     model = build_model(config=config, codec=codec).to(device=device)
     model.load_state_dict(state_dict=checkpoint['model_state_dict'])
