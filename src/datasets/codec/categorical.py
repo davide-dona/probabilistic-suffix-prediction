@@ -80,9 +80,8 @@ class CategoricalColumn(BaseModel):
     def names(self) -> tuple[str, ...]:
         """Every value `decode` can name, in row order, the special tokens included.
 
-        The one order a dataset's activities are coded in wherever a suffix is written as a string:
-        seeding `ActivityCodes` from this is what makes the generations and the continuation index
-        spell one suffix the same way, and it covers every row so no name is ever coded on the fly.
+        For the activity channel, `DatasetCodec.activity_codes` uses this order to give every
+        decoded value a stable compact code.
         """
         return tuple(self.from_index[row] for row in sorted(self.from_index))
 

@@ -10,10 +10,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.activity_codes import ActivityCodes
 from src.artifacts import sha256
 from src.cli import banner, step
-from src.datasets.codec import DatasetCodec
+from src.datasets.codec import ActivityCodec, DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.evaluation.results import PrefixSummary
 from src.inference.generate import generate_batch, generation_batch_size
@@ -43,7 +42,7 @@ def _score(
     seed: int,
     num_samples: int,
     codec: DatasetCodec,
-    codes: ActivityCodes,
+    codes: ActivityCodec,
     checker: ConformanceChecker,
     device: torch.device,
 ) -> TuningPoint:
@@ -204,7 +203,7 @@ def run(
     )
 
     with step('Reading the declarative model'):
-        codes = ActivityCodes.of(codec.activity.names)
+        codes = codec.activity_codes
         checker = ConformanceChecker(config.data.name, codes)
 
     points = []

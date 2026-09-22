@@ -112,7 +112,7 @@ class GenerationWriter:
             path: Destination file inside the active Hydra output directory.
             metadata: Stable run identity and the source checkpoint hash.
             vocabulary: The activity names the suffixes are spelled on, in code order, from
-                `ActivityCodes.vocabulary`. Written into the file so it says what its own
+                `ActivityCodec.vocabulary`. Written into the file so it says what its own
                 characters mean.
             sampling: How the activity head was read, for a model that draws from it, or None for
                 one that reads it at its mode. Written in for the same reason the vocabulary is:
@@ -238,7 +238,8 @@ class Generations:
     def vocabulary(self) -> tuple[str, ...]:
         """The activity names this file spells its suffixes on, in code order.
 
-        What `ActivityCodes.of` seeds back into a codebook, and what a reader compares against the
+        What `ActivityCodec.from_vocabulary` uses to recreate a codebook, and what a reader
+        compares against the
         continuation index's own before it scores a single prefix.
 
         Raises:

@@ -7,7 +7,6 @@ import torch
 import wandb
 from torch.utils.data import DataLoader
 
-from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.evaluation.metrics import METRICS
 from src.evaluation.results import PrefixSummary, ScoreGroups
@@ -118,7 +117,7 @@ def validate_generation(
     """
     model.eval()
 
-    codes = ActivityCodes.of(codec.activity.names)
+    codes = codec.activity_codes
 
     generations = [
         generation

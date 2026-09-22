@@ -8,7 +8,6 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
-from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
@@ -87,7 +86,7 @@ def train(
 
     # The declarative model generated suffixes are checked against, built once and reused: it
     # caches a trace's rate across the run rather than rebuilding the constraints per validation.
-    checker = ConformanceChecker(run.dataset, ActivityCodes.of(codec.activity.names))
+    checker = ConformanceChecker(run.dataset, codec.activity_codes)
 
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_config.lr, weight_decay=optimizer_config.weight_decay

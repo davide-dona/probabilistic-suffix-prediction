@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from omegaconf import DictConfig
 
-from src.activity_codes import ActivityCodes
-from src.datasets.codec import DatasetCodec
+from src.datasets.codec import ActivityCodec, DatasetCodec
 from src.datasets.dataset import TraceCut
 from src.inference.generation import DecodedEvents, Draws, Generation
 
@@ -42,7 +41,7 @@ def generate_batch(
     *,
     num_samples: int,
     codec: DatasetCodec,
-    codes: ActivityCodes,
+    codes: ActivityCodec,
 ) -> list[Generation]:
     """Generate `num_samples` suffixes per prefix of one batch, and the point prediction beside
     them.
@@ -131,7 +130,7 @@ def generate_batch(
 
 def _decode(
     codec: DatasetCodec,
-    codes: ActivityCodes,
+    codes: ActivityCodec,
     *,
     activities: np.ndarray,
     inter_event_times: np.ndarray,

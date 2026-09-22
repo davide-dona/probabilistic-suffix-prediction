@@ -7,7 +7,7 @@ from rapidfuzz import process
 from rapidfuzz.distance import DamerauLevenshtein
 from scipy.spatial.distance import cdist
 
-from src.activity_codes import END_CODE, START_CODE
+from src.datasets.codec import END_CODE, START_CODE
 
 
 class SuffixMetric(StrEnum):

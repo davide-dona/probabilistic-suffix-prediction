@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from src import paths
-from src.activity_codes import ActivityCodes
+from src.datasets.codec import ActivityCodec
 from src.logs.declare.constraints import read_constraints
 from src.logs.declare.templates import Positions
 
@@ -42,7 +42,7 @@ class Conformance:
 class ConformanceChecker:
     """Scores traces against the declarative model a dataset was mined for."""
 
-    def __init__(self, dataset: str, codes: ActivityCodes) -> None:
+    def __init__(self, dataset: str, codes: ActivityCodec) -> None:
         """
         Args:
             dataset: The dataset whose model to check against, read from where preprocessing

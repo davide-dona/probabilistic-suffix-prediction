@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.activity_codes import ActivityCodes
 from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
@@ -156,7 +155,7 @@ def run(
     # The one codebook this run spells its suffixes on, seeded from every name the activity channel
     # can decode to so no name is ever coded on the fly. The continuation index is seeded from the
     # same list, which is what lets evaluation compare the two without translating either.
-    codes = ActivityCodes.of(codec.activity.names)
+    codes = codec.activity_codes
 
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
     with GenerationWriter(

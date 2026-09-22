@@ -10,6 +10,7 @@ from pandas.api.types import is_numeric_dtype
 from pydantic import BaseModel, ConfigDict, Field
 
 from src import paths
+from src.datasets.codec.activity import ActivityCodec
 from src.datasets.codec.categorical import (
     ACTIVITY_TOKENS,
     FEATURE_TOKENS,
@@ -63,6 +64,16 @@ class DatasetCodec(BaseModel):
         """Rows in the table every categorical feature channel shares: one PAD, then a block
         per feature. 1 on a dataset with no categorical features, where no table is built."""
         return 1 + sum(feature.num_rows for feature in self.categorical_features)
+
+    @property
+    def activity_codes(self) -> ActivityCodec:
+        """A fresh codebook for compact activity-sequence storage and comparison.
+
+        Its code order follows the activity channel's complete decode vocabulary, including the
+        special tokens. Each caller receives a fresh codebook because `ActivityCodec` can extend
+        itself for an activity outside that vocabulary.
+        """
+        return ActivityCodec.from_vocabulary(self.activity.names)
 
     @classmethod
     def fit(
