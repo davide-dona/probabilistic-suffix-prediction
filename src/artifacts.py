@@ -26,10 +26,6 @@ def read_metadata(parquet: pq.ParquetFile) -> dict[str, str]:
     if raw is None:
         raise ValueError('Missing artifact provenance; regenerate this file.')
     metadata = json.loads(raw)
-    if not isinstance(metadata, dict) or 'run_id' not in metadata:
-        raise ValueError(
-            'Artifact predates stable run identity; regenerate it with the current pipeline.'
-        )
     if not isinstance(metadata, dict) or not all(
         isinstance(metadata.get(key), str) and metadata[key]
         for key in ('dataset', 'model', 'run_id', 'checkpoint_sha256')

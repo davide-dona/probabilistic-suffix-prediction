@@ -187,9 +187,7 @@ class TransformerCVAE(SuffixModel):
         kl_per_dim = gaussian_kl(
             posterior=output.latents.posterior, prior=output.latents.prior
         )  # [batch_size, latent_dim]
-        floored_kl_loss = free_bits_kl(
-            kl_per_dim=kl_per_dim, free_bits=self.loss_config.free_bits
-        )
+        floored_kl_loss = free_bits_kl(kl_per_dim=kl_per_dim, free_bits=self.loss_config.free_bits)
         kl_weight = linear_warmup_weight(
             step=step,
             ramp_steps=self.loss_config.kl_annealing_ramp_steps,

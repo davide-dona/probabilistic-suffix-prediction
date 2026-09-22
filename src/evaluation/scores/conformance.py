@@ -3,11 +3,11 @@ from typing import Self
 
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
-from src.scalar_metrics import Direction, ScalarMetrics, Unit, metric
+from src.metrics import Direction, ScalarRecord, Unit, metric
 
 
 @dataclass(frozen=True, slots=True)
-class ConformanceScores(ScalarMetrics):
+class ConformanceScores(ScalarRecord):
     """Score for conformance of generated suffixes to process constraints."""
 
     conformance_sample_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
@@ -41,7 +41,7 @@ class ConformanceScores(ScalarMetrics):
 
 
 @dataclass(frozen=True, slots=True)
-class ConformanceDiagnostics(ScalarMetrics):
+class ConformanceDiagnostics(ScalarRecord):
     """Conformance values retained for run diagnostics."""
 
     conformance_point: float

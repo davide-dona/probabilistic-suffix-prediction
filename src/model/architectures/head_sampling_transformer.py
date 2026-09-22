@@ -117,9 +117,7 @@ class HeadSamplingTransformer(SuffixModel):
             max_steps=item.prefix.activities.size(dim=1),
             sample=sample,
         )
-        return self._per_sample(
-            generated=generated, batch_size=item.prefix.length.size(dim=0)
-        )
+        return self._per_sample(generated=generated, batch_size=item.prefix.length.size(dim=0))
 
     def compute_loss(
         self, output: ModelOutput, batch: SplitTrace, *, step: int

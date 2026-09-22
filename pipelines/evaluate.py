@@ -138,11 +138,7 @@ def run(generations_file: Path, workers: int | None) -> None:
     # knowing which constraints it holds.
     model_path = paths.DECLARE_MODEL.require(dataset)
     mined = discovery_settings(model_path)
-    mined_under = (
-        f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
-        if mined is not None
-        else 'settings not recorded, so this model predates the header'
-    )
+    mined_under = f'min support {mined.min_support:.0%}, consider_vacuity={mined.consider_vacuity}'
 
     banner(
         'Scoring generated suffixes',

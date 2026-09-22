@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from src.evaluation import Axis
 from src.evaluation.scores import METRICS
-from src.scalar_metrics import Direction
+from src.metrics import Direction
 from src.visualization.catalogue.entry import MetricEntry
 
 
@@ -69,8 +69,6 @@ TABLES = (
             MetricEntry(METRICS['suffix_length_coverage_gap_75'], r'75\%'),
             MetricEntry(METRICS['suffix_length_coverage_gap_95'], r'95\%'),
         ),
-        column_groups=(
-            ColumnGroup('Suffix length', 3),
-        ),
+        column_groups=(ColumnGroup('Suffix length', 3),),
     ),
 )

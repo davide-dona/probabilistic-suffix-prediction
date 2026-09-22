@@ -4,13 +4,13 @@ from typing import Self
 import numpy as np
 
 from src.evaluation.scores.context import ScoringContext
-from src.scalar_metrics import Direction, ScalarMetrics, Unit, metric
+from src.metrics import Direction, ScalarRecord, Unit, metric
 
-COVERAGE_LEVELS = (0.5, 0.75, 0.95)
+COVERAGE_LEVELS = (0.50, 0.75, 0.95)
 
 
 @dataclass(frozen=True, slots=True)
-class SuffixLengthScores(ScalarMetrics):
+class SuffixLengthScores(ScalarRecord):
     """Scores for the sampled suffix-length distribution."""
 
     suffix_length_mae: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
@@ -33,7 +33,7 @@ class SuffixLengthScores(ScalarMetrics):
 
 
 @dataclass(frozen=True, slots=True)
-class SuffixLengthDiagnostics(ScalarMetrics):
+class SuffixLengthDiagnostics(ScalarRecord):
     """Point-prediction suffix-length error retained for run diagnostics."""
 
     suffix_length_ae_point: float

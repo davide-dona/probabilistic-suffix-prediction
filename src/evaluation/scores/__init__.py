@@ -1,44 +1,35 @@
+from dataclasses import fields
+
 from src.evaluation.scores.activity import ActivityDiagnostics, ActivityScores
 from src.evaluation.scores.conformance import ConformanceDiagnostics, ConformanceScores
 from src.evaluation.scores.context import ScoringContext
 from src.evaluation.scores.suffix_length import SuffixLengthDiagnostics, SuffixLengthScores
 from src.evaluation.scores.time import TimeDiagnostics
+from src.metrics import Metric, metrics_of
 from src.registry import Registry
-from src.scalar_metrics import Metric
 
-# Score families in report order.
-FAMILIES = (
-    ActivityScores,
-    SuffixLengthScores,
-    ConformanceScores,
-)
+FAMILIES = (ActivityScores, SuffixLengthScores, ConformanceScores)
 
 
 def _declared() -> dict[str, Metric]:
-    """Collect score declarations, rejecting duplicate names.
-
-    Returns:
-        Metric declarations keyed by field name.
-
-    Raises:
-        ValueError: If score families reuse a field name.
-    """
+    """Collect each reported score once, rejecting missing and repeated declarations."""
     entries: dict[str, Metric] = {}
     for family in FAMILIES:
-        for declaration in family.metrics():
-            if declaration.key in entries:
-                raise ValueError(
-                    f'{declaration.key} is declared twice. A report holds every score in one '
-                    f'namespace, so a name belongs to a single field.'
-                )
-            entries[declaration.key] = declaration
+        declared = metrics_of(family)
+        keys = {metric.key for metric in declared}
+        missing = [entry.name for entry in fields(family) if entry.name not in keys]
+        if missing:
+            raise ValueError(f'{family.__name__} has undeclared scores: {", ".join(missing)}.')
+        for metric in declared:
+            if metric.key in entries:
+                raise ValueError(f'{metric.key} is declared by more than one score family.')
+            entries[metric.key] = metric
     return entries
 
 
-# Score metadata assembled from the declared family fields.
 METRICS = Registry[Metric](
     kind='metric',
-    where='the score fields of the families in src/evaluation/scores/',
+    where='the score fields in src/evaluation/scores/',
     entries=_declared(),
 )
 

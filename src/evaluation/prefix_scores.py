@@ -99,10 +99,7 @@ def require_columns(path: Path, columns: Sequence[str]) -> None:
     """
     absent = [key for key in columns if key not in pq.read_schema(where=path).names]
     if absent:
-        raise ValueError(
-            f'{path} carries no {", ".join(absent)}, so it predates the scores now read. '
-            'Score it again with `python -m pipelines.evaluate`.'
-        )
+        raise ValueError(f'{path} is missing required score columns: {", ".join(absent)}.')
 
 
 def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:

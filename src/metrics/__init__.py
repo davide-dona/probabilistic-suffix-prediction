@@ -1,23 +1,23 @@
-from src.activity_codes import ActivityCodes
-from src.metrics import (
+from src.metrics.definitions import (
     Direction,
     Metric,
     Owner,
-    ScalarRecord,
     Unit,
     metric,
     metrics_of,
 )
-from src.registry import Registry
+from src.metrics.records import ScalarRecord, mean
+
+SELECTION_METRIC = 'energy_score_dls'
 
 __all__ = [
-    'ActivityCodes',
     'Direction',
     'Metric',
     'Owner',
-    'Registry',
     'ScalarRecord',
+    'SELECTION_METRIC',
     'Unit',
+    'mean',
     'metric',
     'metrics_of',
 ]

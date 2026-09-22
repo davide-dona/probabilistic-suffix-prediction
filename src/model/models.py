@@ -191,8 +191,7 @@ def model_from_checkpoint(
         The model, in evaluation mode.
     Raises:
         ValueError: If the checkpoint does not carry a config and weights.
-        pydantic.ValidationError: If the config it carries names no architecture, which is what
-            a checkpoint written before `model.kind` existed looks like from here.
+        pydantic.ValidationError: If the config names no supported architecture.
     """
     require_keys(checkpoint, MODEL_KEYS, purpose='rebuilt', remedy='Train the model again.')
     config = OmegaConf.create(checkpoint['config']['model'])

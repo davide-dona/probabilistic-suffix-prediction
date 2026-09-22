@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.scalar_metrics import Direction, Metric
+from src.metrics import Direction, Metric
 
 
 @dataclass(frozen=True)

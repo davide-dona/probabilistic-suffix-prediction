@@ -19,10 +19,6 @@ FIGURES = (
     Plot(
         name='conformance-by-suffix-length',
         breakdowns=(Axis.SUFFIX,),
-        panels=(
-            (
-                MetricEntry(METRICS['conformance_sample_mean'], 'Conformance (sample mean)'),
-            ),
-        ),
+        panels=((MetricEntry(METRICS['conformance_sample_mean'], 'Conformance (sample mean)'),),),
     ),
 )

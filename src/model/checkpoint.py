@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from src.identity import RunIdentity
+from src.metrics import SELECTION_METRIC
 
 MODEL_KEYS = ('config', 'model_state_dict')
 CHECKPOINT_KEYS = (
@@ -52,7 +53,7 @@ def save_checkpoint(
             'model_state_dict': model.state_dict(),
             'step': step,
             'selection_score': selection_score,
-            'selection_metric': 'energy_score_dls',
+            'selection_metric': SELECTION_METRIC,
             'selection_direction': 'min',
             'wandb_id': wandb_id,
         },
@@ -66,25 +67,12 @@ def load_checkpoint(model_path: str | Path) -> dict:
     model_path = Path(model_path)
     with torch.serialization.safe_globals(NUMPY_SAFE_GLOBALS):
         checkpoint = torch.load(f=model_path, map_location='cpu', weights_only=True)
-    if 'run' not in checkpoint:
-        raise ValueError(
-            f'{model_path} predates stable run identity. Train a new checkpoint with the current '
-            'pipeline.'
-        )
     require_keys(checkpoint, CHECKPOINT_KEYS, purpose='loaded', remedy='Train a new checkpoint.')
     model = checkpoint.get('config', {}).get('model', {})
     data = checkpoint.get('config', {}).get('data', {})
     run = RunIdentity.from_dict(checkpoint['run'])
     if run.dataset != data.get('name') or run.model != model.get('name'):
         raise ValueError('Checkpoint run identity does not match its training configuration')
-    if checkpoint['selection_metric'] != 'energy_score_dls' or model.get('kind') not in (
-        'transformer_cvae',
-        'head_sampling_transformer',
-    ):
-        raise ValueError(
-            'Checkpoint uses the legacy metric or model schema. Train a new checkpoint with '
-            'transformer_cvae or head_sampling_transformer.'
-        )
     return checkpoint
 
 

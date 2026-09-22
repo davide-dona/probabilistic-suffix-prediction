@@ -5,9 +5,6 @@ import pandas as pd
 from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Table
 
-# Placeholder for metrics absent from an older run.
-MISSING = '-'
-
 
 def _escape_latex(text: str) -> str:
     """Escape text for LaTex.
@@ -23,18 +20,20 @@ def _escape_latex(text: str) -> str:
     return text
 
 
-def _value(frame: pd.DataFrame, key: str) -> float | None:
-    """Read a metric value or return `None` when absent.
+def _value(frame: pd.DataFrame, key: str) -> float:
+    """Read a metric value.
 
     Args:
         frame: Report rows for one model and dataset.
         key: Metric key.
 
     Returns:
-        Metric value, if reported.
+        Metric value.
     """
     rows = frame.loc[frame['metric'] == key, 'value']
-    return float(rows.iloc[0]) if len(rows) else None
+    if len(rows) != 1:
+        raise ValueError(f'Expected one value for {key}, found {len(rows)}.')
+    return float(rows.iloc[0])
 
 
 def _row(
@@ -58,9 +57,6 @@ def _row(
     cells = []
     for entry in columns:
         value = _value(frame, entry.key)
-        if value is None:
-            cells.append(MISSING)
-            continue
         written = entry.format(value)
         cells.append(f'\\textbf{{{written}}}' if entry.key in best else written)
     return '   & ' + ' & '.join([_escape_latex(label), *cells]) + ' \\\\'

@@ -4,11 +4,11 @@ from typing import Self
 from src.evaluation.activity_distances import SuffixMetric, sequence_similarity
 from src.evaluation.activity_distances import energy_score as suffix_energy_score
 from src.evaluation.scores.context import ScoringContext
-from src.scalar_metrics import Direction, ScalarMetrics, Unit, metric
+from src.metrics import Direction, ScalarRecord, Unit, metric
 
 
 @dataclass(frozen=True, slots=True)
-class ActivityScores(ScalarMetrics):
+class ActivityScores(ScalarRecord):
     """Scores for the generated activity suffixes."""
 
     dls_sample_mean: float = metric(unit=Unit.SHARE, direction=Direction.HIGHER)
@@ -49,7 +49,7 @@ class ActivityScores(ScalarMetrics):
 
 
 @dataclass(frozen=True, slots=True)
-class ActivityDiagnostics(ScalarMetrics):
+class ActivityDiagnostics(ScalarRecord):
     """Point-prediction activity score retained for run diagnostics."""
 
     dls_point: float

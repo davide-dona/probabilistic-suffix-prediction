@@ -15,22 +15,21 @@ COMMENT = '#'
 SETTINGS_LINE = '# settings: '
 
 
-def discovery_settings(path: Path) -> DictConfig | None:
+def discovery_settings(path: Path) -> DictConfig:
     """Read the header of a declarative model and return the settings it records about how it
     was mined.
     Args:
         path: The model file, from `paths.DECLARE_MODEL`.
     Returns:
-        The settings its header records, or `None` for a model written before the header existed,
-        which says nothing about how it was mined.
+        The settings its header records.
     Raises:
-        pydantic.ValidationError: If the header is there but does not describe a discovery.
+        ValueError: If the model has no discovery settings header.
     """
 
     for line in path.read_text().splitlines():
         if line.startswith(SETTINGS_LINE):
             return OmegaConf.create(json.loads(line.removeprefix(SETTINGS_LINE)))
-    return None
+    raise ValueError(f'{path} has no discovery settings.')
 
 
 def read_constraints(path: Path) -> list[Constraint]:

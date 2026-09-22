@@ -148,28 +148,21 @@ class EvaluationSummary:
         )
 
 
-# Types that expose all score families.
 type Summarized = PrefixSummary | LengthSummary | EvaluationSummary
 
-# Cache each family's metric fields.
 _FIELD_NAMES = {family: tuple(entry.name for entry in fields(family)) for family in FAMILIES}
 
 
 def flatten_scores(summary: Summarized) -> dict[str, float]:
-    """Flatten a summary's score families into a metric mapping.
+    """Flatten a summary's reported score families into one metric mapping.
 
     Args:
         summary: Prefix, length, or evaluation aggregate.
-
     Returns:
-        Metric values keyed by metric name.
+        Metric values keyed by their declared field names.
     """
     return {
         name: getattr(family, name)
-        for family in (
-            summary.activity,
-            summary.suffix_length,
-            summary.conformance,
-        )
+        for family in (summary.activity, summary.suffix_length, summary.conformance)
         for name in _FIELD_NAMES[type(family)]
     }

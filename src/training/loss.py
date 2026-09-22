@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-from src.scalar_metrics import ScalarMetrics
+from src.metrics import ScalarRecord
 
 
 @dataclass(frozen=True)
-class Loss(ScalarMetrics):
+class Loss(ScalarRecord):
     """The loss of one pass, and the terms it is made of.
 
     One shape for both architectures, so a curve reads the same whichever produced it - each

@@ -12,10 +12,12 @@ from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
+from src.metrics import SELECTION_METRIC
+from src.metrics.logging import log_records
 from src.runtime import output_path
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
-from src.training.validation import validate, validate_generation
+from src.training.validation import ACTIVITY_LOG_NAMESPACE, validate, validate_generation
 
 if TYPE_CHECKING:
     from src.model import SuffixModel
@@ -117,7 +119,7 @@ def train(
     )
     print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
-    tracking.define_metric('sample-prediction/energy_score_dls', summary='min')
+    tracking.define_metric(f'{ACTIVITY_LOG_NAMESPACE}/{SELECTION_METRIC}', summary='min')
     try:
         while step < training.max_steps and not should_stop:
             for batch in train_loader:
@@ -144,12 +146,12 @@ def train(
                 interval_totals += metrics
                 seen += batch_size
                 step += 1
-                (metrics / batch_size).log(step, prefix='train')
+                log_records({'train': metrics / batch_size}, step=step)
                 # So a loss curve can be read against where in the warmup it sits.
                 wandb.log({'train/lr': learning_rate}, step=step)
                 # Only a model with a latent has one to watch, and only it is charged a KL term.
                 if latent is not None:
-                    (latent / batch_size).log(step, prefix='train')
+                    log_records({'train': latent / batch_size}, step=step)
 
                 if step % training.val_every_n_steps == 0 or step >= training.max_steps:
                     train_metrics = interval_totals / seen
@@ -158,9 +160,9 @@ def train(
                     # Score the model on the validation set and the generation set, and log
                     # the results.
                     val_metrics, val_latent = validate(model, val_loader, step=step, device=device)
-                    val_metrics.log(step, prefix='val')
+                    log_records({'val': val_metrics}, step=step)
                     if val_latent is not None:
-                        val_latent.log(step, prefix='val')
+                        log_records({'val': val_latent}, step=step)
 
                     gen_metrics = validate_generation(
                         model,
@@ -226,7 +228,7 @@ def train(
         )
         print(f'Finished training after {step} steps ({reason})')
 
-        tracking.summary['selection_metric'] = 'energy_score_dls'
+        tracking.summary['selection_metric'] = SELECTION_METRIC
         tracking.summary['selection_direction'] = 'min'
         tracking.summary['selection_score'] = early_stopper.min_validation_score
         tracking.summary['best_step'] = best_step
@@ -237,7 +239,7 @@ def train(
             metadata={
                 'run': run.as_dict(),
                 'wandb_id': tracking.id,
-                'selection_metric': 'energy_score_dls',
+                'selection_metric': SELECTION_METRIC,
                 'selection_direction': 'min',
                 'step': best_step,
                 'selection_score': early_stopper.min_validation_score,

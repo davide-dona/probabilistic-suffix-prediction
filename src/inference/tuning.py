@@ -11,6 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from pydantic import TypeAdapter, ValidationError
 
 from src.identity import RunIdentity
+from src.metrics import SELECTION_METRIC
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ class TuningReport:
     search: SearchPass
     chosen: dict[str, float]
     grid: tuple[TuningPoint, ...]
-    selection_metric: str = 'energy_score_dls'
+    selection_metric: str = SELECTION_METRIC
     selection_direction: str = 'min'
 
     @classmethod
@@ -60,23 +61,10 @@ class TuningReport:
     def read(cls, path: str | Path) -> Self:
         path = Path(path)
         payload = json.loads(path.read_bytes())
-        if payload.get('selection_metric') != 'energy_score_dls':
-            raise ValueError(
-                f'{path} uses the legacy tuning schema. Tune the checkpoint again with '
-                '`python -m pipelines.tune`.'
-            )
-        if 'run' not in payload:
-            raise ValueError(
-                f'{path} predates stable run identity. Tune the checkpoint again with '
-                '`python -m pipelines.tune`.'
-            )
         try:
             return _ADAPTER.validate_python(payload)
         except ValidationError as error:
-            raise ValueError(
-                f'{path} uses an incompatible tuning schema. Tune the checkpoint again with '
-                '`python -m pipelines.tune`.'
-            ) from error
+            raise ValueError(f'{path} is not a valid tuning report: {error}') from error
 
     def write(self, path: Path) -> Path:
         temporary = path.with_suffix('.json.tmp')

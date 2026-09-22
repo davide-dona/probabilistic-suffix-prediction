@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig
 from pandas.api.types import is_numeric_dtype
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from src import paths
 from src.datasets.codec.categorical import (
@@ -120,14 +120,7 @@ class DatasetCodec(BaseModel):
         name = data_config.name
         path = paths.CODEC.require(name)
         payload = json.loads(path.read_text())
-        try:
-            return cls.model_validate(payload | {'dataset': name})
-        except ValidationError as error:
-            if 'cycle_time' in payload:
-                raise ValueError(
-                    f'{path} uses the legacy cycle_time schema. Preprocess {name} again.'
-                ) from error
-            raise
+        return cls.model_validate(payload | {'dataset': name})
 
     def save(self) -> Path:
         """Write this codec to its own directory, and return where it went."""

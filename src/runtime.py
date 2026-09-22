@@ -1,5 +1,3 @@
-"""Hydra output records shared by independently runnable pipeline stages."""
-
 import json
 import platform
 import subprocess

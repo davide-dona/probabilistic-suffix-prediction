@@ -4,13 +4,13 @@ from typing import Self
 
 from src.evaluation.scores.context import ScoringContext, aligned_inter_event_times
 from src.evaluation.scores.suffix_length import coverage_gaps, crps
-from src.scalar_metrics import ScalarMetrics, mean
+from src.metrics import ScalarRecord, mean
 
 MINUTES_PER_DAY = 1440.0
 
 
 @dataclass(frozen=True, slots=True)
-class TimeDiagnostics(ScalarMetrics):
+class TimeDiagnostics(ScalarRecord):
     """Time-field scores retained for run diagnostics."""
 
     remaining_time_ae_point_days: float

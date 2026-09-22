@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
-import wandb
 from torch.utils.data import DataLoader
 
 from src.activity_codes import ActivityCodes
@@ -21,15 +20,14 @@ from src.evaluation.scores import (
 from src.evaluation.summary import PrefixSummary
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
+from src.metrics.logging import log_records
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
-from src.visualization.catalogue import TABLES
 
 if TYPE_CHECKING:
     from src.model import SuffixModel
 
-_TABLE_OF_METRIC = {entry.key: table.name for table in TABLES for entry in table.columns}
-_DIAGNOSTICS = 'diagnostics'
+ACTIVITY_LOG_NAMESPACE = 'generation/activity'
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,34 +43,23 @@ class GenerationMetrics:
     conformance_diagnostics: ConformanceDiagnostics
 
     def log(self, step: int) -> None:
-        """Log scores by table and diagnostics by source field.
+        """Log scores and diagnostics under their declared groups.
 
         Args:
             step: The training step this pass scores.
         """
-        families = (
-            (self.activity, None),
-            (self.suffix_length, None),
-            (self.conformance, 'conformance'),
+        log_records(
+            {
+                ACTIVITY_LOG_NAMESPACE: self.activity,
+                'generation/suffix-length': self.suffix_length,
+                'generation/conformance': self.conformance,
+                'diagnostics/activity': self.activity_diagnostics,
+                'diagnostics/suffix-length': self.suffix_length_diagnostics,
+                'diagnostics/time': self.time_diagnostics,
+                'diagnostics/conformance': self.conformance_diagnostics,
+            },
+            step=step,
         )
-        payload = {}
-        for family, table_namespace in families:
-            for declaration in type(family).metrics():
-                namespace = table_namespace or _TABLE_OF_METRIC.get(declaration.key, _DIAGNOSTICS)
-                payload[f'{namespace}/{declaration.key}'] = getattr(family, declaration.key)
-        for field, diagnostics in (
-            ('activity', self.activity_diagnostics),
-            ('suffix-length', self.suffix_length_diagnostics),
-            ('time', self.time_diagnostics),
-            ('conformance', self.conformance_diagnostics),
-        ):
-            payload.update(
-                {
-                    f'{_DIAGNOSTICS}/{field}/{name}': value
-                    for name, value in asdict(diagnostics).items()
-                }
-            )
-        wandb.log(payload, step=step)
 
 
 @torch.no_grad()

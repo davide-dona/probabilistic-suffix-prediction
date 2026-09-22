@@ -4,7 +4,7 @@ from typing import Self
 import torch
 
 from src.distributions import Gaussian
-from src.scalar_metrics import ScalarMetrics
+from src.metrics import ScalarRecord
 
 
 def gaussian_kl(posterior: Gaussian, prior: Gaussian) -> torch.Tensor:
@@ -66,7 +66,7 @@ ACTIVE_MARGIN_NATS = 0.05
 
 
 @dataclass(frozen=True, slots=True)
-class LatentMetrics(ScalarMetrics):
+class LatentMetrics(ScalarRecord):
     """What z carried over one pass: the KL it holds, how many dimensions hold it, and the weight
     the KL term was charged at.
 

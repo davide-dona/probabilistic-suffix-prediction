@@ -6,7 +6,7 @@ from huggingface_hub.errors import HfHubHTTPError, LocalTokenNotFoundError
 
 from scripts.hub import HF_REPO_ID
 from src import paths
-from src.model import CHECKPOINT_KEYS, load_checkpoint, require_keys
+from src.model import load_checkpoint
 
 
 def _mebibytes(path: Path) -> str:
@@ -57,14 +57,6 @@ def run(model_paths: list[Path]) -> None:
     descriptions = []
     for model_path in model_paths:
         checkpoint = load_checkpoint(model_path)
-        require_keys(
-            checkpoint,
-            CHECKPOINT_KEYS,
-            subject=str(model_path),
-            purpose='published',
-            remedy='It was written by an older version of `save_checkpoint`; retrain, or publish '
-            'a newer run.',
-        )
         # The destination comes from the run's identity, not the checkpoint's filename, making it
         # invariant to local naming.
         dataset = checkpoint['config']['data']['name']

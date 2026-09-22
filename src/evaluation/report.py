@@ -32,19 +32,8 @@ class EvaluationReport:
         """
         path = Path(path)
         payload = json.loads(path.read_bytes())
-        summary = payload.get('summary', {})
-        if 'accuracy' in summary:
-            raise ValueError(
-                f'{path} uses the legacy evaluation schema. Score its generations again with '
-                '`python -m pipelines.evaluate`.'
-            )
         report = _ADAPTER.validate_python(payload)
-        try:
-            RunIdentity.from_metadata(report.metadata)
-        except ValueError as error:
-            raise ValueError(
-                f'{path} predates stable run identity. Evaluate its generations again.'
-            ) from error
+        RunIdentity.from_metadata(report.metadata)
         return report
 
     def write(self, path: str | Path) -> Path:

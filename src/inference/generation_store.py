@@ -226,8 +226,7 @@ class Generations:
         """Stable run identity and the source checkpoint hash.
 
         Raises:
-            ValueError: If the file carries no identity, and so predates the one it should name
-                itself by.
+            ValueError: If the file has no run identity.
         """
         return read_metadata(self._parquet)
 
@@ -243,8 +242,7 @@ class Generations:
         continuation index's own before it scores a single prefix.
 
         Raises:
-            ValueError: If the file carries none, and so predates the vocabulary it should name
-                itself by.
+            ValueError: If the file has no activity vocabulary.
         """
         return read_vocabulary(self._parquet.schema_arrow)
 
@@ -324,7 +322,9 @@ class Generations:
                     ),
                     point=DecodedEvents(
                         activities=columns['point_activities'][position],
-                        inter_event_time_minutes=columns['point_inter_event_time_minutes'][position],
+                        inter_event_time_minutes=columns['point_inter_event_time_minutes'][
+                            position
+                        ],
                         remaining_time_minutes=columns['point_remaining_time_minutes'][position],
                     ),
                     truth=DecodedEvents(
