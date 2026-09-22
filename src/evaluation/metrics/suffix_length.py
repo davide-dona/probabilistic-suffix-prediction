@@ -1,7 +1,7 @@
+from src.evaluation.metrics.definitions import Direction, MetricGroup, Unit
 from src.evaluation.metrics.helpers.statistics import coverage_gap, crps, mae
 from src.evaluation.metrics.prepared import PreparedPrefix
 from src.evaluation.metrics.registry import METRICS
-from src.metrics import Direction, MetricGroup, Unit
 
 
 @METRICS.register(

@@ -30,6 +30,7 @@ from src.model import (
     model_from_checkpoint,
 )
 from src.runtime import output_path, save_config, start_stage
+from src.selection import selection_score
 from src.validation import validate_tuning
 
 
@@ -80,8 +81,9 @@ def _score(
     summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
     return TuningPoint(
         sampling=OmegaConf.to_container(sampling, resolve=True),
-        score=sum(summary.scores.activity['energy_score_dls'] for summary in summaries)
-        / len(summaries),
+        score=(
+            sum(selection_score(summary.scores.flatten()) for summary in summaries) / len(summaries)
+        ),
         conformance_sample_mean=sum(
             summary.scores.conformance['conformance_sample_mean'] for summary in summaries
         )

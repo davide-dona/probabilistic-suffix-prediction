@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.metrics import ScalarRecord
+from src.training.records import ScalarRecord
 
 
 @dataclass(frozen=True)

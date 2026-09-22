@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from src.metrics import Direction, Metric, MetricGroup, Owner, Unit
+from src.evaluation.metrics.definitions import Direction, Metric, MetricGroup, Owner, Unit
 
 
 class MetricRegistry:

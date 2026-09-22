@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from src.evaluation import Axis
 from src.evaluation.metrics import METRICS
-from src.metrics import Direction
+from src.evaluation.metrics.definitions import Direction
 from src.visualization.catalogue.entry import MetricEntry
 
 

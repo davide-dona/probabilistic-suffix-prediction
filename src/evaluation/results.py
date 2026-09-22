@@ -12,11 +12,11 @@ from pydantic import TypeAdapter, ValidationError
 
 from src.artifacts import group_by_model, read_metadata, with_metadata
 from src.evaluation.metrics import METRICS, PreparedPrefix
+from src.evaluation.metrics.definitions import MetricGroup
 from src.identity import RunIdentity
 from src.inference.generation import Generation
 from src.inference.generation_store import PrefixKey
 from src.logs.declare import ConformanceChecker
-from src.metrics import MetricGroup
 
 GROUPS = tuple(MetricGroup)
 

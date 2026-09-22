@@ -1,15 +1,12 @@
-from collections.abc import Sequence
-from dataclasses import fields
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, fields
 from typing import Self
 
-
-def mean(values: Sequence[float]) -> float:
-    """Return the arithmetic mean, or zero for an empty sequence."""
-    return sum(values) / len(values) if values else 0.0
+import wandb
 
 
 class ScalarRecord:
-    """Support aggregation without coupling computed values to storage or logging."""
+    """Support aggregation of dataclass training records."""
 
     __slots__ = ()
 
@@ -18,7 +15,9 @@ class ScalarRecord:
         """Average records field by field, returning zeros for an empty sequence."""
         return cls(
             **{
-                entry.name: mean([getattr(value, entry.name) for value in values])
+                entry.name: sum(getattr(value, entry.name) for value in values) / len(values)
+                if values
+                else 0.0
                 for entry in fields(cls)
             }
         )
@@ -37,3 +36,13 @@ class ScalarRecord:
         return type(self)(
             **{entry.name: getattr(self, entry.name) / divisor for entry in fields(self)}
         )
+
+
+def log_records(records: Mapping[str, object], *, step: int) -> None:
+    """Log dataclass records under caller-selected namespaces."""
+    payload = {
+        f'{namespace}/{key}': value
+        for namespace, record in records.items()
+        for key, value in asdict(record).items()
+    }
+    wandb.log(payload, step=step)

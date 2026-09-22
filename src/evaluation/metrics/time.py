@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 
+from src.evaluation.metrics.definitions import Direction, MetricGroup, Unit
 from src.evaluation.metrics.helpers.statistics import coverage_gap, crps
 from src.evaluation.metrics.prepared import PreparedPrefix, aligned_inter_event_times
 from src.evaluation.metrics.registry import METRICS
-from src.metrics import Direction, MetricGroup, Unit, mean
 
 MINUTES_PER_DAY = 1440.0
 
@@ -144,6 +144,5 @@ def inter_event_time_ae_minutes(predicted: Sequence[float], true: Sequence[float
     if not true:
         return 0.0
     aligned = aligned_inter_event_times(predicted, length=len(true))
-    return mean(
-        [abs(prediction - actual) for prediction, actual in zip(aligned, true, strict=True)]
-    )
+    errors = [abs(prediction - actual) for prediction, actual in zip(aligned, true, strict=True)]
+    return sum(errors) / len(errors)

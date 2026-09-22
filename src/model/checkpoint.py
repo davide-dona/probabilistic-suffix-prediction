@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from src.identity import RunIdentity
-from src.metrics import SELECTION_METRIC
+from src.selection import SELECTION_METRIC
 
 MODEL_KEYS = ('config', 'model_state_dict')
 CHECKPOINT_KEYS = (
@@ -53,7 +53,7 @@ def save_checkpoint(
             'model_state_dict': model.state_dict(),
             'step': step,
             'selection_score': selection_score,
-            'selection_metric': SELECTION_METRIC,
+            'selection_metric': SELECTION_METRIC.key,
             'selection_direction': 'min',
             'wandb_id': wandb_id,
         },

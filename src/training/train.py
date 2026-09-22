@@ -11,11 +11,11 @@ from torch.utils.data import DataLoader
 from src.datasets.codec import DatasetCodec
 from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
-from src.metrics import SELECTION_METRIC
-from src.metrics.logging import log_records
 from src.runtime import output_path
+from src.selection import SELECTION_METRIC, selection_score
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
+from src.training.records import log_records
 from src.training.validation import ACTIVITY_LOG_NAMESPACE, validate, validate_generation
 
 if TYPE_CHECKING:
@@ -118,7 +118,7 @@ def train(
     )
     print(f'Logging to {tracking.url or experiment_config["wandb"]["mode"]}')
 
-    tracking.define_metric(f'{ACTIVITY_LOG_NAMESPACE}/{SELECTION_METRIC}', summary='min')
+    tracking.define_metric(f'{ACTIVITY_LOG_NAMESPACE}/{SELECTION_METRIC.key}', summary='min')
     try:
         while step < training.max_steps and not should_stop:
             for batch in train_loader:
@@ -187,12 +187,12 @@ def train(
                         f'energy {gen_metrics.scores.activity["energy_score_dls"]:.4f}',
                         flush=True,
                     )
-                    selection_score = gen_metrics.scores.activity['energy_score_dls']
+                    score = selection_score(gen_metrics.scores.flatten())
 
                     # Read before `update` folds this score into it, since afterwards it can
                     # no longer tell an improvement from a step that just matched the best.
-                    is_best = selection_score < early_stopper.min_validation_score
-                    should_stop = early_stopper.update(selection_score)
+                    is_best = score < early_stopper.min_validation_score
+                    should_stop = early_stopper.update(score)
 
                     # Only an improvement is worth a file: the last step is never read back.
                     # The Artifact waits for the end of the run, so one run leaves one version
@@ -203,15 +203,12 @@ def train(
                             model,
                             config=experiment_config,
                             step=step,
-                            selection_score=selection_score,
+                            selection_score=score,
                             wandb_id=tracking.id,
                             run=run,
                             path=output_path('best.pt'),
                         )
-                        print(
-                            f'New best model (step {step}, score {selection_score:.4f}) '
-                            f'saved at {path}'
-                        )
+                        print(f'New best model (step {step}, score {score:.4f}) saved at {path}')
 
                 if should_stop or step >= training.max_steps:
                     break
@@ -227,7 +224,7 @@ def train(
         )
         print(f'Finished training after {step} steps ({reason})')
 
-        tracking.summary['selection_metric'] = SELECTION_METRIC
+        tracking.summary['selection_metric'] = SELECTION_METRIC.key
         tracking.summary['selection_direction'] = 'min'
         tracking.summary['selection_score'] = early_stopper.min_validation_score
         tracking.summary['best_step'] = best_step
@@ -238,7 +235,7 @@ def train(
             metadata={
                 'run': run.as_dict(),
                 'wandb_id': tracking.id,
-                'selection_metric': SELECTION_METRIC,
+                'selection_metric': SELECTION_METRIC.key,
                 'selection_direction': 'min',
                 'step': best_step,
                 'selection_score': early_stopper.min_validation_score,

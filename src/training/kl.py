@@ -4,7 +4,7 @@ from typing import Self
 import torch
 
 from src.distributions import Gaussian
-from src.metrics import ScalarRecord
+from src.training.records import ScalarRecord
 
 
 def gaussian_kl(posterior: Gaussian, prior: Gaussian) -> torch.Tensor:

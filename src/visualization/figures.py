@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 from src.evaluation import Axis
-from src.metrics import Owner
+from src.evaluation.metrics.definitions import Owner
 from src.visualization import labels
 from src.visualization.catalogue import MetricEntry, Plot
 from src.visualization.style import (

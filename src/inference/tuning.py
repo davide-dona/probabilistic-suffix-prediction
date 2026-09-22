@@ -9,7 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 from pydantic import TypeAdapter, ValidationError
 
 from src.identity import RunIdentity
-from src.metrics import SELECTION_METRIC
+from src.selection import SELECTION_METRIC
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class TuningReport:
     search: SearchPass
     chosen: dict[str, float]
     grid: tuple[TuningPoint, ...]
-    selection_metric: str = SELECTION_METRIC
+    selection_metric: str = SELECTION_METRIC.key
     selection_direction: str = 'min'
 
     @classmethod
