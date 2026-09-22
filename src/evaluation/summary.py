@@ -1,63 +1,81 @@
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, fields
-from typing import Self
+from dataclasses import dataclass
 
-from src.evaluation.scores import (
-    FAMILIES,
-    ActivityDiagnostics,
-    ActivityScores,
-    ConformanceDiagnostics,
-    ConformanceScores,
-    ScoringContext,
-    SuffixLengthDiagnostics,
-    SuffixLengthScores,
-    TimeDiagnostics,
-)
+from src.evaluation.scores import METRICS, ScoringContext
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
+from src.metrics import MetricGroup
+
+GROUPS = tuple(MetricGroup)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
+class ScoreGroups:
+    """Every metric value for a prefix or an aggregate, grouped by evaluation question."""
+
+    activity: dict[str, float]
+    suffix_length: dict[str, float]
+    time: dict[str, float]
+    conformance: dict[str, float]
+
+    @classmethod
+    def of(cls, values: dict[str, float]) -> 'ScoreGroups':
+        """Group a complete mapping of registered metric values."""
+        expected = set(METRICS.entries)
+        missing = expected - set(values)
+        extra = set(values) - expected
+        if missing or extra:
+            raise ValueError(
+                'metric values differ from the registry: '
+                f'missing {sorted(missing)}, extra {sorted(extra)}.'
+            )
+        grouped = {
+            group: {
+                key: values[key] for key, metric in METRICS.entries.items() if metric.group is group
+            }
+            for group in GROUPS
+        }
+        return cls(**grouped)
+
+    @classmethod
+    def mean(cls, values: Sequence['ScoreGroups']) -> 'ScoreGroups':
+        """Average complete score mappings, field by field."""
+        return cls.of(
+            {
+                key: sum(value.flatten()[key] for value in values) / len(values) if values else 0.0
+                for key in METRICS.entries
+            }
+        )
+
+    def flatten(self) -> dict[str, float]:
+        """Return all values in registry declaration order."""
+        groups = {
+            MetricGroup.ACTIVITY: self.activity,
+            MetricGroup.SUFFIX_LENGTH: self.suffix_length,
+            MetricGroup.TIME: self.time,
+            MetricGroup.CONFORMANCE: self.conformance,
+        }
+        return {key: groups[metric.group][key] for key, metric in METRICS.entries.items()}
+
+
+@dataclass(frozen=True)
 class PrefixSummary:
-    """Scores for one prefix, returned by a worker."""
+    """Scores for one generated prefix, returned by a worker."""
 
     prefix_len: int
     suffix_len: int
-    activity: ActivityScores
-    suffix_length: SuffixLengthScores
-    conformance: ConformanceScores
-    activity_diagnostics: ActivityDiagnostics
-    suffix_length_diagnostics: SuffixLengthDiagnostics
-    time_diagnostics: TimeDiagnostics
-    conformance_diagnostics: ConformanceDiagnostics
+    scores: ScoreGroups
 
     @classmethod
-    def of(
-        cls,
-        generation: Generation,
-        *,
-        checker: ConformanceChecker,
-    ) -> Self:
-        """Score one generated suffix against truth and constraints.
-
-        Args:
-            generation: Decoded model output for one prefix.
-            checker: Process-constraint checker.
-
-        Returns:
-            Scores for the prefix.
-        """
-        context = ScoringContext.of(generation)
+    def of(cls, generation: Generation, *, checker: ConformanceChecker) -> 'PrefixSummary':
+        """Score one generated suffix against truth and constraints."""
+        context = ScoringContext.of(generation, checker=checker)
         return cls(
             prefix_len=generation.prefix_len,
             suffix_len=len(generation.truth),
-            activity=ActivityScores.of(context),
-            suffix_length=SuffixLengthScores.of(context),
-            conformance=ConformanceScores.of(generation, checker=checker),
-            activity_diagnostics=ActivityDiagnostics.of(context),
-            suffix_length_diagnostics=SuffixLengthDiagnostics.of(context),
-            time_diagnostics=TimeDiagnostics.of(context),
-            conformance_diagnostics=ConformanceDiagnostics.of(generation, checker=checker),
+            scores=ScoreGroups.of(
+                {key: metric.compute(context) for key, metric in METRICS.entries.items()}
+            ),
         )
 
 
@@ -67,39 +85,27 @@ class LengthSummary:
 
     length: int
     prefixes: int
-    activity: ActivityScores
-    suffix_length: SuffixLengthScores
-    conformance: ConformanceScores
+    activity: dict[str, float]
+    suffix_length: dict[str, float]
+    time: dict[str, float]
+    conformance: dict[str, float]
 
     @classmethod
-    def of(cls, prefixes: Sequence[PrefixSummary], *, length: int) -> Self:
-        """Aggregate scores for prefixes with a common length.
-
-        Args:
-            prefixes: Prefix summaries sharing the length.
-            length: Shared prefix or suffix length.
-
-        Returns:
-            Aggregate scores for the length.
-        """
+    def of(cls, prefixes: Sequence[PrefixSummary], *, length: int) -> 'LengthSummary':
+        """Aggregate scores for prefixes with a common length."""
+        scores = ScoreGroups.mean([prefix.scores for prefix in prefixes])
         return cls(
             length=length,
             prefixes=len(prefixes),
-            activity=ActivityScores.mean([prefix.activity for prefix in prefixes]),
-            suffix_length=SuffixLengthScores.mean([prefix.suffix_length for prefix in prefixes]),
-            conformance=ConformanceScores.mean([prefix.conformance for prefix in prefixes]),
+            activity=scores.activity,
+            suffix_length=scores.suffix_length,
+            time=scores.time,
+            conformance=scores.conformance,
         )
 
 
 def _by_length(buckets: dict[int, list[PrefixSummary]]) -> list[LengthSummary]:
-    """Summarize length buckets in ascending order.
-
-    Args:
-        buckets: Prefix summaries grouped by length.
-
-    Returns:
-        One aggregate per length.
-    """
+    """Summarize length buckets in ascending order."""
     return [LengthSummary.of(buckets[length], length=length) for length in sorted(buckets)]
 
 
@@ -108,41 +114,29 @@ class EvaluationSummary:
     """Aggregate evaluation scores for one run."""
 
     prefixes: int
-    activity: ActivityScores
-    suffix_length: SuffixLengthScores
-    conformance: ConformanceScores
-    # Sorted by prefix length.
+    activity: dict[str, float]
+    suffix_length: dict[str, float]
+    time: dict[str, float]
+    conformance: dict[str, float]
     by_prefix_length: list[LengthSummary]
-    # Sorted by ground-truth suffix length.
     by_suffix_length: list[LengthSummary]
 
     @classmethod
-    def of(cls, prefixes: Iterable[PrefixSummary]) -> Self:
-        """Aggregate prefix scores overall and by prefix and suffix length.
-
-        Args:
-            prefixes: Prefix summaries to aggregate.
-
-        Returns:
-            Overall and length-bucketed evaluation scores.
-        """
+    def of(cls, prefixes: Iterable[PrefixSummary]) -> 'EvaluationSummary':
+        """Aggregate prefix scores overall and by prefix and suffix length."""
         prefix_buckets: dict[int, list[PrefixSummary]] = {}
         suffix_buckets: dict[int, list[PrefixSummary]] = {}
-
         for prefix in prefixes:
-            # Group by both reported length axes.
             prefix_buckets.setdefault(prefix.prefix_len, []).append(prefix)
             suffix_buckets.setdefault(prefix.suffix_len, []).append(prefix)
-
-        # Recover all prefixes for the overall aggregate.
         every_prefix = [prefix for bucket in prefix_buckets.values() for prefix in bucket]
+        scores = ScoreGroups.mean([prefix.scores for prefix in every_prefix])
         return cls(
             prefixes=len(every_prefix),
-            activity=ActivityScores.mean([prefix.activity for prefix in every_prefix]),
-            suffix_length=SuffixLengthScores.mean(
-                [prefix.suffix_length for prefix in every_prefix]
-            ),
-            conformance=ConformanceScores.mean([prefix.conformance for prefix in every_prefix]),
+            activity=scores.activity,
+            suffix_length=scores.suffix_length,
+            time=scores.time,
+            conformance=scores.conformance,
             by_prefix_length=_by_length(prefix_buckets),
             by_suffix_length=_by_length(suffix_buckets),
         )
@@ -150,19 +144,14 @@ class EvaluationSummary:
 
 type Summarized = PrefixSummary | LengthSummary | EvaluationSummary
 
-_FIELD_NAMES = {family: tuple(entry.name for entry in fields(family)) for family in FAMILIES}
-
 
 def flatten_scores(summary: Summarized) -> dict[str, float]:
-    """Flatten a summary's reported score families into one metric mapping.
-
-    Args:
-        summary: Prefix, length, or evaluation aggregate.
-    Returns:
-        Metric values keyed by their declared field names.
-    """
-    return {
-        name: getattr(family, name)
-        for family in (summary.activity, summary.suffix_length, summary.conformance)
-        for name in _FIELD_NAMES[type(family)]
-    }
+    """Flatten a summary's grouped scores into a registry-ordered mapping."""
+    if isinstance(summary, PrefixSummary):
+        return summary.scores.flatten()
+    return ScoreGroups(
+        activity=summary.activity,
+        suffix_length=summary.suffix_length,
+        time=summary.time,
+        conformance=summary.conformance,
+    ).flatten()

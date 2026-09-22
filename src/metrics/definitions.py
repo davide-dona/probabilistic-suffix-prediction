@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field, fields
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
 
 class Unit(StrEnum):
@@ -43,56 +43,23 @@ class Owner(StrEnum):
     LOG = 'log'
 
 
+class MetricGroup(StrEnum):
+    """The evaluation question a metric answers."""
+
+    ACTIVITY = 'activity'
+    SUFFIX_LENGTH = 'suffix_length'
+    TIME = 'time'
+    CONFORMANCE = 'conformance'
+
+
 @dataclass(frozen=True, slots=True)
 class Metric:
-    """The field name, unit, direction, and owner of one reported score."""
+    """One evaluation value and the function that computes it for a prefix."""
 
     key: str
+    label: str
+    group: MetricGroup
     unit: Unit
     direction: Direction
+    compute: Callable[..., float]
     owner: Owner = Owner.MODEL
-
-
-_DECLARATION = 'metric'
-
-
-def metric(
-    *,
-    unit: Unit,
-    direction: Direction = Direction.NONE,
-    owner: Owner = Owner.MODEL,
-) -> Any:
-    """Declare the semantic properties of a reported score beside its calculation.
-
-    Args:
-        unit: Physical unit and display range.
-        direction: How model values are ranked.
-        owner: Whether the value belongs to a model or observed log.
-    Returns:
-        A dataclass field carrying the declaration.
-    """
-    return field(metadata={_DECLARATION: (unit, direction, owner)})
-
-
-def metrics_of(cls: type) -> tuple[Metric, ...]:
-    """Read the declared score fields of a dataclass in their field order.
-
-    Args:
-        cls: The score dataclass to inspect.
-    Returns:
-        One metric per declared field.
-    """
-    result = []
-    for entry in fields(cls):
-        if _DECLARATION not in entry.metadata:
-            continue
-        unit, direction, owner = entry.metadata[_DECLARATION]
-        result.append(
-            Metric(
-                key=entry.name,
-                unit=unit,
-                direction=direction,
-                owner=owner,
-            )
-        )
-    return tuple(result)

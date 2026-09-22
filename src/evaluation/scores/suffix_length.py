@@ -1,48 +1,81 @@
-from dataclasses import dataclass
-from typing import Self
-
 import numpy as np
 
 from src.evaluation.scores.context import ScoringContext
-from src.metrics import Direction, ScalarRecord, Unit, metric
-
-COVERAGE_LEVELS = (0.50, 0.75, 0.95)
-
-
-@dataclass(frozen=True, slots=True)
-class SuffixLengthScores(ScalarRecord):
-    """Scores for the sampled suffix-length distribution."""
-
-    suffix_length_mae: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
-    suffix_length_crps: float = metric(unit=Unit.EVENTS, direction=Direction.LOWER)
-    suffix_length_coverage_gap_50: float = metric(unit=Unit.SCORE, direction=Direction.ZERO)
-    suffix_length_coverage_gap_75: float = metric(unit=Unit.SCORE, direction=Direction.ZERO)
-    suffix_length_coverage_gap_95: float = metric(unit=Unit.SCORE, direction=Direction.ZERO)
-
-    @classmethod
-    def of(cls, context: ScoringContext) -> Self:
-        """Score accuracy and calibration of generated suffix lengths."""
-        gaps = coverage_gaps(context.suffix_lengths, context.true_suffix_length)
-        return cls(
-            suffix_length_mae=mae(context.suffix_lengths, context.true_suffix_length),
-            suffix_length_crps=crps(context.suffix_lengths, context.true_suffix_length),
-            suffix_length_coverage_gap_50=gaps[0],
-            suffix_length_coverage_gap_75=gaps[1],
-            suffix_length_coverage_gap_95=gaps[2],
-        )
+from src.evaluation.scores.registry import METRICS
+from src.metrics import Direction, MetricGroup, Unit
 
 
-@dataclass(frozen=True, slots=True)
-class SuffixLengthDiagnostics(ScalarRecord):
-    """Point-prediction suffix-length error retained for run diagnostics."""
+@METRICS.register(
+    'suffix_length_mae',
+    label='Suffix length MAE',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.EVENTS,
+    direction=Direction.LOWER,
+)
+def compute_suffix_length_mae(context: ScoringContext) -> float:
+    """Return the sampled suffix-length mean absolute error."""
+    return mae(context.suffix_lengths, context.true_suffix_length)
 
-    suffix_length_ae_point: float
 
-    @classmethod
-    def of(cls, context: ScoringContext) -> Self:
-        """Score the point suffix length against the observed suffix length."""
-        generation = context.generation
-        return cls(suffix_length_ae_point=float(abs(len(generation.point) - len(generation.truth))))
+@METRICS.register(
+    'suffix_length_crps',
+    label='Suffix length CRPS',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.EVENTS,
+    direction=Direction.LOWER,
+)
+def compute_suffix_length_crps(context: ScoringContext) -> float:
+    """Return the sampled suffix-length CRPS."""
+    return crps(context.suffix_lengths, context.true_suffix_length)
+
+
+@METRICS.register(
+    'suffix_length_coverage_gap_50',
+    label='Suffix length coverage gap 50%',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.SCORE,
+    direction=Direction.ZERO,
+)
+def compute_suffix_length_coverage_gap_50(context: ScoringContext) -> float:
+    """Return the 50% suffix-length central-interval coverage gap."""
+    return coverage_gap(context.suffix_lengths, context.true_suffix_length, level=0.50)
+
+
+@METRICS.register(
+    'suffix_length_coverage_gap_75',
+    label='Suffix length coverage gap 75%',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.SCORE,
+    direction=Direction.ZERO,
+)
+def compute_suffix_length_coverage_gap_75(context: ScoringContext) -> float:
+    """Return the 75% suffix-length central-interval coverage gap."""
+    return coverage_gap(context.suffix_lengths, context.true_suffix_length, level=0.75)
+
+
+@METRICS.register(
+    'suffix_length_coverage_gap_95',
+    label='Suffix length coverage gap 95%',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.SCORE,
+    direction=Direction.ZERO,
+)
+def compute_suffix_length_coverage_gap_95(context: ScoringContext) -> float:
+    """Return the 95% suffix-length central-interval coverage gap."""
+    return coverage_gap(context.suffix_lengths, context.true_suffix_length, level=0.95)
+
+
+@METRICS.register(
+    'suffix_length_ae_point',
+    label='Suffix length point absolute error',
+    group=MetricGroup.SUFFIX_LENGTH,
+    unit=Unit.EVENTS,
+    direction=Direction.LOWER,
+)
+def compute_suffix_length_ae_point(context: ScoringContext) -> float:
+    """Return the point suffix-length absolute error."""
+    generation = context.generation
+    return float(abs(len(generation.point) - len(generation.truth)))
 
 
 def crps(draws: np.ndarray, truth: np.ndarray) -> float:
@@ -63,11 +96,6 @@ def mae(draws: np.ndarray, truth: np.ndarray) -> float:
     """Return mean absolute error over draws and predicted quantities."""
     count, columns = draws.shape
     return float(np.abs(draws - truth).mean()) if count and columns else 0.0
-
-
-def coverage_gaps(draws: np.ndarray, truth: np.ndarray) -> tuple[float, ...]:
-    """Return central-interval coverage gaps at the configured levels."""
-    return tuple(coverage_gap(draws, truth, level=level) for level in COVERAGE_LEVELS)
 
 
 def coverage_gap(draws: np.ndarray, truth: np.ndarray, *, level: float) -> float:

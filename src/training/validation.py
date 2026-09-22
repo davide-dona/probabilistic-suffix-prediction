@@ -4,23 +4,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
-from src.evaluation.scores import (
-    ActivityDiagnostics,
-    ActivityScores,
-    ConformanceDiagnostics,
-    ConformanceScores,
-    SuffixLengthDiagnostics,
-    SuffixLengthScores,
-    TimeDiagnostics,
-)
-from src.evaluation.summary import PrefixSummary
+from src.evaluation.scores import METRICS
+from src.evaluation.summary import PrefixSummary, ScoreGroups
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
-from src.metrics.logging import log_records
 from src.training.kl import LatentMetrics
 from src.training.loss import Loss
 
@@ -34,29 +26,25 @@ ACTIVITY_LOG_NAMESPACE = 'generation/activity'
 class GenerationMetrics:
     """Validation metrics, with energy score averaged over every generated example."""
 
-    activity: ActivityScores
-    suffix_length: SuffixLengthScores
-    conformance: ConformanceScores
-    activity_diagnostics: ActivityDiagnostics
-    suffix_length_diagnostics: SuffixLengthDiagnostics
-    time_diagnostics: TimeDiagnostics
-    conformance_diagnostics: ConformanceDiagnostics
+    scores: ScoreGroups
 
     def log(self, step: int) -> None:
-        """Log scores and diagnostics under their declared groups.
+        """Log every registered value under its declared evaluation group.
 
         Args:
             step: The training step this pass scores.
         """
-        log_records(
+        namespaces = {
+            'activity': ACTIVITY_LOG_NAMESPACE,
+            'suffix_length': 'generation/suffix-length',
+            'time': 'generation/time',
+            'conformance': 'generation/conformance',
+        }
+        values = self.scores.flatten()
+        wandb.log(
             {
-                ACTIVITY_LOG_NAMESPACE: self.activity,
-                'generation/suffix-length': self.suffix_length,
-                'generation/conformance': self.conformance,
-                'diagnostics/activity': self.activity_diagnostics,
-                'diagnostics/suffix-length': self.suffix_length_diagnostics,
-                'diagnostics/time': self.time_diagnostics,
-                'diagnostics/conformance': self.conformance_diagnostics,
+                f'{namespaces[metric.group]}/{key}': values[key]
+                for key, metric in METRICS.entries.items()
             },
             step=step,
         )
@@ -146,18 +134,4 @@ def validate_generation(
     if not generations:
         raise ValueError('Validation generation subset is empty')
     summaries = [PrefixSummary.of(one, checker=checker) for one in generations]
-    return GenerationMetrics(
-        activity=ActivityScores.mean([summary.activity for summary in summaries]),
-        suffix_length=SuffixLengthScores.mean([summary.suffix_length for summary in summaries]),
-        conformance=ConformanceScores.mean([summary.conformance for summary in summaries]),
-        activity_diagnostics=ActivityDiagnostics.mean(
-            [summary.activity_diagnostics for summary in summaries]
-        ),
-        suffix_length_diagnostics=SuffixLengthDiagnostics.mean(
-            [summary.suffix_length_diagnostics for summary in summaries]
-        ),
-        time_diagnostics=TimeDiagnostics.mean([summary.time_diagnostics for summary in summaries]),
-        conformance_diagnostics=ConformanceDiagnostics.mean(
-            [summary.conformance_diagnostics for summary in summaries]
-        ),
-    )
+    return GenerationMetrics(scores=ScoreGroups.mean([summary.scores for summary in summaries]))

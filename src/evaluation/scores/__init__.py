@@ -1,47 +1,17 @@
-from dataclasses import fields
-
-from src.evaluation.scores.activity import ActivityDiagnostics, ActivityScores
-from src.evaluation.scores.conformance import ConformanceDiagnostics, ConformanceScores
+from src.evaluation.scores import activity, conformance, suffix_length, time
 from src.evaluation.scores.context import ScoringContext
-from src.evaluation.scores.suffix_length import SuffixLengthDiagnostics, SuffixLengthScores
-from src.evaluation.scores.time import TimeDiagnostics
-from src.metrics import Metric, metrics_of
-from src.registry import Registry
+from src.evaluation.scores.registry import METRICS, MetricRegistry
+from src.metrics import SELECTION_METRIC, Direction
 
-FAMILIES = (ActivityScores, SuffixLengthScores, ConformanceScores)
-
-
-def _declared() -> dict[str, Metric]:
-    """Collect each reported score once, rejecting missing and repeated declarations."""
-    entries: dict[str, Metric] = {}
-    for family in FAMILIES:
-        declared = metrics_of(family)
-        keys = {metric.key for metric in declared}
-        missing = [entry.name for entry in fields(family) if entry.name not in keys]
-        if missing:
-            raise ValueError(f'{family.__name__} has undeclared scores: {", ".join(missing)}.')
-        for metric in declared:
-            if metric.key in entries:
-                raise ValueError(f'{metric.key} is declared by more than one score family.')
-            entries[metric.key] = metric
-    return entries
-
-
-METRICS = Registry[Metric](
-    kind='metric',
-    where='the score fields in src/evaluation/scores/',
-    entries=_declared(),
-)
+if METRICS[SELECTION_METRIC].direction is not Direction.LOWER:
+    raise ValueError(f'{SELECTION_METRIC} must be a minimizing selection metric.')
 
 __all__ = [
-    'FAMILIES',
     'METRICS',
-    'ActivityDiagnostics',
-    'ActivityScores',
-    'ConformanceDiagnostics',
-    'ConformanceScores',
+    'MetricRegistry',
     'ScoringContext',
-    'SuffixLengthDiagnostics',
-    'SuffixLengthScores',
-    'TimeDiagnostics',
+    'activity',
+    'conformance',
+    'suffix_length',
+    'time',
 ]

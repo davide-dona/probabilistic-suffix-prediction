@@ -8,7 +8,12 @@ class MetricEntry:
     """A metric's label and display settings in a table or figure."""
 
     metric: Metric
-    label: str
+    label: str | None = None
+
+    @property
+    def display_label(self) -> str:
+        """Return the catalogue override or the metric's canonical label."""
+        return self.label or self.metric.label
 
     @property
     def key(self) -> str:
@@ -54,7 +59,7 @@ class MetricEntry:
         Returns:
             Formatted axis label.
         """
-        return f'{self.label}{self._unit_suffix}{self._arrow}'
+        return f'{self.display_label}{self._unit_suffix}{self._arrow}'
 
     @property
     def table_header(self) -> str:
@@ -63,7 +68,7 @@ class MetricEntry:
         Returns:
             Formatted LaTex header.
         """
-        return f'{self.label}{_TABLE_ARROWS[self.metric.direction]}'
+        return f'{self.display_label}{_TABLE_ARROWS[self.metric.direction]}'
 
     @property
     def _arrow(self) -> str:

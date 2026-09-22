@@ -7,11 +7,13 @@ import numpy as np
 
 from src.evaluation.activity_distances import sequence_similarity
 from src.inference.generation import Generation
+from src.logs.declare import ConformanceChecker
+from src.logs.declare.checker import Conformance
 
 
 @dataclass(frozen=True, slots=True)
 class ScoringContext:
-    """Decoded values shared by the score fields for one prefix."""
+    """Decoded values and constraint checks shared by every metric for one prefix."""
 
     generation: Generation
     similarities: tuple[float, ...]
@@ -21,13 +23,17 @@ class ScoringContext:
     true_suffix_length: np.ndarray
     true_remaining_time: np.ndarray
     true_inter_event_times: np.ndarray
+    sample_conformance: tuple[Conformance, ...]
+    point_conformance: Conformance
+    observed_conformance: Conformance
 
     @classmethod
-    def of(cls, generation: Generation) -> Self:
+    def of(cls, generation: Generation, *, checker: ConformanceChecker) -> Self:
         """Prepare the shared draw and observation arrays for one prefix."""
         samples = generation.samples
         truth = generation.truth
         draws = len(samples)
+        prefix = generation.prefix_activities
         return cls(
             generation=generation,
             similarities=tuple(
@@ -49,6 +55,9 @@ class ScoringContext:
             true_suffix_length=np.array([float(len(truth))], dtype=np.float64),
             true_remaining_time=np.array([truth.remaining_time_minutes], dtype=np.float64),
             true_inter_event_times=np.array(truth.inter_event_time_minutes, dtype=np.float64),
+            sample_conformance=tuple(checker.check(prefix + suffix) for suffix in samples.suffixes),
+            point_conformance=checker.check(prefix + generation.point.activities),
+            observed_conformance=checker.check(prefix + truth.activities),
         )
 
 

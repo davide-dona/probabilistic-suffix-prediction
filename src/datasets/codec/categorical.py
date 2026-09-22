@@ -9,9 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from src.logs import EOT_TOKEN, PAD_TOKEN, SOS_TOKEN, UNK_TOKEN
 
-# The special tokens every channel carries, in the order they are indexed. They come before the
-# vocabulary, so PAD is row 0 of the activity and resource channels, which start at offset 0.
-# Row 0 of the shared feature table is a PAD too, so padding a run of events is a plain zero fill.
+# The special tokens every channel carries, in the order they are indexed.
 ACTIVITY_TOKENS = (PAD_TOKEN, EOT_TOKEN, SOS_TOKEN, UNK_TOKEN)
 RESOURCE_TOKENS = (PAD_TOKEN, EOT_TOKEN, UNK_TOKEN)
 FEATURE_TOKENS = (UNK_TOKEN,)

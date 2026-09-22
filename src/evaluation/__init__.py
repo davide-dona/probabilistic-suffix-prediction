@@ -12,6 +12,7 @@ from src.evaluation.summary import (
     EvaluationSummary,
     LengthSummary,
     PrefixSummary,
+    ScoreGroups,
     Summarized,
     flatten_scores,
 )
@@ -25,6 +26,7 @@ __all__ = [
     'EvaluationSummary',
     'LengthSummary',
     'PrefixSummary',
+    'ScoreGroups',
     'Summarized',
     'distances',
     'diversity',
