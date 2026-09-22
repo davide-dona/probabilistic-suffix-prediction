@@ -22,7 +22,7 @@ from src.logs.keys import (
     Split,
 )
 from src.logs.preprocessing.cases import case_durations
-from src.runtime import start_stage
+from src.runs.hydra import start_stage
 
 # Columns preprocessing derives from the timestamp rather than the raw dataset carrying them.
 _DERIVED_COLUMNS = {

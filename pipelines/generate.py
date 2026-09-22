@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src import paths
-from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset
@@ -18,7 +17,9 @@ from src.inference.generation_store import GenerationWriter
 from src.inference.tuning import TuningReport
 from src.logs import Split
 from src.model import checkpoint_identity, load_checkpoint, model_from_checkpoint
-from src.runtime import output_path, save_config, start_stage
+from src.runs.artifacts import sha256
+from src.runs.hydra import output_path, save_config, start_stage
+from src.runs.provenance import ArtifactProvenance
 from src.validation import validate_generation, validate_generation_request
 
 
@@ -54,10 +55,8 @@ def run(
     with step(f'Reading the checkpoint at {checkpoint_path}'):
         checkpoint = load_checkpoint(checkpoint_path)
     run = checkpoint_identity(checkpoint)
-    metadata = {
-        **run.as_dict(),
-        'checkpoint_sha256': sha256(checkpoint_path),
-    }
+    provenance = ArtifactProvenance(run=run, checkpoint_sha256=sha256(checkpoint_path))
+    metadata = provenance.as_metadata()
     # Start with the config stored in the checkpoint and apply runtime overrides.
     config = OmegaConf.create(checkpoint['config'])
     if device is not None:
@@ -154,7 +153,7 @@ def run(
 
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
     with GenerationWriter(
-        path, metadata, vocabulary=codec.activity_codes.vocabulary, sampling=drawn_with
+        path, provenance, vocabulary=codec.activity_codes.vocabulary, sampling=drawn_with
     ) as writer:
         for batch in tqdm(iterable=test_loader, desc='Generating', unit='batch'):
             generations = generate_batch(

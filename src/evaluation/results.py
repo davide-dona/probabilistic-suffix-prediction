@@ -10,13 +10,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import TypeAdapter, ValidationError
 
-from src.artifacts import group_by_model, read_metadata, with_metadata
 from src.evaluation.metrics import METRICS, PreparedPrefix
 from src.evaluation.metrics.definitions import MetricGroup
-from src.identity import RunIdentity
 from src.inference.generation import Generation
 from src.inference.generation_store import PrefixKey
 from src.logs.declare import ConformanceChecker
+from src.runs.artifacts import read_metadata, with_metadata
+from src.runs.identity import RunIdentity
 
 GROUPS = tuple(MetricGroup)
 
@@ -207,6 +207,18 @@ class Axis(StrEnum):
 REPORT_COLUMNS = ('dataset', 'model', 'axis', 'length', 'prefixes', 'metric', 'value')
 
 
+def _group_by_model(reports: Iterable[tuple[dict[str, str], Path]]) -> dict[str, dict[str, Path]]:
+    """Group one evaluation artifact per model under each dataset, rejecting duplicates."""
+    grouped: dict[str, dict[str, Path]] = {}
+    for metadata, path in reports:
+        dataset, model = metadata['dataset'], metadata['model']
+        models = grouped.setdefault(dataset, {})
+        if model in models:
+            raise ValueError(f'{dataset} has two reports for {model}: {models[model]}, {path}')
+        models[model] = path
+    return grouped
+
+
 def _report_rows(report: EvaluationReport) -> list[dict[str, object]]:
     """Flatten a report into one row per metric and breakdown."""
     metadata, summary = report.metadata, report.summary
@@ -247,7 +259,7 @@ def read_reports(files: Sequence[Path]) -> pd.DataFrame:
             reports.append((file, EvaluationReport.read(file)))
         except ValidationError as error:
             raise ValueError(f'{file} is not an evaluation report: {error}') from error
-    group_by_model((report.metadata, file) for file, report in reports)
+    _group_by_model((report.metadata, file) for file, report in reports)
     rows = [row for _, report in reports for row in _report_rows(report)]
     frame = pd.DataFrame(rows, columns=list(REPORT_COLUMNS))
     return frame.astype({'length': 'Int64', 'prefixes': 'Int64', 'value': 'float64'})
@@ -333,4 +345,4 @@ def score_files(reports: Sequence[Path]) -> dict[str, dict[str, Path]]:
                 runs.append((read_metadata(parquet), scores))
         except (ValueError, TypeError, KeyError) as error:
             raise ValueError(f'{scores} is not a per-prefix scores file: {error}') from error
-    return group_by_model(runs)
+    return _group_by_model(runs)

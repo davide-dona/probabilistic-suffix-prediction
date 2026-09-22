@@ -8,7 +8,7 @@ from pathlib import Path
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
-from src.identity import RunIdentity, validate_dataset, validate_run_id
+from src.runs.identity import RunIdentity, validate_dataset, validate_run_id
 
 
 def _available(path: Path) -> Path:
@@ -81,40 +81,28 @@ OmegaConf.register_new_resolver('dataset_subdir', _dataset_subdir, replace=True,
 OmegaConf.register_new_resolver('model_output', _model_output, replace=True, use_cache=True)
 OmegaConf.register_new_resolver('model_subdir', _model_subdir, replace=True, use_cache=True)
 OmegaConf.register_new_resolver(
-    'checkpoint_output',
-    _checkpoint_output,
-    replace=True,
-    use_cache=True,
+    'checkpoint_output', _checkpoint_output, replace=True, use_cache=True
 )
 OmegaConf.register_new_resolver(
-    'checkpoint_subdir',
-    _checkpoint_subdir,
-    replace=True,
-    use_cache=True,
+    'checkpoint_subdir', _checkpoint_subdir, replace=True, use_cache=True
 )
 OmegaConf.register_new_resolver(
-    'generations_output',
-    _generations_output,
-    replace=True,
-    use_cache=True,
+    'generations_output', _generations_output, replace=True, use_cache=True
 )
 OmegaConf.register_new_resolver(
-    'generations_subdir',
-    _generations_subdir,
-    replace=True,
-    use_cache=True,
+    'generations_subdir', _generations_subdir, replace=True, use_cache=True
 )
 
 
 def output_path(name: str) -> Path:
-    """Return a path inside the active Hydra invocation."""
+    """Return a path inside the active Hydra invocation, creating its parent directory."""
     path = Path(HydraConfig.get().runtime.output_dir) / name
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def start_stage(config: DictConfig) -> None:
-    """Reserve the output directory and persist the resolved configuration."""
+    """Reserve the output directory and record the environment and resolved configuration."""
     with output_path('invocation.json').open('x') as file:
         revision = subprocess.run(
             ['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=False
@@ -136,5 +124,5 @@ def start_stage(config: DictConfig) -> None:
 
 
 def save_config(config: DictConfig) -> None:
-    """Save all effective settings, including resolved checkpoint-derived values."""
+    """Save the effective configuration, including resolved checkpoint-derived values."""
     OmegaConf.save(config=config, f=output_path('config.yaml'), resolve=True)

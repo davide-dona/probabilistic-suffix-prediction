@@ -8,7 +8,7 @@ from typing import Self
 from omegaconf import DictConfig, OmegaConf
 from pydantic import TypeAdapter, ValidationError
 
-from src.identity import RunIdentity
+from src.runs.identity import RunIdentity
 from src.selection import SELECTION_METRIC
 
 

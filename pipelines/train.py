@@ -9,11 +9,11 @@ from src import paths
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.identity import RunIdentity
 from src.inference.generate import generation_batch_size
 from src.logs import Split
 from src.model import build_model
-from src.runtime import output_path, start_stage
+from src.runs.hydra import output_path, start_stage
+from src.runs.identity import RunIdentity
 from src.training import train
 from src.validation import validate_training
 

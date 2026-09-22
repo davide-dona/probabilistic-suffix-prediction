@@ -10,9 +10,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from omegaconf import DictConfig, OmegaConf
 
-from src.artifacts import read_metadata, read_vocabulary, with_metadata, with_vocabulary
-from src.identity import RunIdentity
 from src.inference.generation import DecodedEvents, Draws, Generation
+from src.runs.artifacts import read_metadata, read_vocabulary, with_metadata, with_vocabulary
+from src.runs.identity import RunIdentity
+from src.runs.provenance import ArtifactProvenance
 
 # Which prefix a row answers, and so what the rows of two runs of one log are matched on. A cut is
 # a case and a length, and the pair is unique within a file.
@@ -102,7 +103,7 @@ class GenerationWriter:
     def __init__(
         self,
         path: Path,
-        metadata: dict[str, str],
+        provenance: ArtifactProvenance,
         *,
         vocabulary: Sequence[str],
         sampling: DictConfig | None,
@@ -110,7 +111,7 @@ class GenerationWriter:
         """
         Args:
             path: Destination file inside the active Hydra output directory.
-            metadata: Stable run identity and the source checkpoint hash.
+            provenance: Training run and source checkpoint that produced the artifact.
             vocabulary: The activity names the suffixes are spelled on, in code order, from
                 `ActivityCodec.vocabulary`. Written into the file so it says what its own
                 characters mean.
@@ -125,7 +126,7 @@ class GenerationWriter:
                 (schema.metadata or {})
                 | {_SAMPLING: json.dumps(OmegaConf.to_container(sampling, resolve=True))}
             )
-        schema = with_metadata(schema, metadata)
+        schema = with_metadata(schema, provenance.as_metadata())
         self._path = path
         self._temporary = path.with_suffix('.parquet.tmp')
         self._writer = pq.ParquetWriter(
@@ -228,11 +229,17 @@ class Generations:
         Raises:
             ValueError: If the file has no run identity.
         """
-        return read_metadata(self._parquet)
+        return self.provenance.as_metadata()
+
+    @property
+    def provenance(self) -> ArtifactProvenance:
+        """Validated training run and checkpoint that produced this file."""
+        return ArtifactProvenance.from_metadata(read_metadata(self._parquet))
 
     @property
     def run(self) -> RunIdentity:
-        return RunIdentity.from_metadata(self.metadata)
+        """The training run that produced this file."""
+        return self.provenance.run
 
     @property
     def vocabulary(self) -> tuple[str, ...]:

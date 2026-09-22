@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.identity import RunIdentity
+from src.runs.identity import RunIdentity
 from src.selection import SELECTION_METRIC
 
 MODEL_KEYS = ('config', 'model_state_dict')

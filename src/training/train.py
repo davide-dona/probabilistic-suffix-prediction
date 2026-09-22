@@ -9,9 +9,9 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
-from src.identity import RunIdentity
 from src.logs.declare import ConformanceChecker
-from src.runtime import output_path
+from src.runs.hydra import output_path
+from src.runs.identity import RunIdentity
 from src.selection import SELECTION_METRIC, selection_score
 from src.training.early_stopping import EarlyStopper
 from src.training.loss import Loss
