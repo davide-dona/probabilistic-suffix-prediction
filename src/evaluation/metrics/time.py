@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 
-from src.evaluation.scores.context import ScoringContext, aligned_inter_event_times
-from src.evaluation.scores.registry import METRICS
-from src.evaluation.scores.suffix_length import coverage_gap, crps
+from src.evaluation.metrics.helpers.statistics import coverage_gap, crps
+from src.evaluation.metrics.prepared import PreparedPrefix, aligned_inter_event_times
+from src.evaluation.metrics.registry import METRICS
 from src.metrics import Direction, MetricGroup, Unit, mean
 
 MINUTES_PER_DAY = 1440.0
@@ -15,7 +15,7 @@ MINUTES_PER_DAY = 1440.0
     unit=Unit.DAYS,
     direction=Direction.LOWER,
 )
-def compute_remaining_time_ae_point_days(context: ScoringContext) -> float:
+def remaining_time_ae_point_days(context: PreparedPrefix) -> float:
     """Return the point remaining-time absolute error in days."""
     generation = context.generation
     return (
@@ -31,7 +31,7 @@ def compute_remaining_time_ae_point_days(context: ScoringContext) -> float:
     unit=Unit.DAYS,
     direction=Direction.LOWER,
 )
-def compute_inter_event_time_ae_point_days(context: ScoringContext) -> float:
+def inter_event_time_ae_point_days(context: PreparedPrefix) -> float:
     """Return the point inter-event-time absolute error in days."""
     generation = context.generation
     return (
@@ -50,7 +50,7 @@ def compute_inter_event_time_ae_point_days(context: ScoringContext) -> float:
     unit=Unit.DAYS,
     direction=Direction.LOWER,
 )
-def compute_remaining_time_crps_days(context: ScoringContext) -> float:
+def remaining_time_crps_days(context: PreparedPrefix) -> float:
     """Return sampled remaining-time CRPS in days."""
     return crps(context.remaining_times, context.true_remaining_time) / MINUTES_PER_DAY
 
@@ -62,7 +62,7 @@ def compute_remaining_time_crps_days(context: ScoringContext) -> float:
     unit=Unit.DAYS,
     direction=Direction.LOWER,
 )
-def compute_inter_event_time_crps_days(context: ScoringContext) -> float:
+def inter_event_time_crps_days(context: PreparedPrefix) -> float:
     """Return sampled inter-event-time CRPS in days."""
     return crps(context.inter_event_times, context.true_inter_event_times) / MINUTES_PER_DAY
 
@@ -74,7 +74,7 @@ def compute_inter_event_time_crps_days(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_remaining_time_coverage_gap_50(context: ScoringContext) -> float:
+def remaining_time_coverage_gap_50(context: PreparedPrefix) -> float:
     """Return the 50% remaining-time central-interval coverage gap."""
     return coverage_gap(context.remaining_times, context.true_remaining_time, level=0.50)
 
@@ -86,7 +86,7 @@ def compute_remaining_time_coverage_gap_50(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_remaining_time_coverage_gap_75(context: ScoringContext) -> float:
+def remaining_time_coverage_gap_75(context: PreparedPrefix) -> float:
     """Return the 75% remaining-time central-interval coverage gap."""
     return coverage_gap(context.remaining_times, context.true_remaining_time, level=0.75)
 
@@ -98,7 +98,7 @@ def compute_remaining_time_coverage_gap_75(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_remaining_time_coverage_gap_95(context: ScoringContext) -> float:
+def remaining_time_coverage_gap_95(context: PreparedPrefix) -> float:
     """Return the 95% remaining-time central-interval coverage gap."""
     return coverage_gap(context.remaining_times, context.true_remaining_time, level=0.95)
 
@@ -110,7 +110,7 @@ def compute_remaining_time_coverage_gap_95(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_inter_event_time_coverage_gap_50(context: ScoringContext) -> float:
+def inter_event_time_coverage_gap_50(context: PreparedPrefix) -> float:
     """Return the 50% inter-event-time central-interval coverage gap."""
     return coverage_gap(context.inter_event_times, context.true_inter_event_times, level=0.50)
 
@@ -122,7 +122,7 @@ def compute_inter_event_time_coverage_gap_50(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_inter_event_time_coverage_gap_75(context: ScoringContext) -> float:
+def inter_event_time_coverage_gap_75(context: PreparedPrefix) -> float:
     """Return the 75% inter-event-time central-interval coverage gap."""
     return coverage_gap(context.inter_event_times, context.true_inter_event_times, level=0.75)
 
@@ -134,7 +134,7 @@ def compute_inter_event_time_coverage_gap_75(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.ZERO,
 )
-def compute_inter_event_time_coverage_gap_95(context: ScoringContext) -> float:
+def inter_event_time_coverage_gap_95(context: PreparedPrefix) -> float:
     """Return the 95% inter-event-time central-interval coverage gap."""
     return coverage_gap(context.inter_event_times, context.true_inter_event_times, level=0.95)
 

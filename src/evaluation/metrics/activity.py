@@ -1,7 +1,6 @@
-from src.evaluation.activity_distances import SuffixMetric, sequence_similarity
-from src.evaluation.activity_distances import energy_score as suffix_energy_score
-from src.evaluation.scores.context import ScoringContext
-from src.evaluation.scores.registry import METRICS
+from src.evaluation.metrics.helpers.activity import SuffixMetric, energy_score, sequence_similarity
+from src.evaluation.metrics.prepared import PreparedPrefix
+from src.evaluation.metrics.registry import METRICS
 from src.metrics import Direction, MetricGroup, Unit
 
 
@@ -12,7 +11,7 @@ from src.metrics import Direction, MetricGroup, Unit
     unit=Unit.SHARE,
     direction=Direction.HIGHER,
 )
-def compute_dls_sample_mean(context: ScoringContext) -> float:
+def dls_sample_mean(context: PreparedPrefix) -> float:
     """Return the draw-weighted DLS similarity of activity suffix samples."""
     samples = context.generation.samples
     draws = len(samples)
@@ -30,10 +29,10 @@ def compute_dls_sample_mean(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.LOWER,
 )
-def compute_energy_score_dls(context: ScoringContext) -> float:
+def energy_score_dls(context: PreparedPrefix) -> float:
     """Return the sampled activity energy score on normalized DLS distance."""
     samples, truth = context.generation.samples, context.generation.truth
-    return suffix_energy_score(
+    return energy_score(
         samples.suffixes, truth.activities, weights=samples.counts, metric=SuffixMetric.DLD
     )
 
@@ -45,10 +44,10 @@ def compute_energy_score_dls(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.LOWER,
 )
-def compute_energy_score_exact(context: ScoringContext) -> float:
+def energy_score_exact(context: PreparedPrefix) -> float:
     """Return the sampled activity energy score on exact-match distance."""
     samples, truth = context.generation.samples, context.generation.truth
-    return suffix_energy_score(
+    return energy_score(
         samples.suffixes, truth.activities, weights=samples.counts, metric=SuffixMetric.EXACT
     )
 
@@ -60,10 +59,10 @@ def compute_energy_score_exact(context: ScoringContext) -> float:
     unit=Unit.SCORE,
     direction=Direction.LOWER,
 )
-def compute_energy_score_bigram(context: ScoringContext) -> float:
+def energy_score_bigram(context: PreparedPrefix) -> float:
     """Return the sampled activity energy score on bigram distance."""
     samples, truth = context.generation.samples, context.generation.truth
-    return suffix_energy_score(
+    return energy_score(
         samples.suffixes, truth.activities, weights=samples.counts, metric=SuffixMetric.BIGRAM
     )
 
@@ -75,7 +74,7 @@ def compute_energy_score_bigram(context: ScoringContext) -> float:
     unit=Unit.SHARE,
     direction=Direction.HIGHER,
 )
-def compute_dls_point(context: ScoringContext) -> float:
+def dls_point(context: PreparedPrefix) -> float:
     """Return the DLS similarity of the point activity prediction."""
     generation = context.generation
     return sequence_similarity(generation.point.activities, generation.truth.activities)

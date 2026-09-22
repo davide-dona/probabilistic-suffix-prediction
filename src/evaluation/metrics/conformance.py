@@ -1,9 +1,9 @@
-from src.evaluation.scores.context import ScoringContext
-from src.evaluation.scores.registry import METRICS
+from src.evaluation.metrics.prepared import PreparedPrefix
+from src.evaluation.metrics.registry import METRICS
 from src.metrics import Direction, MetricGroup, Owner, Unit
 
 
-def _sample_mean(context: ScoringContext, attribute: str) -> float:
+def _sample_mean(context: PreparedPrefix, attribute: str) -> float:
     """Return one conformance property averaged across all sampled draws."""
     checks = context.sample_conformance
     samples = context.generation.samples
@@ -19,7 +19,7 @@ def _sample_mean(context: ScoringContext, attribute: str) -> float:
     unit=Unit.SHARE,
     direction=Direction.HIGHER,
 )
-def compute_conformance_sample_mean(context: ScoringContext) -> float:
+def conformance_sample_mean(context: PreparedPrefix) -> float:
     """Return the draw-weighted mean share of satisfied constraints."""
     return _sample_mean(context, 'share')
 
@@ -31,7 +31,7 @@ def compute_conformance_sample_mean(context: ScoringContext) -> float:
     unit=Unit.SHARE,
     direction=Direction.HIGHER,
 )
-def compute_conformance_point(context: ScoringContext) -> float:
+def conformance_point(context: PreparedPrefix) -> float:
     """Return the satisfied-constraint share of the point prediction."""
     return context.point_conformance.share
 
@@ -43,7 +43,7 @@ def compute_conformance_point(context: ScoringContext) -> float:
     unit=Unit.SHARE,
     owner=Owner.LOG,
 )
-def compute_conformance_observed(context: ScoringContext) -> float:
+def conformance_observed(context: PreparedPrefix) -> float:
     """Return the satisfied-constraint share of the observed continuation."""
     return context.observed_conformance.share
 
@@ -55,7 +55,7 @@ def compute_conformance_observed(context: ScoringContext) -> float:
     unit=Unit.SHARE,
     direction=Direction.HIGHER,
 )
-def compute_full_conformance_sample_rate(context: ScoringContext) -> float:
+def full_conformance_sample_rate(context: PreparedPrefix) -> float:
     """Return the draw-weighted rate of fully conformant sampled suffixes."""
     return _sample_mean(context, 'full')
 
@@ -67,6 +67,6 @@ def compute_full_conformance_sample_rate(context: ScoringContext) -> float:
     unit=Unit.SHARE,
     owner=Owner.LOG,
 )
-def compute_full_conformance_observed(context: ScoringContext) -> float:
+def full_conformance_observed(context: PreparedPrefix) -> float:
     """Return whether the observed continuation fully conforms."""
     return context.observed_conformance.full

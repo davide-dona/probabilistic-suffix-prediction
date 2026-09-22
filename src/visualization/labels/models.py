@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.registry import Registry
+from src.visualization.registry import Registry
 
 
 @dataclass(frozen=True)

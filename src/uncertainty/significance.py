@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from src.evaluation import score_files
-from src.evaluation.scores import METRICS
+from src.evaluation.metrics import METRICS
 from src.metrics import Direction
 from src.uncertainty.resampling import resample_means
 from src.uncertainty.units import by_case

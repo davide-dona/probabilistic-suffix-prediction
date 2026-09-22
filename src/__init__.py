@@ -7,7 +7,6 @@ from src.metrics import (
     ScalarRecord,
     Unit,
 )
-from src.registry import Registry
 
 __all__ = [
     'ActivityCodes',
@@ -15,7 +14,6 @@ __all__ = [
     'Metric',
     'MetricGroup',
     'Owner',
-    'Registry',
     'ScalarRecord',
     'Unit',
 ]

@@ -1,6 +1,6 @@
-from src.evaluation.scores import activity, conformance, suffix_length, time
-from src.evaluation.scores.context import ScoringContext
-from src.evaluation.scores.registry import METRICS, MetricRegistry
+from src.evaluation.metrics import activity, conformance, suffix_length, time
+from src.evaluation.metrics.prepared import PreparedPrefix
+from src.evaluation.metrics.registry import METRICS, MetricRegistry
 from src.metrics import SELECTION_METRIC, Direction
 
 if METRICS[SELECTION_METRIC].direction is not Direction.LOWER:
@@ -9,7 +9,7 @@ if METRICS[SELECTION_METRIC].direction is not Direction.LOWER:
 __all__ = [
     'METRICS',
     'MetricRegistry',
-    'ScoringContext',
+    'PreparedPrefix',
     'activity',
     'conformance',
     'suffix_length',

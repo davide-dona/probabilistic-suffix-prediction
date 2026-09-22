@@ -1,20 +1,20 @@
-from src.evaluation.activity_distances import distances, diversity, sequence_similarity
-from src.evaluation.prefix_scores import (
+from src.evaluation.results import (
     BLOCK,
     PREFIX_SCORE_KEYS,
-    read_prefix_scores,
-    require_columns,
-    score_files,
-    stream_prefix_scores,
-)
-from src.evaluation.report import REPORT_COLUMNS, Axis, EvaluationReport, read_reports
-from src.evaluation.summary import (
+    REPORT_COLUMNS,
+    Axis,
+    EvaluationReport,
     EvaluationSummary,
     LengthSummary,
     PrefixSummary,
     ScoreGroups,
     Summarized,
     flatten_scores,
+    read_prefix_scores,
+    read_reports,
+    require_columns,
+    score_files,
+    stream_prefix_scores,
 )
 
 __all__ = [
@@ -28,13 +28,10 @@ __all__ = [
     'PrefixSummary',
     'ScoreGroups',
     'Summarized',
-    'distances',
-    'diversity',
     'flatten_scores',
     'read_prefix_scores',
     'read_reports',
     'require_columns',
     'score_files',
-    'sequence_similarity',
     'stream_prefix_scores',
 ]

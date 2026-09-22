@@ -15,7 +15,7 @@ from src.artifacts import sha256
 from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
-from src.evaluation.summary import PrefixSummary
+from src.evaluation.results import PrefixSummary
 from src.inference.generate import generate_batch, generation_batch_size
 from src.inference.tuning import (
     SearchPass,

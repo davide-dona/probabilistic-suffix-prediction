@@ -1,4 +1,4 @@
-from src.registry import Registry
+from src.visualization.registry import Registry
 
 # Display labels and ordering for datasets.
 DATASETS = Registry[str](
