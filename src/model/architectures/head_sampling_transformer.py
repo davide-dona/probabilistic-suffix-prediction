@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
 from src.model.components.trace_encoder import TraceEncoder
@@ -65,7 +65,7 @@ class HeadSamplingTransformer(SuffixModel):
             sampling=config.sampling,
         )
 
-    def forward(self, item: SplitTrace) -> ModelOutput:
+    def forward(self, item: TraceCut) -> ModelOutput:
         """
         Args:
             item: A batch from `TraceDataset`, read for its prefix and for the suffix the
@@ -86,7 +86,7 @@ class HeadSamplingTransformer(SuffixModel):
 
     @torch.no_grad()
     def generate(
-        self, item: SplitTrace, *, num_samples: int, sample: bool = True
+        self, item: TraceCut, *, num_samples: int, sample: bool = True
     ) -> GeneratedSuffix:
         """Generate `num_samples` suffixes for every prefix in `item`.
 
@@ -120,7 +120,7 @@ class HeadSamplingTransformer(SuffixModel):
         return self._per_sample(generated=generated, batch_size=item.prefix.length.size(dim=0))
 
     def compute_loss(
-        self, output: ModelOutput, batch: SplitTrace, *, step: int
+        self, output: ModelOutput, batch: TraceCut, *, step: int
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its reconstruction alone: no latent, no KL term to charge.
 

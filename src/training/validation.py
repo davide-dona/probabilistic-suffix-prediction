@@ -58,7 +58,7 @@ def validate(
     Run one pass over `loader` without learning from it.
     Args:
         model: The model to evaluate. Put in evaluation mode here, and left in it.
-        loader: The dataloader to iterate over. Its batches are `SplitTrace`s.
+        loader: The dataloader to iterate over. Its batches are `TraceCut`s.
         step: The training step this pass scores, for a model whose loss anneals a term over
             the run.
         device: The device to run the computations on.

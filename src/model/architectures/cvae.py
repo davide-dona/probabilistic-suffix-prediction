@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.distributions import Gaussian
 from src.model.components.decoder import Decoder, GeneratedSuffix
 from src.model.components.embeddings import EventEmbeddings
@@ -69,7 +69,7 @@ class TransformerCVAE(SuffixModel):
             sampling=None,
         )
 
-    def forward(self, item: SplitTrace) -> ModelOutput:
+    def forward(self, item: TraceCut) -> ModelOutput:
         """
         Args:
             item: A batch from `TraceDataset`, read for both its prefix and its suffix.
@@ -100,7 +100,7 @@ class TransformerCVAE(SuffixModel):
 
     @torch.no_grad()
     def generate(
-        self, item: SplitTrace, *, num_samples: int, sample: bool = True
+        self, item: TraceCut, *, num_samples: int, sample: bool = True
     ) -> GeneratedSuffix:
         """Generate `num_samples` suffixes for every prefix in `item`.
 
@@ -151,7 +151,7 @@ class TransformerCVAE(SuffixModel):
         return self._per_sample(generated, batch_size=item.prefix.length.size(dim=0))
 
     def compute_loss(
-        self, output: ModelOutput, batch: SplitTrace, *, step: int
+        self, output: ModelOutput, batch: TraceCut, *, step: int
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass by its ELBO: reconstruction plus the annealed, floored KL.
 

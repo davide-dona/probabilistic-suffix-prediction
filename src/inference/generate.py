@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 
 from src.activity_codes import ActivityCodes
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.inference.generation import DecodedEvents, Draws, Generation
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ def generation_batch_size(
 
 def generate_batch(
     model: SuffixModel,
-    batch: SplitTrace,
+    batch: TraceCut,
     *,
     num_samples: int,
     codec: DatasetCodec,

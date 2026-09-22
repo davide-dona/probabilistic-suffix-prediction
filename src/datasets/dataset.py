@@ -26,13 +26,11 @@ class Events(NamedTuple):
     length: torch.Tensor  # int64, the real, unpadded length of the run, [...], 1D
 
     def _channels(self) -> dict[str, torch.Tensor]:
-        """Every per-event field, keyed by name, without `length`, which counts the events rather
-        than holding one value per event."""
+        """Return the per-event fields, excluding the scalar event count."""
         return {name: getattr(self, name) for name in self._fields if name != 'length'}
 
     def cut(self, index: slice | torch.Tensor) -> Events:
         """Slice every per-event field by index, updating `length`."""
-        # `length` is recounted from what the slice kept, so it is not sliced with the rest.
         channels = {name: channel[index] for name, channel in self._channels().items()}
         return self._replace(
             **channels,
@@ -41,15 +39,12 @@ class Events(NamedTuple):
 
     def padded(self, to: int) -> Events:
         """Pad every per-event field to `to` positions, leaving `length` unchanged.
-        This allows a batch of runs to be stacked into a single tensor, with the padding masked
-        out by `pad_mask`.
 
         Args:
             to: The width to pad to, `max_trace_length` for everything the model reads.
         Returns:
             The same events at the front of `to` positions, `length` unchanged.
         """
-        # `length` counts real events and so survives the padding untouched.
         return self._replace(
             **{
                 name: torch.cat(
@@ -73,11 +68,11 @@ class Events(NamedTuple):
         return positions.unsqueeze(dim=0) >= self.length.unsqueeze(dim=1)
 
     def to(self, device: torch.device) -> Events:
-        """Move a whole batch in one call"""
+        """Move every field to `device`."""
         return Events(*(field.to(device) for field in self))
 
 
-class SplitTrace(NamedTuple):
+class TraceCut(NamedTuple):
     """A single trace cut into a (prefix, suffix) pair, with the decoder's time targets aligned
     to the suffix positions they are read at."""
 
@@ -93,9 +88,9 @@ class SplitTrace(NamedTuple):
     inter_event_times: torch.Tensor  # float32, [max_trace_length], batched [batch_size, ...]
     remaining_times: torch.Tensor  # float32, shaped like `inter_event_times`
 
-    def to(self, device: torch.device) -> SplitTrace:
-        """Move a whole batch in one call"""
-        return SplitTrace(
+    def to(self, device: torch.device) -> TraceCut:
+        """Move every tensor field to `device`."""
+        return TraceCut(
             case_id=self.case_id,
             prefix=self.prefix.to(device),
             suffix=self.suffix.to(device),
@@ -105,8 +100,8 @@ class SplitTrace(NamedTuple):
 
 
 @dataclass(frozen=True)
-class _Trace:
-    """One case of the log, encoded once and shared by every trace cut from it."""
+class _Case:
+    """One complete encoded case, shared by every split trace cut from it."""
 
     case_id: str  # which case of the log this is
     events: Events  # the case's events, unpadded
@@ -146,55 +141,43 @@ class TraceDataset(Dataset):
         events = _encode_events(codec, split_dataset)
         remaining_times = torch.from_numpy(codec.remaining_time.encode(split_dataset))
 
-        # Group the encoded split into per-case runs.
-        self._traces = _group_cases(
+        self._cases = _group_cases(
             split_dataset,
             events=events,
             remaining_times=remaining_times,
         )
 
-        # Build the list of (case index, cut point) pairs once here rather than on every
-        # __getitem__ call.
-        self._cuts: list[tuple[int, int]] = [
-            # The k-th cut of the case at case_idx, yielding prefix[:k] and suffix[k:].
+        self._case_cuts: list[tuple[int, int]] = [
             (case_idx, k)
-            for case_idx, case in enumerate(self._traces)
-            # Every cut point the case's recorded lower bound allows, capped at len - 1 so every
-            # suffix holds at least one event to predict.
+            for case_idx, case in enumerate(self._cases)
             for k in range(case.min_prefix_len, int(case.events.length))
         ]
 
-    def _get_cut(self, i: int) -> tuple[_Trace, int]:
-        """Return the trace and cut point for the i-th trace."""
-        case_idx, k = self._cuts[i]
-        return self._traces[case_idx], k
+    def _case_and_cut(self, i: int) -> tuple[_Case, int]:
+        """Return the source case and cut point for the i-th split trace."""
+        case_idx, k = self._case_cuts[i]
+        return self._cases[case_idx], k
 
     def __len__(self) -> int:
         """Return the number of traces in this split."""
-        return len(self._cuts)
+        return len(self._case_cuts)
 
-    def __getitem__(self, i: int) -> SplitTrace:
+    def __getitem__(self, i: int) -> TraceCut:
         """Return the i-th trace, both of its runs padded to `max_trace_length`."""
-        # Retrieve the case and cut point for the i-th trace
-        case, k = self._get_cut(i)
+        case, k = self._case_and_cut(i)
         suffix_len = int(case.events.length) - k
 
-        # The first k events of the case, padded to `max_trace_length`
         prefix = case.events.cut(slice(0, k)).padded(to=self.max_len)
-        # The last len - k events of the case, padded to `max_trace_length`.
         suffix = case.events.cut(slice(k, None)).padded(to=self.max_len)
 
-        # Every suffix is closed with an EOT event, which is the decoder's signal to stop.
         suffix.activities[suffix_len] = self.codec.activity.eot_index
         suffix.resources[suffix_len] = self.codec.resource.eot_index
         suffix = suffix._replace(length=suffix.length + 1)
 
-        return SplitTrace(
+        return TraceCut(
             case_id=case.case_id,
             prefix=prefix,
             suffix=suffix,
-            # Both run the suffix's content only: the EOT has no time of its own, and the loss
-            # masks it out with the padding behind it.
             inter_event_times=self._pad_target(case.events.inter_event_times[k : k + suffix_len]),
             remaining_times=self._pad_target(case.remaining_times[k - 1 : k + suffix_len - 1]),
         )
@@ -218,13 +201,11 @@ class TraceDataset(Dataset):
         rows. Sorting the whole split first is what lets that early exit actually save time.
 
         Returns:
-            SplitTrace indices, ascending by suffix length. Passed as a `DataLoader` sampler.
+            TraceCut indices, ascending by suffix length. Passed as a `DataLoader` sampler.
         """
-        # Content length plus the EOT closing it, skipping the padding and tensor work
-        # `__getitem__` does: sorting has no use for either when it only wants a length.
         lengths = []
         for i in range(len(self)):
-            case, k = self._get_cut(i)
+            case, k = self._case_and_cut(i)
             lengths.append(int(case.events.length) - k + 1)
         return sorted(range(len(self)), key=lengths.__getitem__)
 
@@ -283,7 +264,7 @@ def _group_cases(
     *,
     events: Events,
     remaining_times: torch.Tensor,
-) -> list[_Trace]:
+) -> list[_Case]:
     """Group a split's already-encoded events into per-case runs.
 
     Args:
@@ -292,7 +273,7 @@ def _group_cases(
         events: The split's events, encoded whole, indexed the same as `split_dataset`.
         remaining_times: The split's standardized remaining time, indexed the same way.
     Returns:
-        One `_Trace` per case of the split, each of them whole: preprocessing dropped the cases
+        One `_Case` per case of the split, each of them whole: preprocessing dropped the cases
         that do not fit `max_trace_length`, so nothing is cut short here.
     """
     cases = []
@@ -302,7 +283,7 @@ def _group_cases(
         # Constant over the case, so any of its rows answers for all of them.
         bounds = group.iloc[0]
         cases.append(
-            _Trace(
+            _Case(
                 case_id=str(case_id),
                 events=events.cut(positions),
                 remaining_times=remaining_times[positions],

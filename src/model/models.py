@@ -8,7 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn
 
 from src.datasets.codec import DatasetCodec
-from src.datasets.dataset import SplitTrace
+from src.datasets.dataset import TraceCut
 from src.distributions import Gaussian, Laplace
 from src.model.checkpoint import MODEL_KEYS, require_keys
 from src.model.components.decoder import DecoderOutput, GeneratedSuffix
@@ -35,7 +35,7 @@ class ModelOutput:
     latents: Latents | None  # None for a model with no latent
 
 
-def _timed_positions(batch: SplitTrace) -> torch.Tensor:
+def _timed_positions(batch: TraceCut) -> torch.Tensor:
     """Mark the suffix positions the time targets are defined at.
 
     Args:
@@ -50,7 +50,7 @@ def _timed_positions(batch: SplitTrace) -> torch.Tensor:
 
 
 def time_loss(
-    prediction: Laplace, target: torch.Tensor, batch: SplitTrace
+    prediction: Laplace, target: torch.Tensor, batch: TraceCut
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Score one time head over the positions its target is defined at.
 
@@ -95,12 +95,12 @@ class SuffixModel(nn.Module, ABC):
         self.eot_activity_index = codec.activity.eot_index
 
     @abstractmethod
-    def forward(self, item: SplitTrace) -> ModelOutput:
+    def forward(self, item: TraceCut) -> ModelOutput:
         """Score one batch teacher-forced, for the loss to charge."""
 
     @abstractmethod
     def generate(
-        self, item: SplitTrace, *, num_samples: int, sample: bool = True
+        self, item: TraceCut, *, num_samples: int, sample: bool = True
     ) -> GeneratedSuffix:
         """Write `num_samples` suffixes for every prefix of a batch.
 
@@ -115,7 +115,7 @@ class SuffixModel(nn.Module, ABC):
 
     @abstractmethod
     def compute_loss(
-        self, output: ModelOutput, batch: SplitTrace, *, step: int
+        self, output: ModelOutput, batch: TraceCut, *, step: int
     ) -> tuple[torch.Tensor, Loss, LatentMetrics | None]:
         """Score a forward pass against the batch it was run on, ready to backpropagate.
 
