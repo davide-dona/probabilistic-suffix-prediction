@@ -1,5 +1,3 @@
-"""Validation-only sampler selection and portable tuning reports."""
-
 import json
 import math
 from collections.abc import Sequence

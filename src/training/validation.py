@@ -117,8 +117,6 @@ def validate_generation(
     """
     model.eval()
 
-    codes = codec.activity_codes
-
     generations = [
         generation
         for batch in loader
@@ -127,7 +125,6 @@ def validate_generation(
             batch=batch.to(device),
             num_samples=num_samples,
             codec=codec,
-            codes=codes,
         )
     ]
     if not generations:

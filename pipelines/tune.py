@@ -12,7 +12,7 @@ from tqdm import tqdm
 from src import paths
 from src.artifacts import sha256
 from src.cli import banner, step
-from src.datasets.codec import ActivityCodec, DatasetCodec
+from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.evaluation.results import PrefixSummary
 from src.inference.generate import generate_batch, generation_batch_size
@@ -42,7 +42,6 @@ def _score(
     seed: int,
     num_samples: int,
     codec: DatasetCodec,
-    codes: ActivityCodec,
     checker: ConformanceChecker,
     device: torch.device,
 ) -> TuningPoint:
@@ -58,7 +57,6 @@ def _score(
             pairing is what makes cells a few thousandths apart worth comparing at all.
         num_samples: Suffixes drawn per prefix.
         codec: The codec the split was encoded through, read in the decode direction.
-        codes: The codebook the suffixes are spelled on, seeded from `codec.activity.names`.
         checker: The declarative model, discovered from the train split and so the same object
             whichever split is being scored.
         device: The device to generate on.
@@ -74,7 +72,7 @@ def _score(
             iterable=loader, desc=f'T {sampling.temperature} p {sampling.top_p}', unit='batch'
         )
         for generation in generate_batch(
-            model=model, batch=batch.to(device), num_samples=num_samples, codec=codec, codes=codes
+            model=model, batch=batch.to(device), num_samples=num_samples, codec=codec
         )
     ]
     if not generations:
@@ -203,8 +201,7 @@ def run(
     )
 
     with step('Reading the declarative model'):
-        codes = codec.activity_codes
-        checker = ConformanceChecker(config.data.name, codes)
+        checker = ConformanceChecker(config.data.name, codec.activity_codes)
 
     points = []
     for position, sampling in enumerate(grid, start=1):
@@ -216,7 +213,6 @@ def run(
             seed=config.seed,
             num_samples=samples,
             codec=codec,
-            codes=codes,
             checker=checker,
             device=torch_device,
         )

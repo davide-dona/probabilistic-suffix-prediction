@@ -41,7 +41,6 @@ def generate_batch(
     *,
     num_samples: int,
     codec: DatasetCodec,
-    codes: ActivityCodec,
 ) -> list[Generation]:
     """Generate `num_samples` suffixes per prefix of one batch, and the point prediction beside
     them.
@@ -50,20 +49,16 @@ def generate_batch(
         model: The model to generate with, already in eval mode.
         batch: A batch from `TraceDataset`, already on the model's device.
         num_samples: How many suffixes to draw per prefix.
-        codec: The codec the split was encoded through, read here in the decode
-            direction. Passed rather than read off the dataset, which is a `Subset` wherever only
-            a slice of the split is generated for.
-        codes: The dataset's codebook, seeded from `codec.activity.names`, which every suffix is
-            spelled on. Passed in rather than built here so one codebook serves the whole run and
-            is the one written into the file's metadata.
+        codec: The codec the split was encoded through.
     Returns:
-        One generation per prefix of the batch, in the batch's own order, each naming the case it
-        was cut from. Everything is decoded into the log's own units and cut at its length, so what
-        comes back holds events and nothing else, the EOT a generation ended on and the padding
-        behind it both dropped.
+        num_samples generation per prefix of the batch, in the batch's own order, each naming t
+        he case it was cut from. 
     """
+    # Generate the suffixes
     generated = model.generate(item=batch, num_samples=num_samples)
+    # Generate the point prediction
     point = model.generate(item=batch, num_samples=1, sample=False)
+    activity_codec = codec.activity_codes
 
     # Every suffix closes on an EOT, so true lengths are one less tha batch.suffix.length.
     true_lengths = (batch.suffix.length - 1).cpu().numpy()  # [batch_size]
@@ -89,14 +84,14 @@ def generate_batch(
     return [
         Generation(
             case_id=batch.case_id[position],
-            prefix_activities=codes.encode(
+            prefix_activities=activity_codec.encode(
                 codec.activity.decode(prefix_activities[position], length=prefix_lengths[position])
             ),
             samples=Draws.of(
                 [
                     _decode(
                         codec,
-                        codes,
+                        activity_codec,
                         activities=activities[position, sample],
                         inter_event_times=inter_event_times[position, sample],
                         length=lengths[position, sample],
@@ -108,7 +103,7 @@ def generate_batch(
             ),
             point=_decode(
                 codec,
-                codes,
+                activity_codec,
                 activities=point_activities[position],
                 inter_event_times=point_inter_event_times[position],
                 length=point_lengths[position],
@@ -117,7 +112,7 @@ def generate_batch(
             ),
             truth=_decode(
                 codec,
-                codes,
+                activity_codec,
                 activities=true_activities[position],
                 inter_event_times=true_inter_event_times[position],
                 length=true_lengths[position],
@@ -130,7 +125,7 @@ def generate_batch(
 
 def _decode(
     codec: DatasetCodec,
-    codes: ActivityCodec,
+    activity_codec: ActivityCodec,
     *,
     activities: np.ndarray,
     inter_event_times: np.ndarray,
@@ -142,7 +137,7 @@ def _decode(
 
     Args:
         codec: The codec the split was encoded through, read here in the decode direction.
-        codes: The dataset's codebook, which the decoded names are spelled onto.
+        activity_codec: The dataset's activity codec, which the decoded names are spelled onto.
         activities: The run's activity indices, `[steps]`.
         inter_event_times: The run's standardized inter-event time before each activity,
             `[steps]`.
@@ -159,7 +154,7 @@ def _decode(
         inter_event_time_minutes = np.maximum(inter_event_time_minutes, 0.0)
         remaining_time_minutes = max(remaining_time_minutes, 0.0)
     return DecodedEvents(
-        activities=codes.encode(codec.activity.decode(activities, length=length)),
+        activities=activity_codec.encode(codec.activity.decode(activities, length=length)),
         inter_event_time_minutes=inter_event_time_minutes.tolist(),
         remaining_time_minutes=remaining_time_minutes,
     )

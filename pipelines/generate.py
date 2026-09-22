@@ -152,14 +152,9 @@ def run(
         flush=True,
     )
 
-    # The one codebook this run spells its suffixes on, seeded from every name the activity channel
-    # can decode to so no name is ever coded on the fly. The continuation index is seeded from the
-    # same list, which is what lets evaluation compare the two without translating either.
-    codes = codec.activity_codes
-
     # Write the generation while it is being produced, avoiding a huge in-memory DataFrame.
     with GenerationWriter(
-        path, metadata, vocabulary=codes.vocabulary, sampling=drawn_with
+        path, metadata, vocabulary=codec.activity_codes.vocabulary, sampling=drawn_with
     ) as writer:
         for batch in tqdm(iterable=test_loader, desc='Generating', unit='batch'):
             generations = generate_batch(
@@ -167,7 +162,6 @@ def run(
                 batch=batch.to(device),
                 num_samples=config.inference.evaluation_samples,
                 codec=codec,
-                codes=codes,
             )
             # Write the generations to the Parquet file in a single block, one row per prefix.
             writer.write(generations)
