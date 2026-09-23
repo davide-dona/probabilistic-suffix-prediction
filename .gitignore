@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*DS_Store
+
+# W&B's local run cache; a run's data lives in the cloud project once synced
+wandb/
+
+
+# Published models, fetched from the Hugging Face repo rather than committed
+pretrained/
+
+# Runs outputs
+outputs/
+pinned/
+
+
+# Notes on things worth trying, kept out of the repo until one of them is actually done
+ideas/
+
+# Virtual environments
+.venv
+
+
+# Preprocessed datasets
+data/*
+!data/*/
+data/*/*
+!data/*/original.csv
+
+
+# Temporary scripts
+tmp/
+
+# Notes directory
+notes/
