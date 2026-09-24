@@ -1,0 +1,4 @@
+defaults:
+- output/default
+- dataset: ???
+- _self_
