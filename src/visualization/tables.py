@@ -2,8 +2,16 @@ from collections.abc import Container, Sequence
 
 import pandas as pd
 
+from src.evaluation.metrics.metadata import Direction, Metric
 from src.visualization import labels
-from src.visualization.catalogue import MetricEntry, Table
+from src.visualization.catalogue import Table
+
+TABLE_ARROWS = {
+    Direction.HIGHER: r' ($\uparrow$)',
+    Direction.LOWER: r' ($\downarrow$)',
+    Direction.ZERO: r' ($\rightarrow 0$)',
+    Direction.NONE: '',
+}
 
 
 def _escape_latex(text: str) -> str:
@@ -37,7 +45,7 @@ def _value(frame: pd.DataFrame, key: str) -> float:
 
 
 def _row(
-    columns: Sequence[MetricEntry],
+    columns: Sequence[Metric],
     frame: pd.DataFrame,
     *,
     label: str,
@@ -55,10 +63,9 @@ def _row(
         One LaTex table row.
     """
     cells = []
-    for entry in columns:
-        value = _value(frame, entry.key)
-        written = entry.format(value)
-        cells.append(f'\\textbf{{{written}}}' if entry.key in best else written)
+    for metric in columns:
+        written = f'{_value(frame, metric.key):.3f}'
+        cells.append(f'\\textbf{{{written}}}' if metric.key in best else written)
     return '   & ' + ' & '.join([_escape_latex(label), *cells]) + ' \\\\'
 
 
@@ -104,11 +111,14 @@ def _headers(table: Table) -> list[str]:
     Returns:
         LaTex header lines.
     """
-    headers = [entry.table_header for entry in table.columns]
+    headers = [
+        f'{metric.publication_label or metric.label}{TABLE_ARROWS[metric.direction]}'
+        for metric in table.columns
+    ]
     if not table.column_groups:
         return ['  Dataset & Model & ' + ' & '.join(headers) + ' \\\\']
 
-    headers = [entry.label for entry in table.columns]
+    headers = [metric.publication_label or metric.label for metric in table.columns]
     groups = ' & '.join(
         f'\\multicolumn{{{group.span}}}{{c}}{{{group.label}}}' for group in table.column_groups
     )
@@ -138,8 +148,8 @@ def latex_table(frame: pd.DataFrame, table: Table, significance: pd.DataFrame) -
     """
     overall = frame[frame['axis'] == table.axis]
     # Keep models and datasets in catalogue order.
-    models = labels.MODELS.ordered(overall['model'])
-    datasets = labels.DATASETS.ordered(overall['dataset'])
+    models = labels.ordered(overall['model'], labels.MODELS, kind='model')
+    datasets = labels.ordered(overall['dataset'], labels.DATASETS, kind='dataset')
     lines = ['\\toprule', *_headers(table), '\\midrule']
     for index, dataset in enumerate(datasets):
         if index > 0:

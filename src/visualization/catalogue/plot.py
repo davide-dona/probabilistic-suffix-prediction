@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from src.evaluation import Axis
 from src.evaluation.metrics import METRICS
-from src.visualization.catalogue.entry import MetricEntry
+from src.evaluation.metrics.metadata import Metric
 
 
 @dataclass(frozen=True)
@@ -11,7 +11,7 @@ class Plot:
 
     name: str
     breakdowns: tuple[Axis, ...]
-    panels: tuple[tuple[MetricEntry, ...], ...]
+    panels: tuple[tuple[Metric, ...], ...]
 
 
 # Catalogue figures: panels by breakdown and dataset.
@@ -19,6 +19,6 @@ FIGURES = (
     Plot(
         name='conformance-by-suffix-length',
         breakdowns=(Axis.SUFFIX,),
-        panels=((MetricEntry(METRICS['conformance_sample_mean'], 'Conformance (sample mean)'),),),
+        panels=((METRICS['conformance_sample_mean'],),),
     ),
 )

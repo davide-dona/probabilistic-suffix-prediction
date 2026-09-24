@@ -4,8 +4,8 @@ import hydra
 import pandas as pd
 from omegaconf import DictConfig
 
+from pipelines.console import banner
 from src import paths
-from src.cli import banner
 from src.logs.io import read_log
 from src.logs.keys import (
     ACTIVITY_KEY,

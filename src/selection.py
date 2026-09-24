@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 
 from src.evaluation.metrics import METRICS
-from src.evaluation.metrics.definitions import Direction, Metric
+from src.evaluation.metrics.metadata import Direction, Metric
 
 SELECTION_METRIC: Metric = METRICS['energy_score_dls']
 

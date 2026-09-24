@@ -10,9 +10,9 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 
 from src.evaluation import Axis
-from src.evaluation.metrics.definitions import Owner
+from src.evaluation.metrics.metadata import Direction, Metric, Owner
 from src.visualization import labels
-from src.visualization.catalogue import MetricEntry, Plot
+from src.visualization.catalogue import Plot
 from src.visualization.style import (
     DATASET_HEIGHT,
     FIGURE_OVERHEAD,
@@ -21,29 +21,34 @@ from src.visualization.style import (
     PANEL_X_BINS,
     TITLE_WIDTH,
     Y_HEADROOM,
-    legend_above,
 )
 
 # X-axis labels by length breakdown.
 AXIS_LABELS = {Axis.PREFIX: 'Prefix length', Axis.SUFFIX: 'Suffix length'}
+AXIS_ARROWS = {
+    Direction.HIGHER: '\N{NO-BREAK SPACE}↑',
+    Direction.LOWER: '\N{NO-BREAK SPACE}↓',
+    Direction.ZERO: '\N{NO-BREAK SPACE}→0',
+    Direction.NONE: '',
+}
 
 
-def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry) -> int:
+def _draw_metric(axes: Axes, frame: pd.DataFrame, metric: Metric) -> int:
     """Draw one metric.
 
     Args:
         axes: Panel to draw on.
         frame: Report rows for one dataset and breakdown.
-        entry: Metric display definition.
+        metric: Metric to display.
 
     Returns:
         Longest reported length.
     """
     # Select rows for the requested metric.
-    values = frame[frame['metric'] == entry.key]
-    drawn = labels.MODELS.ordered(values['model'])
+    values = frame[frame['metric'] == metric.key]
+    drawn = labels.ordered(values['model'], labels.MODELS, kind='model')
     # Log-owned metrics produce one shared series.
-    if entry.metric.owner is Owner.LOG:
+    if metric.owner is Owner.LOG:
         series = [(model, labels.LOG_STYLE) for model in drawn[:1]]
     else:
         series = [(model, labels.MODELS[model]) for model in drawn]
@@ -68,7 +73,7 @@ def _draw_metric(axes: Axes, frame: pd.DataFrame, entry: MetricEntry) -> int:
 
 
 def _draw_panel(
-    axes: Axes, frame: pd.DataFrame, panel: tuple[MetricEntry, ...], *, x_bins: int | str
+    axes: Axes, frame: pd.DataFrame, panel: tuple[Metric, ...], *, x_bins: int | str
 ) -> int:
     """Draw a panel and return its longest reported length.
 
@@ -81,15 +86,15 @@ def _draw_panel(
     Returns:
         Longest reported length across the panel.
     """
-    longest = max(_draw_metric(axes, frame, entry) for entry in panel)
+    longest = max(_draw_metric(axes, frame, metric) for metric in panel)
     axes.xaxis.set_major_locator(MaxNLocator(nbins=x_bins, integer=True))
     # Unbounded sides use Matplotlib's automatic limits.
-    bottom, top = panel[0].bounds
+    bottom, top = panel[0].unit.bounds
     if top is not None:
         # Keep values at the bound from appearing clipped.
         top += Y_HEADROOM * (top - (bottom if bottom is not None else 0.0))
     axes.set_ylim(bottom=bottom, top=top)
-    if panel[0].shares_scale:
+    if panel[0].unit.bounds == (0.0, 1.0):
         axes.set_yticks([0.0, 0.5, 1.0])
     return longest
 
@@ -121,7 +126,7 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
     Returns:
         Composed Matplotlib figure.
     """
-    datasets = labels.DATASETS.ordered(frame['dataset'])
+    datasets = labels.ordered(frame['dataset'], labels.DATASETS, kind='dataset')
     # Each breakdown occupies a block of metric columns.
     columns = [(breakdown, panel) for breakdown in plot.breakdowns for panel in plot.panels]
     figure, grid = plt.subplots(
@@ -149,7 +154,9 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
     _link_x_axes(grid, [breakdown for breakdown, _ in columns], longest)
 
     for column, (_, panel) in enumerate(columns):
-        heading = panel[0].axis_label.replace(' (', '\n(')
+        metric = panel[0]
+        unit = f' [{metric.unit.symbol}]' if metric.unit.symbol else ''
+        heading = f'{metric.label}{unit}{AXIS_ARROWS[metric.direction]}'.replace(' (', '\n(')
         grid[0, column].set_title(
             '\n'.join(textwrap.fill(line, width=TITLE_WIDTH) for line in heading.splitlines())
         )
@@ -159,7 +166,11 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
         top = max(limit[1] for limit in limits)
         for axes in grid[:, column]:
             axes.set_ylim(bottom, top)
-            if column > 0 and panel[0].shares_scale and columns[0][1][0].shares_scale:
+            if (
+                column > 0
+                and metric.unit.bounds == (0.0, 1.0)
+                and columns[0][1][0].unit.bounds == (0.0, 1.0)
+            ):
                 axes.tick_params(labelleft=False)
 
     if len(plot.breakdowns) == 1:
@@ -176,5 +187,5 @@ def compose_figure(frame: pd.DataFrame, plot: Plot) -> Figure:
             for label, handle in zip(written, handles, strict=True):
                 keys.setdefault(label, handle)
     if len(keys) > 1:
-        legend_above(figure, list(keys.values()), list(keys))
+        figure.legend(list(keys.values()), list(keys), loc='outside upper center', ncols=len(keys))
     return figure

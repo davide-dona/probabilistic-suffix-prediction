@@ -62,4 +62,5 @@ class Metric:
     unit: Unit
     direction: Direction
     compute: Callable[..., float]
+    publication_label: str | None = None
     owner: Owner = Owner.MODEL

@@ -1,6 +1,6 @@
-from src.evaluation.metrics.definitions import Direction, MetricGroup, Owner, Unit
-from src.evaluation.metrics.prepared import PreparedPrefix
+from src.evaluation.metrics.metadata import Direction, MetricGroup, Owner, Unit
 from src.evaluation.metrics.registry import METRICS
+from src.evaluation.prepared import PreparedPrefix
 
 
 def _sample_mean(context: PreparedPrefix, attribute: str) -> float:

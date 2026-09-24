@@ -9,8 +9,8 @@ import hydra
 from omegaconf import DictConfig
 from tqdm import tqdm
 
+from pipelines.console import banner, duration, step
 from src import paths
-from src.cli import banner, duration, step
 from src.datasets.codec import ActivityCodec
 from src.evaluation import EvaluationReport, EvaluationSummary, PrefixSummary, stream_prefix_scores
 from src.inference.generation_store import Generations

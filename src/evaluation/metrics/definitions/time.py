@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 
-from src.evaluation.metrics.definitions import Direction, MetricGroup, Unit
 from src.evaluation.metrics.helpers.statistics import coverage_gap, crps
-from src.evaluation.metrics.prepared import PreparedPrefix, aligned_inter_event_times
+from src.evaluation.metrics.metadata import Direction, MetricGroup, Unit
 from src.evaluation.metrics.registry import METRICS
+from src.evaluation.prepared import PreparedPrefix, aligned_inter_event_times
 
 MINUTES_PER_DAY = 1440.0
 

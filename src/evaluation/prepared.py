@@ -5,7 +5,6 @@ from typing import Self
 
 import numpy as np
 
-from src.evaluation.metrics.helpers.activity import sequence_similarity
 from src.inference.generation import Generation
 from src.logs.declare import ConformanceChecker
 from src.logs.declare.checker import Conformance
@@ -16,7 +15,6 @@ class PreparedPrefix:
     """Decoded values and constraint checks shared by every metric for one prefix."""
 
     generation: Generation
-    similarities: tuple[float, ...]
     suffix_lengths: np.ndarray
     remaining_times: np.ndarray
     inter_event_times: np.ndarray
@@ -36,9 +34,6 @@ class PreparedPrefix:
         prefix = generation.prefix_activities
         return cls(
             generation=generation,
-            similarities=tuple(
-                sequence_similarity(suffix, truth.activities) for suffix in samples.suffixes
-            ),
             suffix_lengths=np.array(
                 [[float(len(events))] for events in samples.events], dtype=np.float64
             ).reshape(draws, 1),

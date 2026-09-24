@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from src.evaluation.metrics.definitions import Direction, Metric, MetricGroup, Owner, Unit
+from src.evaluation.metrics.metadata import Direction, Metric, MetricGroup, Owner, Unit
 
 
 class MetricRegistry:
@@ -16,6 +16,7 @@ class MetricRegistry:
         label: str,
         group: MetricGroup,
         unit: Unit,
+        publication_label: str | None = None,
         direction: Direction = Direction.NONE,
         owner: Owner = Owner.MODEL,
     ) -> Callable[[Callable[..., float]], Callable[..., float]]:
@@ -29,6 +30,7 @@ class MetricRegistry:
                 label=label,
                 group=group,
                 unit=unit,
+                publication_label=publication_label,
                 direction=direction,
                 owner=owner,
                 compute=compute,

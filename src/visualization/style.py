@@ -1,9 +1,6 @@
 import logging
-from collections.abc import Sequence
 
 import matplotlib as mpl
-from matplotlib.artist import Artist
-from matplotlib.figure import Figure
 
 # IEEE conference text widths in inches.
 COLUMN_WIDTH = 3.487  # (43pc - 1pc) / 2 = 252pt
@@ -70,14 +67,3 @@ def apply_style() -> None:
     # Figures are written without a display.
     mpl.use('Agg')
     mpl.rcParams.update(_PAPER_RC)
-
-
-def legend_above(figure: Figure, handles: Sequence[Artist], keys: Sequence[str]) -> None:
-    """Draw a shared legend above the panels.
-
-    Args:
-        figure: Figure containing the panels.
-        handles: Artists represented by the legend.
-        keys: Labels for the artists.
-    """
-    figure.legend(handles, keys, loc='outside upper center', ncols=len(keys))

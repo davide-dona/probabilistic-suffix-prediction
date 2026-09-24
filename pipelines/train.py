@@ -5,8 +5,8 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
+from pipelines.console import banner, step
 from src import paths
-from src.cli import banner, step
 from src.datasets.codec import DatasetCodec
 from src.datasets.dataset import TraceDataset, fixed_subset
 from src.inference.generate import generation_batch_size

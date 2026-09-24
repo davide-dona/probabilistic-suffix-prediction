@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.evaluation import score_files
 from src.evaluation.metrics import METRICS
-from src.evaluation.metrics.definitions import Direction
+from src.evaluation.metrics.metadata import Direction
 from src.uncertainty.resampling import resample_means
 from src.uncertainty.units import by_case
 

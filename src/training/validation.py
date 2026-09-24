@@ -8,8 +8,8 @@ import wandb
 from torch.utils.data import DataLoader
 
 from src.datasets.codec import DatasetCodec
+from src.evaluation import PrefixSummary, ScoreGroups
 from src.evaluation.metrics import METRICS
-from src.evaluation.results import PrefixSummary, ScoreGroups
 from src.inference.generate import generate_batch
 from src.logs.declare import ConformanceChecker
 from src.training.kl import LatentMetrics
